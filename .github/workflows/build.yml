@@ -1,0 +1,30 @@
+name: ESP-IDF build
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  getting-started:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ESP-IDF
+        env:
+          # Update the tag and commit together after the new version passes validation.
+          IDF_REF: v6.1-beta1
+          IDF_COMMIT: b1d13e9fe441c4f75e240c98a26fd631b7b3232f
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git "$RUNNER_TEMP/esp-idf"
+          test "$(git -C "$RUNNER_TEMP/esp-idf" rev-parse HEAD)" = "$IDF_COMMIT"
+          "$RUNNER_TEMP/esp-idf/install.sh" esp32s31
+
+      - name: Build getting started
+        run: |
+          . "$RUNNER_TEMP/esp-idf/export.sh"
+          idf.py --preview -C examples/esp-idf/getting-started set-target esp32s31
+          idf.py --preview -C examples/esp-idf/getting-started build

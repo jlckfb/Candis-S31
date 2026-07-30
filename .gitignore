@@ -1,0 +1,70 @@
+# ESP-IDF
+**/build/
+**/build-*/
+sdkconfig
+sdkconfig.old
+**/managed_components/
+.manifest_sha
+dependencies.lock
+
+# Firmware images belong in release assets, not the source tree
+*.bin
+*.elf
+*.map
+
+# PlatformIO
+**/.pio/
+**/.pioenvs/
+**/.piolibdeps/
+
+# CMake and language tooling
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+.ninja_deps
+.ninja_log
+*.o
+.cache/
+.ccache/
+.clangd/
+
+# Tests and coverage
+pytest-embedded/
+pytest_embedded_log/
+.pytest_cache/
+TEST_LOGS/
+XUNIT_RESULT*.xml
+app_info_*.txt
+size_info*.txt
+*.gcda
+*.gcno
+coverage.info
+coverage_report/
+.coverage
+htmlcov/
+
+# Python
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.settings/
+.project
+.cproject
+*.swp
+*.swo
+*~
+.#*
+\#*#
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
