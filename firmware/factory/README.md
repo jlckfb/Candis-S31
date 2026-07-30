@@ -36,6 +36,8 @@ absolute path is stored in the repository.
 | `i2c_scan main` | Probe the main I2C bus on GPIO33/GPIO34 | I2C address probes only |
 | `i2c_scan lp` | Probe the low-power I2C bus on GPIO6/GPIO7 | I2C address probes only |
 | `pmic_test` | Read TG28_SW identity, battery, VBUS, and charger state | No |
+| `pmic power_on_source` | Read the raw TG28_SW REG20 boot-source bitmap | No |
+| `pmic charge_current [MILLIAMPS]` | Read or set the exact TG28_SW REG62 charge-current limit | Optional write |
 | `rail NAME status` | Read one TG28_SW regulator setting | No |
 | `rail NAME on MILLIVOLTS` | Program and enable one TG28_SW regulator | Yes |
 | `rail NAME off` | Disable one TG28_SW regulator | Yes |
@@ -47,6 +49,9 @@ absolute path is stored in the repository.
 | `otg on default\|1.5\|3.0` | Select source role and arm the protected Type-C2 boost path | Yes, sources VBUS after CC attach |
 | `otg off` | Disable Type-C2 VBUS, CC role, and controller power | Yes, disables only |
 | `display_test` | Show red, green, blue, and white AMOLED quadrants | Yes |
+| `display_brightness PERCENT` | Set CO5300 brightness from 0 through 100 | Yes |
+| `display_sleep [deep]` | Enter normal sleep or SLPIN + DSTBON deep standby | Yes |
+| `display_wake [deep]` | Wake through SLPOUT or the required deep-standby reset pulse | Yes |
 | `touch_test` | Require a touch in every display quadrant within 15 seconds | Yes |
 | `led_test` | Show red, green, and blue on the addressable LED | Yes |
 | `sdcard_test` | Mount, write, read, verify, remove, and unmount a test file | Writes the inserted card |
@@ -63,6 +68,15 @@ against the EVT bring-up sheet. They are explicit commands so no switched load
 is enabled during boot. `otg on` prints an additional warning because Type-C2
 can source 5 V; the schematic's source indication gate remains part of the
 hardware safety path.
+
+The console registers 30 top-level commands including `help`. `pmic_test`
+already reads the fuel-gauge SOC and voltage; `pmic charge_current 500` adds
+the EVT target-current check without changing the OTP/default setting at boot.
+Use it only with current limiting and battery temperature monitoring, then
+restore the confirmed 50 mA default with `pmic charge_current 50`.
+
+The OV5640 autofocus/VCM path is intentionally not exposed as a command until
+the module supplier confirms VCM power and the actuator control interface.
 
 An I2C scan with no responding address is recorded as `FAIL`. This is expected
 on the main bus while its switched peripheral rails are disabled; it prevents

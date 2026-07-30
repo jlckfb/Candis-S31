@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "bsp/esp-bsp.h"
+#include "esp_check.h"
 #include "esp_console.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -41,18 +42,28 @@ static int command_pmic_test(int argc, char **argv)
     (void)argc;
     (void)argv;
     bsp_pmic_status_t status;
-    const esp_err_t error = bsp_pmic_get_status(&status);
+    uint8_t power_on_source = 0;
+    uint16_t charge_current = 0;
+    esp_err_t error = bsp_pmic_get_status(&status);
+    if (error == ESP_OK) {
+        error = bsp_pmic_get_power_on_source(&power_on_source);
+    }
+    if (error == ESP_OK) {
+        error = bsp_pmic_get_charge_current(&charge_current);
+    }
     if (error != ESP_OK) {
         report_error(FACTORY_TEST_PMIC, error, "TG28_SW status read failed");
         return error;
     }
     printf("chip_id=0x%02x vbat=%u mV soc=%u%% battery=%s vbus=%s "
-           "charging=%s done=%s status0=0x%02x status1=0x%02x\n",
+           "charging=%s done=%s charge_current=%u mA power_on_source=0x%02x "
+           "status0=0x%02x status1=0x%02x\n",
            status.chip_id, status.battery_mv, status.battery_percent,
            status.battery_present ? "present" : "absent",
            status.vbus_present ? "present" : "absent",
            status.charging ? "yes" : "no", status.charge_done ? "yes" : "no",
-           status.common_status0, status.common_status1);
+           charge_current, power_on_source, status.common_status0,
+           status.common_status1);
     const bool known_id = status.chip_id == 0x47 || status.chip_id == 0x4a;
     char detail[96];
     snprintf(detail, sizeof(detail), "id=0x%02x vbat=%u soc=%u battery=%s vbus=%s",
@@ -64,6 +75,42 @@ static int command_pmic_test(int argc, char **argv)
                        detail);
     factory_report_print_one(FACTORY_TEST_PMIC);
     return known_id ? ESP_OK : ESP_FAIL;
+}
+
+static int command_pmic(int argc, char **argv)
+{
+    if (argc == 2 && strcmp(argv[1], "power_on_source") == 0) {
+        uint8_t source = 0;
+        const esp_err_t error = bsp_pmic_get_power_on_source(&source);
+        if (error == ESP_OK) {
+            printf("power_on_source=0x%02x\n", source);
+        }
+        return error;
+    }
+    if ((argc == 2 || argc == 3) && strcmp(argv[1], "charge_current") == 0) {
+        esp_err_t error = ESP_OK;
+        if (argc == 3) {
+            char *end = NULL;
+            const long milliamps = strtol(argv[2], &end, 10);
+            if (end == argv[2] || *end != '\0' ||
+                    milliamps < 0 || milliamps > UINT16_MAX) {
+                return ESP_ERR_INVALID_ARG;
+            }
+            printf("WARNING: changing the battery charge-current limit; "
+                   "monitor battery voltage and temperature\n");
+            error = bsp_pmic_set_charge_current((uint16_t)milliamps);
+        }
+        uint16_t actual = 0;
+        if (error == ESP_OK) {
+            error = bsp_pmic_get_charge_current(&actual);
+        }
+        if (error == ESP_OK) {
+            printf("charge_current=%u mA\n", actual);
+        }
+        return error;
+    }
+    printf("usage: pmic power_on_source | pmic charge_current [MILLIAMPS]\n");
+    return ESP_ERR_INVALID_ARG;
 }
 
 static int command_rail(int argc, char **argv)
@@ -324,14 +371,19 @@ static void create_display_pattern(void)
     }
 }
 
+static esp_err_t ensure_display_started(void)
+{
+    if (s_display == NULL) {
+        s_display = bsp_display_start();
+    }
+    return s_display != NULL ? ESP_OK : ESP_FAIL;
+}
+
 static int command_display_test(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
-    if (s_display == NULL) {
-        s_display = bsp_display_start();
-    }
-    if (s_display == NULL) {
+    if (ensure_display_started() != ESP_OK) {
         report_error(FACTORY_TEST_DISPLAY, ESP_FAIL, "display initialization failed");
         return ESP_FAIL;
     }
@@ -345,6 +397,46 @@ static int command_display_test(int argc, char **argv)
                        "color pattern active; inspect panel then use mark");
     factory_report_print_one(FACTORY_TEST_DISPLAY);
     return ESP_OK;
+}
+
+static int command_display_brightness(int argc, char **argv)
+{
+    if (argc != 2) {
+        printf("usage: display_brightness PERCENT\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+    char *end = NULL;
+    const long brightness = strtol(argv[1], &end, 10);
+    if (end == argv[1] || *end != '\0' || brightness < 0 || brightness > 100) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ESP_RETURN_ON_ERROR(ensure_display_started(), "factory_display",
+                        "display initialization failed");
+    return bsp_display_brightness_set((int)brightness);
+}
+
+static int command_display_sleep(int argc, char **argv)
+{
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "deep") != 0)) {
+        printf("usage: display_sleep [deep]\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+    ESP_RETURN_ON_ERROR(ensure_display_started(), "factory_display",
+                        "display initialization failed");
+    return argc == 2 ? bsp_display_enter_deep_standby() :
+           bsp_display_enter_sleep();
+}
+
+static int command_display_wake(int argc, char **argv)
+{
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "deep") != 0)) {
+        printf("usage: display_wake [deep]\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+    ESP_RETURN_ON_ERROR(ensure_display_started(), "factory_display",
+                        "display initialization failed");
+    return argc == 2 ? bsp_display_exit_deep_standby() :
+           bsp_display_exit_sleep();
 }
 
 static int command_touch_test(int argc, char **argv)
@@ -634,6 +726,7 @@ esp_err_t factory_peripherals_register(void)
 {
     const esp_console_cmd_t commands[] = {
         {.command = "pmic_test", .help = "Read TG28_SW identity, battery, VBUS, and charge state.", .func = command_pmic_test},
+        {.command = "pmic", .help = "Read boot source or inspect/set the charge current.", .func = command_pmic},
         {.command = "rail", .help = "Inspect or explicitly control one TG28_SW rail.", .func = command_rail},
         {.command = "peripheral_power", .help = "Apply a complete peripheral power sequence.", .func = command_peripheral_power},
         {.command = "rtc_test", .help = "Read RX8130CE time and retained status flags.", .func = command_rtc_test},
@@ -642,6 +735,9 @@ esp_err_t factory_peripherals_register(void)
         {.command = "typec_test", .help = "Read FUSB303B connection state without changing its role.", .func = command_type_c_test},
         {.command = "otg", .help = "Explicitly enable or disable USB source power.", .func = command_otg},
         {.command = "display_test", .help = "Show a four-color AMOLED inspection pattern.", .func = command_display_test},
+        {.command = "display_brightness", .help = "Set AMOLED brightness from 0 to 100 percent.", .func = command_display_brightness},
+        {.command = "display_sleep", .help = "Enter AMOLED sleep or deep standby: display_sleep [deep].", .func = command_display_sleep},
+        {.command = "display_wake", .help = "Wake AMOLED from sleep or deep standby: display_wake [deep].", .func = command_display_wake},
         {.command = "touch_test", .help = "Require a touch in all four display quadrants.", .func = command_touch_test},
         {.command = "led_test", .help = "Show red, green, and blue on the addressable LED.", .func = command_led_test},
         {.command = "sdcard_test", .help = "Mount, write, verify, remove, and unmount a test file.", .func = command_sdcard_test},

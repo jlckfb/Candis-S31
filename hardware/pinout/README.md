@@ -54,8 +54,14 @@ This table is derived from schematic revision 0.5. It has not been checked again
 ## Reserved and special pins
 
 - GPIO26-32 are reserved for flash and VDD_SPI.
-- GPIO37, GPIO60, and GPIO61 are strapping pins.
+- GPIO36, GPIO37, GPIO60, and GPIO61 are strapping pins. In particular,
+  GPIO36 drives the active-low TF-card power enable, so its external pull-up
+  and level during the sampling window must be checked against the VDD_SPI
+  strap requirements before EVT1 firmware drives it.
 - GPIO41 is not available for normal application use.
+- ESP32-S31 physical package pins 44 and 45 are the native USB D- and D+
+  signals; they are not GPIO44 and GPIO45. The GPIO-numbered signals remain
+  audio data-in on GPIO44 and USB-OTG enable on GPIO45 as listed above.
 - GPIO2 is shared by the PMIC and RTC interrupt outputs. Firmware must identify and clear both sources.
 
 ## Physical keys
