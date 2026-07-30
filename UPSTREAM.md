@@ -10,11 +10,10 @@ Candis-S31 support is maintained where users already install their tools. This r
 | Reusable Candis-S31 BSP API and implementation | A dedicated Candis-S31 branch in [ESP-BSP](https://github.com/espressif/esp-bsp); propose upstream after EVT validation and maintainer agreement | No |
 | Complete Candis-S31 board description for ESP-IDF | [`espressif/esp_friends_boards`](https://components.espressif.com/components/espressif/esp_friends_boards) in [ESP Board Manager](https://github.com/espressif/esp-board-manager) | No |
 | CO5300 LCD controller fix | [`espressif/esp_lcd_co5300`](https://components.espressif.com/components/espressif/esp_lcd_co5300) source in [ESP-IoT-Solution](https://github.com/espressif/esp-iot-solution) | No |
-| Reusable LCD touch driver such as CST820 | A dedicated Registry component, or a separately agreed generic component contribution to [ESP-BSP](https://github.com/espressif/esp-bsp) | No |
+| Reusable CST820 touch driver | `components/lcd_touch/esp_lcd_touch_cst820` in the ESP-BSP contribution, published independently from the board component | No |
 | ES8389 audio codec fix | [`espressif/esp_codec_dev`](https://components.espressif.com/components/espressif/esp_codec_dev) | No |
 | DVP controller or camera sensor fix | [`esp_video` and `esp_cam_sensor`](https://github.com/espressif/esp-video-components) | No |
-| Reusable TG28_SW driver | `components/tg28_sw` in the ESP-BSP contribution, published independently from the board component | No |
-| Reusable RX8130CE or FUSB303B driver | A dedicated Component Registry source repository; discuss an Espressif destination before proposing it there | No |
+| Reusable TG28_SW, RX8130CE, or FUSB303B driver | A standalone component in the ESP-BSP contribution, published independently from the board component | No |
 | Arduino board menu entry and pin variant | [Arduino-ESP32](https://github.com/espressif/arduino-esp32), after generic ESP32-S31 core support is released | No |
 | PlatformIO board manifest | [PlatformIO Espressif32](https://github.com/platformio/platform-espressif32), after the platform, tools, and selected framework support ESP32-S31 | No |
 | HMI, multimedia, or agent application adaptation | The relevant application repository, such as [ESP-Brookesia](https://github.com/espressif/esp-brookesia), [ESP-GMF](https://github.com/espressif/esp-gmf), or [ESP-Claw](https://github.com/espressif/esp-claw) | No |
@@ -26,7 +25,7 @@ The Candis-S31 BSP is developed in a separate ESP-BSP worktree so Factory firmwa
 
 ## Board Manager shape
 
-The planned board directory is:
+The development board directory is:
 
 ```text
 esp_friends_boards/candis_s31/
@@ -39,7 +38,7 @@ esp_friends_boards/candis_s31/
 
 The three YAML files describe board metadata, peripheral buses, and devices. `sdkconfig.defaults.board` contains only settings required by the hardware. `setup_device.c` handles logic that cannot be expressed in YAML, such as the CO5300 panel factory and the board power sequence.
 
-The display uses the Board Manager SPI data lines and `quad_mode`. TG28-controlled rails use a custom `power_ctrl`; the PMIC, RTC, and Type-C controller can be represented as custom devices backed by independent reusable drivers. Board-local `packages/` must not hide drivers that should be usable by another board or framework.
+The display uses the Board Manager SPI data lines and `quad_mode`. TG28-controlled rails use a custom `power_ctrl`; the PMIC, RTC, and Type-C controller are custom devices backed by independent reusable drivers. Board-local `packages/` must not hide drivers that should be usable by another board or framework.
 
 ## Framework gates
 
@@ -92,10 +91,13 @@ The current compatibility baseline is:
 | ESP-IDF | `v6.1-beta1` | Getting-started and Factory compile only |
 | Local Candis-S31 BSP | `1.0.0` development component | Factory and six upstream ESP-BSP examples compile; hardware not run |
 | Local TG28_SW driver | `0.1.0` development component | Standalone component and BSP integration compile; hardware not run |
+| Local RX8130CE driver | `0.1.0` development component | Standalone component and BSP integration compile; hardware not run |
+| Local FUSB303B driver | `0.1.0` development component | Standalone component and BSP integration compile; hardware not run |
+| Local CST820 touch driver | `1.0.0` development component | Standalone component and BSP integration compile; hardware not run |
 | Factory Bring-up firmware | Development source | Full peripheral command set compile-tested; no image released |
 | Candis-S31 hardware | EVT1 schematic revision 0.5 | Not fabricated |
-| ESP Friends Boards definition | Not released | Not available |
+| ESP Friends Boards definition | `candis_s31` development definition | Board generation and an isolated ESP-IDF application compile; not released and hardware not run |
 | Arduino ESP32-S31 core and Candis board | Not released | Not available |
 | PlatformIO ESP32-S31 platform and Candis board | Not released | Not available |
 
-This table is updated only when the corresponding public artifact can be installed and tested through its normal channel. A compile result is not recorded as hardware validation.
+Local rows record worktree validation only. Public support is claimed only after the corresponding artifact can be installed and tested through its normal channel. A compile result is not recorded as hardware validation.

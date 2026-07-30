@@ -23,7 +23,7 @@ The current baseline is ESP-IDF `v6.1-beta1`. Installation Manager (EIM), the of
 
 | Environment | Status |
 |---|---|
-| ESP-IDF | Starter and Factory projects compile with `v6.1-beta1`; the complete local BSP is awaiting EVT validation and upstream review |
+| ESP-IDF | Starter, Factory, the complete local BSP, and the local Board Manager definition compile with `v6.1-beta1`; hardware validation and upstream release are pending |
 | Arduino | Waiting for the ESP32-S31 core, followed by the Candis-S31 board and variant |
 | PlatformIO | Waiting for ESP32-S31 platform, tool, and framework support before adding a board manifest |
 
@@ -71,7 +71,7 @@ Generic ESP32-S31 fixes belong in ESP-IDF itself. Board pin assignments and devi
 
 The BSP implementation is not mirrored back into this repository. During development, Factory firmware loads it from a separate checkout through `CANDIS_S31_BSP_PATH`; public examples consume released support. See [Upstream ownership](UPSTREAM.md) for the repository-by-repository contribution map.
 
-The local BSP now covers display and touch, TG28_SW power management, RX8130CE RTC, FUSB303B and USB Host, SDMMC, ES8389 audio, the DVP camera pipeline, and the RGB LED. This is an implementation milestone, not a hardware qualification result; every EVT result stays `NOT_RUN` until measured on a physical board.
+The local BSP covers display and touch, TG28_SW power management, RX8130CE RTC, FUSB303B and USB Host, SDMMC, ES8389 audio, the DVP camera pipeline, and the RGB LED. The matching Board Manager definition also generates and compiles against these development components. This is an implementation milestone, not a hardware qualification result; every EVT result stays `NOT_RUN` until measured on a physical board.
 
 ## License
 

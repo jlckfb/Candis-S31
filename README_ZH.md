@@ -23,7 +23,7 @@ idf.py --preview -p PORT flash monitor
 
 | 开发环境 | 当前状态 |
 |---|---|
-| ESP-IDF | 入门工程和 Factory 工程使用 `v6.1-beta1` 编译通过；本地完整 BSP 等待 EVT 实测和上游评审 |
+| ESP-IDF | 入门工程、Factory、本地完整 BSP 和本地 Board Manager 定义均使用 `v6.1-beta1` 编译通过；仍需硬件验证和上游发布 |
 | Arduino | 等待 ESP32-S31 Core，再提交 Candis-S31 board 与 variant |
 | PlatformIO | 等待 ESP32-S31 平台、工具和框架支持，再增加 board manifest |
 
@@ -71,7 +71,7 @@ ESP32-S31 的通用问题才需要修改 ESP-IDF 本身。Candis-S31 的引脚�
 
 BSP 源码不会复制回本仓库。开发阶段 Factory 通过 `CANDIS_S31_BSP_PATH` 加载独立工作区，公开示例只依赖正式发布的能力。逐仓库的提交范围见[上游归属和贡献路径](UPSTREAM.md)。
 
-目前本地 BSP 已覆盖显示与触摸、TG28_SW 电源管理、RX8130CE RTC、FUSB303B 与 USB Host、SDMMC、ES8389 音频、DVP 摄像头链路和 RGB LED。这只是软件实现完成，不代表硬件验证完成；在实板测量前，EVT 结果仍统一记录为 `NOT_RUN`。
+本地 BSP 已覆盖显示与触摸、TG28_SW 电源管理、RX8130CE RTC、FUSB303B 与 USB Host、SDMMC、ES8389 音频、DVP 摄像头链路和 RGB LED。对应的 Board Manager 定义也已使用这些开发组件完成生成和编译。这只是软件实现完成，不代表硬件验证完成；在实板测量前，EVT 结果仍统一记录为 `NOT_RUN`。
 
 ## 许可
 
