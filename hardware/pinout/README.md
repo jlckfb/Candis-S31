@@ -15,14 +15,14 @@ This table is derived from schematic revision 0.5. It has not been checked again
 | Low-power I2C | SCL | 6 |
 | Low-power I2C | SDA | 7 |
 | Audio | Data out | 8 |
-| AMOLED QSPI | Chip select | 9 |
-| AMOLED | Reset, active low | 10 |
-| AMOLED | Tearing effect | 11 |
+| AMOLED QSPI | Chip select | 10 |
+| AMOLED | Reset, active low | 15 |
+| AMOLED | Tearing effect | 16 |
 | AMOLED QSPI | Clock | 12 |
-| AMOLED QSPI | Data 0 | 13 |
-| AMOLED QSPI | Data 1 | 14 |
-| AMOLED QSPI | Data 2 | 15 |
-| AMOLED QSPI | Data 3 | 16 |
+| AMOLED QSPI | Data 0 | 11 |
+| AMOLED QSPI | Data 1 | 13 |
+| AMOLED QSPI | Data 2 | 14 |
+| AMOLED QSPI | Data 3 | 9 |
 | Touch | Reset, active low | 17 |
 | Audio | Bit clock | 18 |
 | Audio | Left/right clock | 19 |
