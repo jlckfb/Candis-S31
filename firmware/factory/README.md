@@ -119,7 +119,10 @@ unpowered sensor stalls the command instead of timing out; power-cycle the
 board to recover, then investigate the sensor power and DVP wiring.
 
 Valid `rail` names are `dcdc1` through `dcdc4`, `aldo1` through `aldo4`,
-`bldo1` through `bldo2`, and `dldo1` through `dldo2`. Valid
+`bldo1` through `bldo2`, `cpusldo`, and `dldo1` through `dldo2`. `cpusldo` is
+unconnected on this board and is expected to stay off (OTP-disabled), so
+`rail cpusldo status` reading back disabled is the pass condition, not a
+measurement failure. Valid
 `peripheral_power` names are `display`, `touch`, `audio`, `camera`, `sdcard`,
 and `external_3v3`. The BSP rejects voltages that do not have an exact TG28_SW
 register encoding.
