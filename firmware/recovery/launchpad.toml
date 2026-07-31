@@ -1,5 +1,5 @@
 # Self-host this file together with the matching factory release artifact.
-# SHA-256: 9f302a4ea6f24d0ccd77abd7c56340bb8175f56ba58ab22e21fda1e905749b19
+# SHA-256: 3971b412d7710809b0ad66e4e3ee8967ef54158984f4f3d4bf942084a9dbb32e
 esp_toml_version = 1.0
 supported_apps = ["Candis-S31-Factory"]
 multipart = true
@@ -7,7 +7,10 @@ chip = "esp32s31"
 
 [Candis-S31-Factory]
 image.esp32s31.parts = [
-  "https://jlckfb.github.io/Candis-S31/firmware/factory/release/candis_s31_factory_merged.bin",
+  # <tag> must match the GitHub Release tag that carries
+  # candis_s31_factory_merged.bin as an asset (see firmware/factory/README.md
+  # "Release requirements"); update it when a release is actually published.
+  "https://github.com/jlckfb/Candis-S31/releases/download/<tag>/candis_s31_factory_merged.bin",
 ]
 image.esp32s31.addresses = ["0x0"]
 console_baudrate = 115200

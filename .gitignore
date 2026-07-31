@@ -11,6 +11,10 @@ dependencies.lock
 *.bin
 *.elf
 *.map
+# Local factory release staging area (pack_factory_release.sh default output)
+firmware/factory/release/
+firmware/factory/release.zip
+firmware/factory/release.tar.gz
 
 # PlatformIO
 **/.pio/
