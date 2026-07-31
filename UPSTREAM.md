@@ -84,16 +84,25 @@ During local Bring-up development, `firmware/factory` loads
 BSP Git revision and marks a modified checkout as dirty. No absolute local path
 is committed to the project.
 
+As of 2026-07-31 the local verification environment is ESP-IDF `v6.1-beta1`
+(commit `b1d13e9f`, checked out at `.tools/esp-idf` in the workspace root, two
+levels above this repository) plus the local ESP-BSP worktree (commit
+`522c90f1` with uncommitted changes on top). The Factory project compiled and
+merged successfully in this combination on 2026-07-31 (merged image about
+1.9 MB against the 4 MB factory partition), and the Board Manager definition
+in `esp_friends_boards/candis_s31` generated and compiled an isolated ESP-IDF
+application. None of this represents a hardware result.
+
 The current compatibility baseline is:
 
 | Item | Version | Validation |
 |---|---|---|
 | ESP-IDF | `v6.1-beta1` | Getting-started and Factory compile only |
-| Local Candis-S31 BSP | `1.0.0` development component | Factory and six upstream ESP-BSP examples compile; hardware not run |
-| Local TG28_SW driver | `0.1.0` development component | Standalone component and BSP integration compile; hardware not run |
-| Local RX8130CE driver | `0.1.0` development component | Standalone component and BSP integration compile; hardware not run |
+| Local Candis-S31 BSP | `1.1.0` development component | Factory and six upstream ESP-BSP examples compile; hardware not run |
+| Local TG28_SW driver | `0.2.0` development component | Standalone component and BSP integration compile; hardware not run |
+| Local RX8130CE driver | `0.2.0` development component | Standalone component and BSP integration compile; hardware not run |
 | Local FUSB303B driver | `0.1.0` development component | Standalone component and BSP integration compile; hardware not run |
-| Local CST820 touch driver | `1.0.0` development component | Standalone component and BSP integration compile; hardware not run |
+| Local CST820 touch driver | `1.1.0` development component | Standalone component and BSP integration compile; hardware not run |
 | Factory Bring-up firmware | Development source | Full peripheral command set compile-tested; no image released |
 | Candis-S31 hardware | EVT1 schematic revision 0.5 | Not fabricated |
 | ESP Friends Boards definition | `candis_s31` development definition | Board generation and an isolated ESP-IDF application compile; not released and hardware not run |

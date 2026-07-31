@@ -10,9 +10,9 @@ EVT1 is still in layout. The current schematic is revision 0.5, exported on 2026
 | Display supply | Confirm the LCD connector pinout and panel supply requirements | Do not populate or power the display |
 | U18 pin 13 / LCD_VDD | Pass only after the panel vendor confirms the pin-13 function, allowed voltage, and power sequence, and the measured rail stays in that range | Leave the panel unpopulated and keep both display enables off |
 | Battery path | Confirm BATFET, eFuse, and VBUS wake behavior | Revise the PMIC control and protection |
-| TG28 OTP | Read back or measure VRTC=3.0 V, DCDC4=1.8 V, REG62 default=50 mA, and the agreed BATFET/VBUS/BAT power-on bits on incoming parts | Keep charging and optional rails disabled; quarantine or reprogram the lot |
+| TG28 OTP | Read back or measure VRTC=3.0 V, REG62 default=50 mA, and the agreed BATFET/VBUS/BAT power-on bits on incoming parts; confirm over the LP I2C bus (0x34) that DCDC3, DCDC4, CPUSLDO, and DLDO2 (DC4SW) read back disabled, matching the unconnected schematic outputs | Keep charging and optional rails disabled; quarantine or reprogram the lot |
 | GPIO36 strap | Scope TF_PWR_EN_N through the strap-sampling window and pass only if its pull-up is compatible with VDD_SPI=3.3 V and boot is repeatable | Keep GPIO36 high-impedance through sampling; rework the pull or SD power gate |
-| UART0 series resistors | Repeat ROM sync and verified flashing through the 998 ohm TX/RX resistors at 115200, 460800, and the intended high baud without framing errors | Use the highest repeatable lower baud or rework the series resistors |
+| UART0 series resistors | Repeat ROM sync and verified flashing through the series resistors — TX chain R17+R37 (499 ohm each, 998 ohm total), RX chain R36 (499 ohm) — at 115200, 460800, and the intended high baud without framing errors | Use the highest repeatable lower baud or rework the series resistors |
 | Main-bus I2C addresses | Scan with the required rails on; pass only if ES8389 responds at 0x20 and FUSB303B at exactly one of 0x21/0x31 with valid identity | Do not initialize the conflicting device; rework its address strap |
 | OV5640 AF/VCM | Obtain module-vendor confirmation of VCM voltage, supply ownership, and actuator command protocol, then demonstrate repeatable near/far focus | Leave autofocus disabled and keep any unverified VCM supply off |
 | Camera / JTAG mux | Confirm GPIO54-57 are released from JTAG before DVP use and that camera capture is stable; document the alternative debug route | Disable camera while JTAG is active, or disable JTAG before powering the camera |
@@ -41,7 +41,9 @@ current, temperature, reset, or console error.
    current test, then restore 50 mA. If the RTC reports the recovery epoch, set
    a known value with `rtc_set`, power-cycle the board, and check it again.
 3. Measure each optional rail while enabling and disabling it with `peripheral_power`. Do not connect the panel, camera, speaker, or card until its off-state and on-state voltage are correct.
-4. Run `display_test`, inspect all four colors, and exercise
+4. On the first AMOLED light-up, start at low brightness
+   (`display_brightness 30`) and check current draw and image before raising
+   brightness. Then run `display_test`, inspect all four colors, and exercise
    `display_brightness`, `display_sleep`/`display_wake`, and their `deep`
    variants. Confirm deep wake includes a reset-low pulse longer than 3 ms,
    then record `mark display pass|fail`.
@@ -55,6 +57,51 @@ current, temperature, reset, or console error.
 Visual and audible commands do not mark themselves as passed. A display
 transfer, LED update, or audio write can succeed while the external device is
 dark or silent.
+
+## Expected I2C addresses
+
+With the matching rails on, the buses should show exactly these devices:
+
+| Bus | Address | Device | Prerequisite |
+|---|---|---|---|
+| Main (GPIO33/34) | 0x15 | CST820 touch | LCD_CTP_3V3_SW (ALDO2) on |
+| Main | 0x20 | ES8389 audio codec | AUDIO_3V3_SW (ALDO3) on |
+| Main | 0x21 | FUSB303B Type-C controller | None |
+| Main | 0x3C | OV5640 SCCB | Camera rails on |
+| Main | 0x0C | DW9714 VCM | Pending module-vendor confirmation |
+| Low power (GPIO6/7) | 0x32 | RX8130CE RTC | Always present |
+| Low power | 0x34 | TG28_SW PMIC | Always present |
+
+FUSB303B is strapped to 0x21 by the R46 pull-down; a response at 0x31
+instead means the address strap does not match the schematic and must be
+recorded. A main-bus device that does not answer while its switched rail is
+off is expected, not a failure. The Factory `i2c_scan lp`
+check passes only when both low-power addresses answer.
+
+During boot, `bsp_pmic_init()` writes to the TG28 (0x34 on the low-power bus)
+to clear latched interrupt status before enabling the power-key interrupts.
+Low-power bus traffic at 0x34 during boot is therefore expected.
+
+## Rail map and measurement points
+
+TG28_SW rail assignments from schematic revision 0.5:
+
+| Rail | Net | Voltage / limit | Note |
+|---|---|---|---|
+| DCDC1 | VCC_3V3_MAIN | 3.3 V, 2 A | Always on |
+| DCDC2 | CAM_DVDD_1V5_SW | 1.5 V, 2 A | Camera digital core |
+| DCDC3 | — | — | Unconnected; confirm disabled in OTP readback, no node to measure |
+| DCDC4 | — | — | Unconnected; confirm disabled in OTP readback, no node to measure |
+| CPUSLDO | — | — | Unconnected |
+| DLDO1 (DC1SW) | WS2812B_PWR_SW | 3.3 V pass-through of DCDC1 | Default off; no output until the BSP LED init enables it |
+| DLDO2 (DC4SW) | — | — | Unconnected |
+| ALDO1 | LCD_3V3_SW | 3.3 V, 300 mA | Display logic |
+| ALDO2 | LCD_CTP_3V3_SW | 3.3 V, 300 mA | Touch |
+| ALDO3 | AUDIO_3V3_SW | 3.3 V, 300 mA | Through the U21 (TPS22917) load switch |
+| ALDO4 | CAM_AVDD_2V8_SW | 2.8 V, 300 mA | Camera analog |
+| BLDO1 | CAM_DOVDD_2V8_SW | 2.8 V, 300 mA | Camera I/O |
+| BLDO2 | 3V3_EXT_SW | 3.3 V, 300 mA | EXT connector pin 2 |
+| RTCLDO | TG28_VRTC | 3.0 V | Always on; also feeds the RX8130CE VBAT input |
 
 ## Shared interrupt
 

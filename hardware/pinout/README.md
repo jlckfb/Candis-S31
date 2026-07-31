@@ -1,6 +1,6 @@
 # Preliminary pinout
 
-This table is derived from schematic revision 0.5. It has not been checked against an assembled EVT1 board.
+This table is derived from schematic revision 0.5 and cross-checked against the BSP header `candis_s31.h`. It has not been checked against an assembled EVT1 board.
 
 ## Board functions
 
@@ -59,10 +59,36 @@ This table is derived from schematic revision 0.5. It has not been checked again
   and level during the sampling window must be checked against the VDD_SPI
   strap requirements before EVT1 firmware drives it.
 - GPIO41 is not available for normal application use.
-- ESP32-S31 physical package pins 44 and 45 are the native USB D- and D+
-  signals; they are not GPIO44 and GPIO45. The GPIO-numbered signals remain
-  audio data-in on GPIO44 and USB-OTG enable on GPIO45 as listed above.
+- ESP32-S31 physical package pins 44 and 45 are the native USB D+ (USB_DP)
+  and D- (USB_DM) pads; they are not GPIO44 and GPIO45. Each passes through a
+  33 ohm series resistor (R25/R23) on the way to Type-C2. The separate USB
+  Serial/JTAG interface (USB1P1_P0/N0 on GPIO26/27) is not wired out, so the
+  console and flashing path is UART0 through the CH343P bridge, not USB. The
+  GPIO-numbered signals remain audio data-in on GPIO44 and USB-OTG enable on
+  GPIO45 as listed above.
+- GPIO54-57 are the JTAG signals MTDO, MTCK, MTDI, and MTMS. On this board
+  they drive the camera PCLK, XCLK, VSYNC, and HSYNC lines, so external JTAG
+  use conflicts with camera capture.
+- There is no 32.768 kHz crystal on the board. The XTAL_32K pads are the
+  GPIO0/GPIO1 pins, already assigned to TF-card detect and the FUSB303B
+  enable, so the SoC RTC slow clock uses the internal RC oscillator. The
+  RX8130CE has its own built-in crystal; its FOUT output only reaches the
+  RTC_FOUT1 test net and is not connected to the SoC.
 - GPIO2 is shared by the PMIC and RTC interrupt outputs. Firmware must identify and clear both sources.
+
+## Expansion connector (EXT, GH1.25-4)
+
+| Pin | Signal |
+|---:|---|
+| 1 | GND |
+| 2 | 3V3_EXT_SW (TG28 BLDO2 output, 3.3 V, 300 mA max) |
+| 3 | EXT_I2C_SDA |
+| 4 | EXT_I2C_SCL |
+
+Pins 5 and 6 are mechanical shield pads tied to GND. EXT_I2C is isolated
+from the main I2C bus (SYSTEM_I2C on GPIO33/34) through Q6 (2N7002DW); the
+connector side is pulled up to 3V3_EXT_SW by R103/R104 (4.7 kohm), so the
+port is active only while BLDO2 is enabled.
 
 ## Physical keys
 

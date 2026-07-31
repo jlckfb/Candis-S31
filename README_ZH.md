@@ -29,6 +29,25 @@ idf.py --preview -p PORT flash monitor
 
 Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会加入。单独的 variant 或 board JSON 不能带来一个新 SoC 的支持。本仓库不提供私有 ESP-IDF 分叉、修改版框架或复制的第三方库。
 
+### 构建验证 — 2026-07-31
+
+基线：ESP-IDF `v6.1-beta1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 12 个目标；截至 2026-07-31 全部通过。「编译通过」仅表示编译成功——**所有目标都还没有在硬件上运行过，每一项板载功能都待 EVT 实测**。
+
+| 目标（`tools/build-all.sh --list`） | 源码位置 | 状态（2026-07-31） |
+|---|---|---|
+| `example:display` | esp-bsp 工作区 `examples/display` | 编译通过；待 EVT 实测 |
+| `example:display_camera_video` | esp-bsp 工作区 `examples/display_camera_video` | 编译通过；待 EVT 实测 |
+| `example:display_lvgl_demos` | esp-bsp 工作区 `examples/display_lvgl_demos` | 编译通过；待 EVT 实测 |
+| `example:display_lvgl_benchmark` | esp-bsp 工作区 `examples/display_lvgl_benchmark` | 编译通过；待 EVT 实测 |
+| `example:display_sdcard` | esp-bsp 工作区 `examples/display_sdcard` | 编译通过；待 EVT 实测 |
+| `example:display_usb_hid` | esp-bsp 工作区 `examples/display_usb_hid` | 编译通过；待 EVT 实测 |
+| `testapp:tg28_sw` | esp-bsp 工作区 `components/tg28_sw/test_apps` | 编译通过；待 EVT 实测 |
+| `testapp:rx8130ce` | esp-bsp 工作区 `components/rx8130ce/test_apps` | 编译通过；待 EVT 实测 |
+| `testapp:fusb303b` | esp-bsp 工作区 `components/fusb303b/test_apps` | 编译通过；待 EVT 实测 |
+| `testapp:cst820` | esp-bsp 工作区 `components/lcd_touch/esp_lcd_touch_cst820/test_apps` | 编译通过；待 EVT 实测 |
+| `factory` | `firmware/factory`（经 `CANDIS_S31_BSP_PATH`） | 编译通过；待 EVT 实测 |
+| `getting-started` | `examples/esp-idf/getting-started` | 编译通过；待 EVT 实测 |
+
 ## 仓库目录
 
 ```text
