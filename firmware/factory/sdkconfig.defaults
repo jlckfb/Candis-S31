@@ -18,3 +18,21 @@ CONFIG_SPIRAM_SPEED_40M=y
 CONFIG_SPIRAM_IGNORE_NOTFOUND=y
 CONFIG_SPIRAM_USE_CAPS_ALLOC=y
 CONFIG_SPIRAM_MEMTEST=n
+
+# OV5640 on the DVP interface; RGB565 big-endian 800x600 at 10 fps is the
+# EVT1 sensor configuration and doubles as the driver's default format.
+CONFIG_CAMERA_OV5640=y
+CONFIG_CAMERA_OV5640_DVP_RGB565_BE_800X600_10FPS=y
+CONFIG_CAMERA_OV5640_DVP_DEFAULT_FMT_RGB565_BE_800X600_10FPS=y
+# The sensor is controlled over SCCB/I2C on this board, not SPI.
+CONFIG_CAM_CTRL_SPI_ENABLE=n
+
+# BLE controller smoke test (ble_smoke command). The factory firmware talks
+# to the controller directly, so no host stack is built.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_CONTROLLER_ONLY=y
+
+# The Wi-Fi/BLE/camera build does not fit the 1 MB default app partition.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"

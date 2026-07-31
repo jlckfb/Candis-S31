@@ -23,6 +23,12 @@ typedef enum {
     FACTORY_TEST_SPEAKER,
     FACTORY_TEST_MICROPHONE,
     FACTORY_TEST_CAMERA,
+    FACTORY_TEST_CHARGE,
+    FACTORY_TEST_RTC_ALARM,
+    FACTORY_TEST_BUTTONS,
+    FACTORY_TEST_WIFI,
+    FACTORY_TEST_BLE,
+    FACTORY_TEST_DISPLAY_SLEEP,
     FACTORY_TEST_COUNT,
 } factory_test_id_t;
 
@@ -31,6 +37,8 @@ typedef enum {
     FACTORY_STATUS_PASS,
     FACTORY_STATUS_FAIL,
     FACTORY_STATUS_SKIP,
+    FACTORY_STATUS_WARN,
+    FACTORY_STATUS_COUNT,
 } factory_status_t;
 
 /** Reset every test result to NOT_RUN. */
@@ -47,3 +55,6 @@ void factory_report_print(void);
 
 /** Resolve the stable report name used by the console and JSON output. */
 factory_test_id_t factory_report_find(const char *name);
+
+/** Print one string as an escaped JSON string literal, quotes included. */
+void factory_report_print_json_string(const char *value);

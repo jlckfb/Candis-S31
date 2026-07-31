@@ -38,26 +38,32 @@ absolute path is stored in the repository.
 | `pmic_test` | Read TG28_SW identity, battery, VBUS, and charger state | No |
 | `pmic power_on_source` | Read the raw TG28_SW REG20 boot-source bitmap | No |
 | `pmic charge_current [MILLIAMPS]` | Read or set the exact TG28_SW REG62 charge-current limit | Optional write |
+| `charge_test` | Read back the input-current limit and charge voltage, then grade charger activity from VBUS and charge flags | No |
 | `rail NAME status` | Read one TG28_SW regulator setting | No |
 | `rail NAME on MILLIVOLTS` | Program and enable one TG28_SW regulator | Yes |
 | `rail NAME off` | Disable one TG28_SW regulator | Yes |
 | `peripheral_power NAME on\|off` | Apply a complete peripheral power sequence | Yes |
 | `rtc_test` | Read RX8130CE calendar data and validity flags | No |
-| `rtc_set YYYY-MM-DD HH:MM:SS WEEKDAY` | Set the RTC, read it back, and verify the stored value | Yes, RTC registers only |
+| `rtc_set YYYY-MM-DD HH:MM:SS WEEKDAY` | Set the RTC, read it back, and verify the stored value; out-of-range fields are rejected before writing | Yes, RTC registers only |
+| `rtc_alarm` | Arm an alarm at the next minute boundary and wait for the RX8130CE alarm flag; minute granularity only | Rearms RTC alarm registers |
 | `irq_test` | Read and clear TG28_SW/RX8130CE flags until their shared line is released | Yes, clears interrupt flags |
-| `typec_test` | Read FUSB303B identity and connection state | Enables the CC controller only |
+| `buttons` | Wait for a BOOT key pulse on GPIO61, then a short PWR key press reported through the TG28_SW power-key IRQ | No |
+| `typec_test` | Read FUSB303B identity and connection state; PASS for a clean attach or a clean detach, WARN for ambiguous CC state | Enables the CC controller only |
 | `otg on default\|1.5\|3.0` | Select source role and arm the protected Type-C2 boost path | Yes, sources VBUS after CC attach |
 | `otg off` | Disable Type-C2 VBUS, CC role, and controller power | Yes, disables only |
-| `display_test` | Show red, green, blue, and white AMOLED quadrants | Yes |
+| `wifi_scan` | Scan for access points in station mode; PASS requires at least one AP | No |
+| `ble_smoke` | Initialize, enable, disable, and release the BLE controller | No |
+| `display_test` | Show red, green, blue, and white AMOLED quadrants, then ask the operator to confirm | Yes |
 | `display_brightness PERCENT` | Set CO5300 brightness from 0 through 100 | Yes |
 | `display_sleep [deep]` | Enter normal sleep or SLPIN + DSTBON deep standby | Yes |
 | `display_wake [deep]` | Wake through SLPOUT or the required deep-standby reset pulse | Yes |
+| `display_sleep_test` | Cycle sleep and deep standby with an operator visual check after each enter/exit | Yes |
 | `touch_test` | Require a touch in every display quadrant within 15 seconds | Yes |
-| `led_test` | Show red, green, and blue on the addressable LED | Yes |
+| `led_test` | Show red, green, and blue on the addressable LED, then ask the operator to confirm | Yes |
 | `sdcard_test` | Mount, write, read, verify, remove, and unmount a test file | Writes the inserted card |
-| `speaker_test` | Play a short, low-level square-wave tone | Yes |
+| `speaker_test` | Play a short, low-level square-wave tone, then ask the operator to confirm | Yes |
 | `microphone_test` | Capture audio and check its peak level | Yes |
-| `camera_test` | Power and probe the DVP sensor, then open its ESP Video node | Yes |
+| `camera_test` | Capture five DVP frames and verify frame size, non-blank content, and frame-to-frame change | Yes |
 | `mark TEST pass\|fail\|skip [detail]` | Record an operator result; details may contain spaces | Report only |
 | `report` | Print every result and a JSON summary | No |
 | `report_reset` | Return every collected result to `NOT_RUN` | Report only |
@@ -69,7 +75,7 @@ is enabled during boot. `otg on` prints an additional warning because Type-C2
 can source 5 V; the schematic's source indication gate remains part of the
 hardware safety path.
 
-The console registers 30 top-level commands including `help`. `pmic_test`
+The console registers 36 top-level commands including `help`. `pmic_test`
 already reads the fuel-gauge SOC and voltage; `pmic charge_current 500` adds
 the EVT target-current check without changing the OTP/default setting at boot.
 Use it only with current limiting and battery temperature monitoring, then
@@ -84,18 +90,39 @@ an electrically unverified or unpowered bus from being reported as working.
 The low-power bus passes only when both the RX8130CE at `0x32` and TG28_SW at
 `0x34` respond.
 
-`display_test`, `led_test`, and `speaker_test` leave the corresponding report
-entry as `NOT_RUN` after sending the test output. The operator must observe the
-panel, LED, or speaker and record the result with `mark`. Software activity by
-itself is not evidence that light or sound reached the outside of the board.
-Only those three tests accept a manually entered `PASS` or `FAIL`; automated
-tests must be run through their own command. Any test can be marked `SKIP` when
-the omission is intentional and documented.
+## Operator checks and manual results
 
-Valid `rail` names are `dcdc1` through `dcdc5`, `aldo1` through `aldo4`, and
-`bldo1` through `bldo2`. Valid `peripheral_power` names are `display`, `touch`,
-`audio`, `camera`, `sdcard`, and `external_3v3`. The BSP rejects voltages that
-do not have an exact TG28_SW register encoding.
+`display_test`, `led_test`, `speaker_test`, and `display_sleep_test` emit a
+machine-readable `FACTORY_PROMPT` line and wait up to 30 seconds for the
+operator to answer `y` (confirmed), `n` (failed), or `s` (skip). A `y` records
+`PASS`, an `n` records `FAIL`, and a skip or timeout leaves the entry
+`NOT_RUN`. Software activity by itself is not evidence that light or sound
+reached the outside of the board, so an unanswered prompt never becomes a
+`PASS`. When a prompt could not be answered — for example over a log-only
+connection — record the observation afterwards with `mark`.
+
+`buttons` waits for real key events instead of asking: first a press-and-release
+of the BOOT key (SW2, KEY_BOOT net on GPIO61, idle-high through an external
+10k pull-up), then a **short** press of the PWR key, which the TG28_SW reports
+through its power-key interrupt flags. A long PWR press powers the board off,
+so the command prints that warning before waiting. `rtc_alarm` needs no
+operator input; it targets the next minute boundary because the RX8130CE alarm
+compares whole minutes at the finest.
+
+Only the operator-judged tests — `display`, `rgb_led`, `speaker`, `buttons`,
+and `display_sleep` — accept a manually entered `PASS` or `FAIL` through
+`mark`. Automated tests must be run through their own command. Any test can be
+marked `SKIP` when the omission is intentional and documented.
+
+`camera_test` blocks on frame delivery from the 10 fps sensor. A dead or
+unpowered sensor stalls the command instead of timing out; power-cycle the
+board to recover, then investigate the sensor power and DVP wiring.
+
+Valid `rail` names are `dcdc1` through `dcdc4`, `aldo1` through `aldo4`,
+`bldo1` through `bldo2`, and `dldo1` through `dldo2`. Valid
+`peripheral_power` names are `display`, `touch`, `audio`, `camera`, `sdcard`,
+and `external_3v3`. The BSP rejects voltages that do not have an exact TG28_SW
+register encoding.
 
 ## Build
 
@@ -113,7 +140,13 @@ idf.py --preview build
 The initial configuration uses 16 MB flash, DIO at 40 MHz, and octal PSRAM at
 40 MHz. PSRAM-not-found is tolerated during boot so the console remains
 available to report the failure. The explicit `psram_test` command performs a
-small non-destructive allocation test.
+small non-destructive allocation test. `sdkconfig.defaults` also enables the OV5640 DVP sensor in
+RGB565 big-endian 800x600 at 10 fps and the BLE controller for `ble_smoke`.
+The BLE host stack is disabled (`BT_CONTROLLER_ONLY`): the smoke test talks to
+the controller directly. Because the diagnostic build exceeds the 1 MB default
+app partition, the project ships a custom `partitions.csv` with a 4 MB factory
+partition; flashing an older board image layout requires a full reflash of the
+bootloader, table, and application.
 
 After switching ESP-IDF or BSP revisions, remove the generated configuration
 and rebuild:
@@ -179,6 +212,9 @@ Every implemented test is one of:
 
 - `PASS`: the documented check ran and met its current criterion;
 - `FAIL`: the check ran and did not meet the criterion;
+- `WARN`: the check ran, but the result is ambiguous and needs human review
+  (for example `charge_test` without VBUS, or a Type-C attach without a valid
+  CC orientation);
 - `SKIP`: the operator intentionally skipped an applicable check;
 - `NOT_RUN`: no result has been collected since boot.
 
@@ -189,9 +225,32 @@ flash            PASS     size=16777216 expected=16777216
 FACTORY_RESULT {"test":"flash","status":"PASS","detail":"size=16777216 expected=16777216"}
 ```
 
-`report` ends with `FACTORY_SUMMARY`. The overall state remains `NOT_RUN` while
-any required test has not run, and becomes `FAIL` when any test fails. A missing
-or unimplemented peripheral is never converted to `PASS`.
+`report` ends with `FACTORY_SUMMARY`, which counts each status in a `warn`
+field alongside `pass`/`fail`/`skip`/`not_run`. The overall state is `FAIL`
+when any test fails, then `WARN` when any test warns, then `NOT_RUN` while any
+required test has not run, and only then `PASS`. A missing or unimplemented
+peripheral is never converted to `PASS`.
+
+If the console itself fails to start, the firmware logs the error, waits five
+seconds, and restarts so a transient stdio or heap failure cannot strand a
+board on the line.
+
+## Host automation
+
+`host_tools/run_evt.py` drives the whole flow from a PC over the console UART:
+
+```bash
+python3 host_tools/run_evt.py --port /dev/ttyUSB0 --board-id EVT-0042
+```
+
+The script sends each test command in a fixed order, parses `FACTORY_INFO`,
+`FACTORY_RESULT`, `FACTORY_PROMPT`, and `FACTORY_SUMMARY` lines, relays local
+operator answers to the board's prompts, and writes `evt_<board>_<timestamp>.json`
+plus the complete `.log` under `evt_logs/`. The board identity defaults to the
+base MAC from `board_info`. `--non-interactive` answers `s` (skip) to every
+prompt for log-only runs. `python3 host_tools/run_evt.py --self-test` verifies
+the parser and report writer against a scripted fake firmware on a pseudo
+terminal and needs no hardware.
 
 ## Release requirements
 
@@ -208,3 +267,11 @@ The first hardware-verified release must include:
 
 Release binaries belong in GitHub Release assets. Build directories and
 downloaded components do not belong in Git.
+
+`firmware/factory/release/` is the local staging area: it is the default
+output of `tools/release/pack_factory_release.sh` and is git-ignored. The
+script fills `tools/release/manifest.template.yaml` with build facts and
+archives the merged image, its SHA-256, the dependency lock, and the manifest.
+Published artifacts are uploaded as GitHub Release assets only after hardware
+validation; the CI `factory` job runs the same script as a dry-run and stores
+the archive as a build artifact.

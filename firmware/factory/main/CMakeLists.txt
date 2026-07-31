@@ -7,11 +7,16 @@ idf_component_register(
     INCLUDE_DIRS "."
     REQUIRES
         candis_s31
+        bt
         console
         esp_app_format
+        esp_event
+        esp_netif
         esp_psram
         esp_timer
+        esp_wifi
         heap
+        nvs_flash
         spi_flash
 )
 

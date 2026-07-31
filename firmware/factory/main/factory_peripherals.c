@@ -7,22 +7,43 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 #include "bsp/esp-bsp.h"
+#include "driver/gpio.h"
 #include "esp_check.h"
 #include "esp_console.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "led_convert.h"
+#include "linux/videodev2.h"
 
+#include "factory_console.h"
 #include "factory_peripherals.h"
 #include "factory_report.h"
 
-#define TOUCH_TEST_SECONDS 15
-#define AUDIO_SAMPLE_RATE  22050
-#define AUDIO_FRAME_COUNT  512
+#define TOUCH_TEST_SECONDS        15
+#define AUDIO_SAMPLE_RATE         22050
+#define AUDIO_FRAME_COUNT         512
+#define OPERATOR_PROMPT_TIMEOUT_S 30
+#define BUTTON_TEST_TIMEOUT_S     20
+#define CAMERA_CAPTURE_FRAMES     5
+#define CAMERA_BUFFER_COUNT       2
+#define RTC_ALARM_POLL_MS         200
+
+/* EVT1 schematic SW2: the KEY_BOOT net drives GPIO61 and has an external
+ * 10k pull-up, so the line idles high and is grounded while pressed. */
+#define BOOT_BUTTON_GPIO GPIO_NUM_61
+
+/* TG28_SW INT_STATUS1 low nibble latches the power-key edge/press flags. */
+#define TG28_POWER_KEY_IRQ_MASK 0x0f
+
+/* FUSB303B is configured as DRP on EVT1. The fusb303b driver is a private
+ * BSP dependency, so the expected device_type value is duplicated here. */
+#define FUSB303B_EXPECTED_DEVICE_TYPE 0x03
 
 static lv_display_t *s_display;
 static led_indicator_handle_t s_led;
@@ -111,6 +132,52 @@ static int command_pmic(int argc, char **argv)
     }
     printf("usage: pmic power_on_source | pmic charge_current [MILLIAMPS]\n");
     return ESP_ERR_INVALID_ARG;
+}
+
+static int command_charge_test(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    bsp_pmic_status_t status;
+    uint16_t input_limit = 0;
+    uint16_t charge_voltage = 0;
+    esp_err_t error = bsp_pmic_get_status(&status);
+    if (error == ESP_OK) {
+        error = bsp_pmic_get_input_current_limit(&input_limit);
+    }
+    if (error == ESP_OK) {
+        error = bsp_pmic_get_charge_voltage(&charge_voltage);
+    }
+    if (error != ESP_OK) {
+        report_error(FACTORY_TEST_CHARGE, error, "TG28_SW charger read failed");
+        return error;
+    }
+    printf("vbus=%s charging=%s done=%s input_limit=%u mA charge_voltage=%u mV "
+           "vbat=%u mV battery=%s\n",
+           status.vbus_present ? "present" : "absent",
+           status.charging ? "yes" : "no", status.charge_done ? "yes" : "no",
+           input_limit, charge_voltage, status.battery_mv,
+           status.battery_present ? "present" : "absent");
+
+    factory_status_t result;
+    char detail[96];
+    if (status.vbus_present && (status.charging || status.charge_done)) {
+        result = FACTORY_STATUS_PASS;
+        snprintf(detail, sizeof(detail), "%s, limit=%u mA target=%u mV",
+                 status.charging ? "charging" : "charge done",
+                 input_limit, charge_voltage);
+    } else if (status.vbus_present) {
+        result = FACTORY_STATUS_WARN;
+        snprintf(detail, sizeof(detail),
+                 "vbus present but not charging (limit=%u mA target=%u mV)",
+                 input_limit, charge_voltage);
+    } else {
+        result = FACTORY_STATUS_WARN;
+        snprintf(detail, sizeof(detail), "no vbus; charger path not exercised");
+    }
+    factory_report_set(FACTORY_TEST_CHARGE, result, detail);
+    factory_report_print_one(FACTORY_TEST_CHARGE);
+    return ESP_OK;
 }
 
 static int command_rail(int argc, char **argv)
@@ -223,9 +290,21 @@ static bool parse_rtc_time(int argc, char **argv, bsp_rtc_time_t *time)
 
     char *end = NULL;
     const long weekday = strtol(argv[3], &end, 10);
+    /* Mirror the RX8130CE driver's rx8130ce_time_is_valid() rules so an
+     * out-of-range value is rejected before it reaches the chip. */
     if (end == argv[3] || *end != '\0' || weekday < 0 || weekday > 6 ||
-            year > UINT16_MAX || month > UINT8_MAX || day > UINT8_MAX ||
-            hour > UINT8_MAX || minute > UINT8_MAX || second > UINT8_MAX) {
+            year < 2000 || year > 2099 || month < 1 || month > 12 ||
+            hour > 23 || minute > 59 || second > 59) {
+        return false;
+    }
+    static const uint8_t days_per_month[] = {
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+    };
+    unsigned days = days_per_month[month - 1];
+    if (month == 2 && (year % 4) == 0) {
+        ++days;
+    }
+    if (day < 1 || day > days) {
         return false;
     }
 
@@ -308,6 +387,167 @@ static int command_irq_test(int argc, char **argv)
     return passed ? ESP_OK : (error != ESP_OK ? error : ESP_FAIL);
 }
 
+static void rtc_alarm_shared_irq(void *arg)
+{
+    *(volatile bool *)arg = true;
+}
+
+static int command_rtc_alarm_test(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    bsp_rtc_time_t now;
+    bsp_rtc_status_t status;
+    esp_err_t error = bsp_rtc_get_time(&now, &status);
+    if (error != ESP_OK) {
+        report_error(FACTORY_TEST_RTC_ALARM, error, "RX8130CE read failed");
+        return error;
+    }
+
+    /* The RX8130CE compares minute/hour/day fields only; the fastest
+     * self-contained check targets the next minute boundary. */
+    bsp_rtc_alarm_t alarm = {0};
+    alarm.minute_en = true;
+    alarm.minute = (uint8_t)((now.minute + 1) % 60);
+
+    volatile bool irq_seen = false;
+    uint8_t cleared = 0;
+    bsp_shared_irq_status_t serviced;
+    /* Drain stale PMIC/RTC flags so a fresh alarm can assert the line. */
+    error = bsp_shared_irq_service(&serviced);
+    if (error == ESP_OK) {
+        error = bsp_shared_irq_register_callback(rtc_alarm_shared_irq,
+                                                 (void *)&irq_seen);
+    }
+    if (error == ESP_OK) {
+        error = bsp_rtc_set_alarm(&alarm);
+    }
+    if (error == ESP_OK) {
+        error = bsp_rtc_alarm_irq_enable(true);
+    }
+
+    bool fired = false;
+    unsigned wait_s = 0;
+    if (error == ESP_OK) {
+        /* Re-read the clock: some seconds may have passed since "now". */
+        if (bsp_rtc_get_time(&now, &status) != ESP_OK) {
+            now.second = 0;
+        }
+        wait_s = 60u - now.second + 8u;
+        printf("Waiting up to %u s for the alarm at minute=%02u\n",
+               wait_s, alarm.minute);
+        const int64_t deadline = esp_timer_get_time() + (int64_t)wait_s * 1000000;
+        while (esp_timer_get_time() < deadline) {
+            if (bsp_rtc_get_status(&status) == ESP_OK && status.alarm) {
+                fired = true;
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(RTC_ALARM_POLL_MS));
+        }
+    }
+
+    const bsp_rtc_alarm_t disarm = {0};
+    bsp_rtc_alarm_irq_enable(false);
+    bsp_rtc_set_alarm(&disarm);
+    bsp_rtc_clear_interrupt_flags(&cleared);
+    bsp_shared_irq_register_callback(NULL, NULL);
+
+    if (error != ESP_OK) {
+        report_error(FACTORY_TEST_RTC_ALARM, error, "RX8130CE alarm setup failed");
+        return error;
+    }
+    char detail[96];
+    snprintf(detail, sizeof(detail), "minute=%02u %s shared_irq_edge=%s",
+             alarm.minute, fired ? "fired" : "no flag within timeout",
+             irq_seen ? "yes" : "no");
+    factory_report_set(FACTORY_TEST_RTC_ALARM,
+                       fired ? FACTORY_STATUS_PASS : FACTORY_STATUS_FAIL,
+                       detail);
+    factory_report_print_one(FACTORY_TEST_RTC_ALARM);
+    return fired ? ESP_OK : ESP_FAIL;
+}
+
+static bool wait_button_pulse(int gpio, unsigned timeout_s)
+{
+    /* Polarity-independent: a press is the non-idle level held for at least
+     * 30 ms, followed by a release back to idle. */
+    const int idle = gpio_get_level(gpio);
+    const int64_t deadline = esp_timer_get_time() + (int64_t)timeout_s * 1000000;
+    while (esp_timer_get_time() < deadline) {
+        if (gpio_get_level(gpio) == idle) {
+            vTaskDelay(pdMS_TO_TICKS(5));
+            continue;
+        }
+        const int64_t press_start = esp_timer_get_time();
+        while (gpio_get_level(gpio) != idle &&
+                esp_timer_get_time() < deadline) {
+            if (esp_timer_get_time() - press_start >= 30000) {
+                while (gpio_get_level(gpio) != idle &&
+                        esp_timer_get_time() < deadline) {
+                    vTaskDelay(pdMS_TO_TICKS(5));
+                }
+                return true;
+            }
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+    }
+    return false;
+}
+
+static int command_buttons_test(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    const gpio_config_t boot = {
+        .pin_bit_mask = 1ULL << BOOT_BUTTON_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE, /* external 10k pull-up on EVT1 */
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t error = gpio_config(&boot);
+    if (error != ESP_OK) {
+        report_error(FACTORY_TEST_BUTTONS, error, "BOOT key GPIO setup failed");
+        return error;
+    }
+
+    printf("Press and release the BOOT key within %u s\n", BUTTON_TEST_TIMEOUT_S);
+    const bool boot_seen = wait_button_pulse(BOOT_BUTTON_GPIO, BUTTON_TEST_TIMEOUT_S);
+    printf("BOOT key %s\n", boot_seen ? "detected" : "not detected");
+
+    bool power_seen = false;
+    uint8_t pmic_irq[3] = {0};
+    if (error == ESP_OK) {
+        printf("Short-press the PWR key within %u s; "
+               "a long press powers the board off\n", BUTTON_TEST_TIMEOUT_S);
+        error = bsp_pmic_get_and_clear_interrupts(pmic_irq);
+    }
+    const int64_t deadline = esp_timer_get_time() + (int64_t)BUTTON_TEST_TIMEOUT_S * 1000000;
+    while (error == ESP_OK && !power_seen && esp_timer_get_time() < deadline) {
+        error = bsp_pmic_get_and_clear_interrupts(pmic_irq);
+        if (error == ESP_OK && (pmic_irq[0] & TG28_POWER_KEY_IRQ_MASK) != 0) {
+            power_seen = true;
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    printf("PWR key %s\n", power_seen ? "detected" : "not detected");
+
+    if (error != ESP_OK) {
+        report_error(FACTORY_TEST_BUTTONS, error, "TG28_SW interrupt read failed");
+        return error;
+    }
+    char detail[96];
+    snprintf(detail, sizeof(detail), "boot=%s power=%s",
+             boot_seen ? "yes" : "no", power_seen ? "yes" : "no");
+    const bool passed = boot_seen && power_seen;
+    factory_report_set(FACTORY_TEST_BUTTONS,
+                       passed ? FACTORY_STATUS_PASS : FACTORY_STATUS_FAIL,
+                       detail);
+    factory_report_print_one(FACTORY_TEST_BUTTONS);
+    return passed ? ESP_OK : ESP_FAIL;
+}
+
 static int command_type_c_test(int argc, char **argv)
 {
     (void)argc;
@@ -318,14 +558,35 @@ static int command_type_c_test(int argc, char **argv)
         report_error(FACTORY_TEST_TYPE_C, error, "FUSB303B read failed");
         return error;
     }
+    printf("addr=0x%02x id=0x%02x type=0x%02x attached=%s vbus=%s orientation=%u\n",
+           status.i2c_address, status.device_id, status.device_type,
+           status.attached ? "yes" : "no", status.vbus_ok ? "yes" : "no",
+           status.orientation);
+
+    factory_status_t result = FACTORY_STATUS_PASS;
+    const char *verdict;
+    if (status.device_type != FUSB303B_EXPECTED_DEVICE_TYPE) {
+        result = FACTORY_STATUS_WARN;
+        verdict = "unexpected FUSB303B device_type";
+    } else if (status.attached && (status.orientation == 1 || status.orientation == 2)) {
+        verdict = status.vbus_ok ? "cable attached, vbus ok" : "cable attached, no vbus";
+    } else if (!status.attached && status.orientation == 0) {
+        verdict = "no cable attached";
+    } else {
+        /* Attached without a valid CC orientation, or a stale orientation
+         * with nothing attached: the CC detection path is suspect. */
+        result = FACTORY_STATUS_WARN;
+        verdict = status.attached ? "attached but orientation unknown"
+                                  : "detached but orientation not cleared";
+    }
+
     char detail[96];
-    snprintf(detail, sizeof(detail), "addr=0x%02x id=0x%02x type=0x%02x attached=%s vbus=%s orientation=%u",
-             status.i2c_address, status.device_id, status.device_type,
-             status.attached ? "yes" : "no", status.vbus_ok ? "yes" : "no",
-             status.orientation);
-    factory_report_set(FACTORY_TEST_TYPE_C, FACTORY_STATUS_PASS, detail);
+    snprintf(detail, sizeof(detail), "%s (type=0x%02x attached=%s vbus=%s orientation=%u)",
+             verdict, status.device_type, status.attached ? "yes" : "no",
+             status.vbus_ok ? "yes" : "no", status.orientation);
+    factory_report_set(FACTORY_TEST_TYPE_C, result, detail);
     factory_report_print_one(FACTORY_TEST_TYPE_C);
-    return ESP_OK;
+    return result == FACTORY_STATUS_FAIL ? ESP_FAIL : ESP_OK;
 }
 
 static int command_otg(int argc, char **argv)
@@ -379,23 +640,50 @@ static esp_err_t ensure_display_started(void)
     return s_display != NULL ? ESP_OK : ESP_FAIL;
 }
 
-static int command_display_test(int argc, char **argv)
+static esp_err_t show_display_pattern(void)
 {
-    (void)argc;
-    (void)argv;
     if (ensure_display_started() != ESP_OK) {
-        report_error(FACTORY_TEST_DISPLAY, ESP_FAIL, "display initialization failed");
         return ESP_FAIL;
     }
     if (!bsp_display_lock(1000)) {
-        report_error(FACTORY_TEST_DISPLAY, ESP_ERR_TIMEOUT, "LVGL lock failed");
         return ESP_ERR_TIMEOUT;
     }
     create_display_pattern();
     bsp_display_unlock();
-    factory_report_set(FACTORY_TEST_DISPLAY, FACTORY_STATUS_NOT_RUN,
-                       "color pattern active; inspect panel then use mark");
-    factory_report_print_one(FACTORY_TEST_DISPLAY);
+    return ESP_OK;
+}
+
+static void record_operator_verdict(factory_test_id_t test, char answer,
+                                    const char *pass_detail,
+                                    const char *fail_detail,
+                                    const char *pending_detail)
+{
+    if (answer == 'y') {
+        factory_report_set(test, FACTORY_STATUS_PASS, pass_detail);
+    } else if (answer == 'n') {
+        factory_report_set(test, FACTORY_STATUS_FAIL, fail_detail);
+    } else {
+        factory_report_set(test, FACTORY_STATUS_NOT_RUN, pending_detail);
+    }
+    factory_report_print_one(test);
+}
+
+static int command_display_test(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    const esp_err_t error = show_display_pattern();
+    if (error != ESP_OK) {
+        report_error(FACTORY_TEST_DISPLAY, error, "display start/lock failed");
+        return error;
+    }
+    const char answer = factory_console_ask_operator(
+                            "display", "Four-color pattern visible and correct?",
+                            OPERATOR_PROMPT_TIMEOUT_S);
+    record_operator_verdict(FACTORY_TEST_DISPLAY, answer,
+                            "operator confirmed color pattern",
+                            "operator rejected color pattern",
+                            "color pattern active; inspect panel then use mark");
     return ESP_OK;
 }
 
@@ -439,11 +727,106 @@ static int command_display_wake(int argc, char **argv)
            bsp_display_exit_sleep();
 }
 
+static int command_display_sleep_test(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    if (ensure_display_started() != ESP_OK) {
+        report_error(FACTORY_TEST_DISPLAY_SLEEP, ESP_FAIL,
+                     "display initialization failed");
+        return ESP_FAIL;
+    }
+
+    static const struct {
+        esp_err_t (*enter)(void);
+        esp_err_t (*leave)(void);
+        const char *name;
+    } stages[] = {
+        { bsp_display_enter_sleep, bsp_display_exit_sleep, "sleep" },
+        { bsp_display_enter_deep_standby, bsp_display_exit_deep_standby,
+          "deep standby" },
+    };
+
+    unsigned confirmed = 0;
+    for (unsigned index = 0; index < sizeof(stages) / sizeof(stages[0]); ++index) {
+        esp_err_t error = show_display_pattern();
+        if (error == ESP_OK) {
+            error = stages[index].enter();
+        }
+        if (error != ESP_OK) {
+            report_error(FACTORY_TEST_DISPLAY_SLEEP, error,
+                         stages[index].name);
+            return error;
+        }
+
+        char question[96];
+        snprintf(question, sizeof(question), "%s: did the panel go dark?",
+                 stages[index].name);
+        char answer = factory_console_ask_operator("display_sleep", question,
+                                                   OPERATOR_PROMPT_TIMEOUT_S);
+        error = stages[index].leave();
+        if (error != ESP_OK) {
+            report_error(FACTORY_TEST_DISPLAY_SLEEP, error,
+                         stages[index].name);
+            return error;
+        }
+        if (answer == 'n') {
+            char detail[96];
+            snprintf(detail, sizeof(detail),
+                     "operator reports panel stayed on in %s",
+                     stages[index].name);
+            factory_report_set(FACTORY_TEST_DISPLAY_SLEEP, FACTORY_STATUS_FAIL,
+                               detail);
+            factory_report_print_one(FACTORY_TEST_DISPLAY_SLEEP);
+            return ESP_FAIL;
+        }
+        if (answer == 'y') {
+            ++confirmed;
+        }
+
+        error = show_display_pattern();
+        if (error != ESP_OK) {
+            report_error(FACTORY_TEST_DISPLAY_SLEEP, error, "pattern redraw failed");
+            return error;
+        }
+        snprintf(question, sizeof(question), "%s: did the pattern return?",
+                 stages[index].name);
+        answer = factory_console_ask_operator("display_sleep", question,
+                                              OPERATOR_PROMPT_TIMEOUT_S);
+        if (answer == 'n') {
+            char detail[96];
+            snprintf(detail, sizeof(detail),
+                     "operator reports no recovery after %s", stages[index].name);
+            factory_report_set(FACTORY_TEST_DISPLAY_SLEEP, FACTORY_STATUS_FAIL,
+                               detail);
+            factory_report_print_one(FACTORY_TEST_DISPLAY_SLEEP);
+            return ESP_FAIL;
+        }
+        if (answer == 'y') {
+            ++confirmed;
+        }
+    }
+
+    char detail[96];
+    if (confirmed == 4) {
+        snprintf(detail, sizeof(detail),
+                 "sleep and deep standby cycles visually confirmed");
+        factory_report_set(FACTORY_TEST_DISPLAY_SLEEP, FACTORY_STATUS_PASS, detail);
+    } else {
+        snprintf(detail, sizeof(detail), "confirmed=%u/4; use mark", confirmed);
+        factory_report_set(FACTORY_TEST_DISPLAY_SLEEP, FACTORY_STATUS_NOT_RUN,
+                           detail);
+    }
+    factory_report_print_one(FACTORY_TEST_DISPLAY_SLEEP);
+    return ESP_OK;
+}
+
 static int command_touch_test(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
-    if (s_display == NULL && command_display_test(0, NULL) != ESP_OK) {
+    if (s_display == NULL && show_display_pattern() != ESP_OK) {
+        report_error(FACTORY_TEST_TOUCH, ESP_FAIL, "display initialization failed");
         return ESP_FAIL;
     }
     lv_indev_t *input = bsp_display_get_input_dev();
@@ -508,9 +891,13 @@ static int command_led_test(int argc, char **argv)
         vTaskDelay(pdMS_TO_TICKS(700));
     }
     led_indicator_set_on_off(s_led, false);
-    factory_report_set(FACTORY_TEST_RGB_LED, FACTORY_STATUS_NOT_RUN,
-                       "red green blue sequence sent; inspect LED then use mark");
-    factory_report_print_one(FACTORY_TEST_RGB_LED);
+    const char answer = factory_console_ask_operator(
+                            "rgb_led", "Did the LED cycle red, green, blue?",
+                            OPERATOR_PROMPT_TIMEOUT_S);
+    record_operator_verdict(FACTORY_TEST_RGB_LED, answer,
+                            "operator confirmed red green blue sequence",
+                            "operator rejected the LED sequence",
+                            "red green blue sequence sent; inspect LED then use mark");
     return ESP_OK;
 }
 
@@ -592,7 +979,7 @@ static int command_speaker_test(int argc, char **argv)
     if (result == ESP_CODEC_DEV_OK) {
         result = esp_codec_dev_set_out_vol(speaker, 30);
     }
-    int16_t samples[AUDIO_FRAME_COUNT * 2];
+    static int16_t samples[AUDIO_FRAME_COUNT * 2];
     for (unsigned frame = 0; frame < AUDIO_FRAME_COUNT; ++frame) {
         const int16_t value = (frame % (AUDIO_SAMPLE_RATE / 880)) <
                               (AUDIO_SAMPLE_RATE / 1760) ? 2200 : -2200;
@@ -607,9 +994,13 @@ static int command_speaker_test(int argc, char **argv)
         report_error(FACTORY_TEST_SPEAKER, result, "speaker write failed");
         return result;
     }
-    factory_report_set(FACTORY_TEST_SPEAKER, FACTORY_STATUS_NOT_RUN,
-                       "tone sent; confirm sound then use mark");
-    factory_report_print_one(FACTORY_TEST_SPEAKER);
+    const char answer = factory_console_ask_operator(
+                            "speaker", "Did you hear the tone?",
+                            OPERATOR_PROMPT_TIMEOUT_S);
+    record_operator_verdict(FACTORY_TEST_SPEAKER, answer,
+                            "operator confirmed the tone",
+                            "operator did not hear the tone",
+                            "tone sent; confirm sound then use mark");
     return ESP_OK;
 }
 
@@ -627,7 +1018,7 @@ static int command_microphone_test(int argc, char **argv)
     if (result == ESP_CODEC_DEV_OK) {
         result = esp_codec_dev_set_in_gain(microphone, 24.0f);
     }
-    int16_t samples[AUDIO_FRAME_COUNT * 2];
+    static int16_t samples[AUDIO_FRAME_COUNT * 2];
     uint16_t peak = 0;
     for (unsigned block = 0; result == ESP_CODEC_DEV_OK && block < 20; ++block) {
         result = esp_codec_dev_read(microphone, samples, sizeof(samples));
@@ -649,37 +1040,179 @@ static int command_microphone_test(int argc, char **argv)
     return passed ? ESP_OK : (result != ESP_CODEC_DEV_OK ? result : ESP_FAIL);
 }
 
+static uint32_t camera_frame_crc(const uint8_t *pixels, uint32_t length,
+                                 bool *uniform)
+{
+    /* Sample one byte every 4 KiB: enough to catch a blank or frozen pipe
+     * without adding a full-frame pass to a 10 fps capture. */
+    uint32_t crc = 5381;
+    const uint8_t first = pixels[0];
+    *uniform = true;
+    for (uint32_t offset = 0; offset < length; offset += 4096) {
+        crc = crc * 33 + pixels[offset];
+        if (pixels[offset] != first) {
+            *uniform = false;
+        }
+    }
+    return crc;
+}
+
 static int command_camera_test(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
+
     esp_err_t error = bsp_camera_start(NULL);
+    int file = -1;
     if (error == ESP_OK) {
-        const int file = open(BSP_CAMERA_DEVICE, O_RDONLY);
+        file = open(BSP_CAMERA_DEVICE, O_RDONLY);
         if (file < 0) {
             error = ESP_ERR_NOT_FOUND;
-        } else {
-            close(file);
         }
+    }
+
+    const int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    struct v4l2_format format = {0};
+    format.type = type;
+    uint8_t *buffers[CAMERA_BUFFER_COUNT] = {NULL};
+    uint32_t buffer_lengths[CAMERA_BUFFER_COUNT] = {0};
+    bool streaming = false;
+    unsigned frames = 0;
+    uint32_t frame_bytes = 0;
+    bool size_ok = true;
+    bool content_ok = true;
+    bool change_seen = false;
+    bool have_previous = false;
+    uint32_t previous_crc = 0;
+
+    if (error == ESP_OK && ioctl(file, VIDIOC_G_FMT, &format) != 0) {
+        /* No driver default: request the EVT1 sensor format explicitly. */
+        memset(&format, 0, sizeof(format));
+        format.type = type;
+        format.fmt.pix.width = 800;
+        format.fmt.pix.height = 600;
+        format.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB565X;
+        if (ioctl(file, VIDIOC_S_FMT, &format) != 0) {
+            error = ESP_FAIL;
+        }
+    }
+
+    if (error == ESP_OK) {
+        struct v4l2_requestbuffers request = {0};
+        request.count = CAMERA_BUFFER_COUNT;
+        request.type = type;
+        request.memory = V4L2_MEMORY_MMAP;
+        if (ioctl(file, VIDIOC_REQBUFS, &request) != 0) {
+            error = ESP_FAIL;
+        }
+    }
+    for (int index = 0; error == ESP_OK && index < CAMERA_BUFFER_COUNT; ++index) {
+        struct v4l2_buffer query = {0};
+        query.type = type;
+        query.memory = V4L2_MEMORY_MMAP;
+        query.index = index;
+        if (ioctl(file, VIDIOC_QUERYBUF, &query) != 0) {
+            error = ESP_FAIL;
+            break;
+        }
+        buffers[index] = mmap(NULL, query.length, PROT_READ | PROT_WRITE,
+                              MAP_SHARED, file, query.m.offset);
+        if (buffers[index] == MAP_FAILED) {
+            buffers[index] = NULL;
+            error = ESP_FAIL;
+            break;
+        }
+        buffer_lengths[index] = query.length;
+        if (ioctl(file, VIDIOC_QBUF, &query) != 0) {
+            error = ESP_FAIL;
+            break;
+        }
+    }
+    if (error == ESP_OK) {
+        if (ioctl(file, VIDIOC_STREAMON, &type) != 0) {
+            error = ESP_FAIL;
+        } else {
+            streaming = true;
+        }
+    }
+
+    while (error == ESP_OK && frames < CAMERA_CAPTURE_FRAMES) {
+        struct v4l2_buffer done = {0};
+        done.type = type;
+        done.memory = V4L2_MEMORY_MMAP;
+        /* DQBUF blocks until the 10 fps sensor delivers the next frame. */
+        if (ioctl(file, VIDIOC_DQBUF, &done) != 0) {
+            error = ESP_ERR_TIMEOUT;
+            break;
+        }
+        if ((done.flags & V4L2_BUF_FLAG_DONE) != 0 && done.index < CAMERA_BUFFER_COUNT) {
+            const uint32_t expected = format.fmt.pix.width * format.fmt.pix.height * 2;
+            if (done.bytesused != expected || done.bytesused > buffer_lengths[done.index]) {
+                size_ok = false;
+            } else {
+                bool uniform = true;
+                const uint32_t crc = camera_frame_crc(buffers[done.index],
+                                                      done.bytesused, &uniform);
+                if (uniform) {
+                    content_ok = false;
+                }
+                if (have_previous && crc != previous_crc) {
+                    change_seen = true;
+                }
+                previous_crc = crc;
+                have_previous = true;
+                frame_bytes = done.bytesused;
+            }
+            ++frames;
+        }
+        if (ioctl(file, VIDIOC_QBUF, &done) != 0) {
+            error = ESP_FAIL;
+            break;
+        }
+    }
+
+    if (streaming) {
+        ioctl(file, VIDIOC_STREAMOFF, &type);
+    }
+    for (int index = 0; index < CAMERA_BUFFER_COUNT; ++index) {
+        if (buffers[index] != NULL) {
+            munmap(buffers[index], buffer_lengths[index]);
+        }
+    }
+    if (file >= 0) {
+        close(file);
     }
     const esp_err_t stop_error = bsp_camera_stop();
     if (error == ESP_OK && stop_error != ESP_OK) {
         error = stop_error;
     }
+
     if (error != ESP_OK) {
-        report_error(FACTORY_TEST_CAMERA, error, "camera probe failed");
+        report_error(FACTORY_TEST_CAMERA, error, "camera capture failed");
         return error;
     }
-    factory_report_set(FACTORY_TEST_CAMERA, FACTORY_STATUS_PASS,
-                       "sensor probed and DVP video node opened");
+    const bool pass = frames >= 3 && size_ok && content_ok && change_seen;
+    /* A stream that delivers valid but identical frames is suspect, not
+     * conclusive: flag it for the operator instead of failing outright. */
+    const factory_status_t result = pass ? FACTORY_STATUS_PASS :
+                                    frames >= 3 && size_ok && content_ok ?
+                                    FACTORY_STATUS_WARN : FACTORY_STATUS_FAIL;
+    char detail[96];
+    snprintf(detail, sizeof(detail),
+             "%ux%u frames=%u bytes=%" PRIu32 "%s%s",
+             (unsigned)format.fmt.pix.width, (unsigned)format.fmt.pix.height,
+             frames, frame_bytes,
+             size_ok ? "" : " bad_size", content_ok ? "" : " blank");
+    factory_report_set(FACTORY_TEST_CAMERA, result, detail);
     factory_report_print_one(FACTORY_TEST_CAMERA);
-    return ESP_OK;
+    return result == FACTORY_STATUS_FAIL ? ESP_FAIL : ESP_OK;
 }
 
 static bool test_accepts_manual_result(factory_test_id_t test)
 {
     return test == FACTORY_TEST_DISPLAY || test == FACTORY_TEST_RGB_LED ||
-           test == FACTORY_TEST_SPEAKER;
+           test == FACTORY_TEST_SPEAKER || test == FACTORY_TEST_BUTTONS ||
+           test == FACTORY_TEST_DISPLAY_SLEEP;
 }
 
 static int command_mark(int argc, char **argv)
@@ -727,23 +1260,27 @@ esp_err_t factory_peripherals_register(void)
     const esp_console_cmd_t commands[] = {
         {.command = "pmic_test", .help = "Read TG28_SW identity, battery, VBUS, and charge state.", .func = command_pmic_test},
         {.command = "pmic", .help = "Read boot source or inspect/set the charge current.", .func = command_pmic},
+        {.command = "charge_test", .help = "Check VBUS presence and charger activity on the TG28_SW.", .func = command_charge_test},
         {.command = "rail", .help = "Inspect or explicitly control one TG28_SW rail.", .func = command_rail},
         {.command = "peripheral_power", .help = "Apply a complete peripheral power sequence.", .func = command_peripheral_power},
         {.command = "rtc_test", .help = "Read RX8130CE time and retained status flags.", .func = command_rtc_test},
         {.command = "rtc_set", .help = "Set and verify RX8130CE time: rtc_set YYYY-MM-DD HH:MM:SS WEEKDAY.", .func = command_rtc_set},
+        {.command = "rtc_alarm", .help = "Fire an RX8130CE alarm at the next minute and check the flag.", .func = command_rtc_alarm_test},
         {.command = "irq_test", .help = "Service and verify the shared PMIC/RTC interrupt line.", .func = command_irq_test},
+        {.command = "buttons", .help = "Wait for BOOT (GPIO61) and PWR (TG28_SW IRQ) key presses.", .func = command_buttons_test},
         {.command = "typec_test", .help = "Read FUSB303B connection state without changing its role.", .func = command_type_c_test},
         {.command = "otg", .help = "Explicitly enable or disable USB source power.", .func = command_otg},
         {.command = "display_test", .help = "Show a four-color AMOLED inspection pattern.", .func = command_display_test},
         {.command = "display_brightness", .help = "Set AMOLED brightness from 0 to 100 percent.", .func = command_display_brightness},
         {.command = "display_sleep", .help = "Enter AMOLED sleep or deep standby: display_sleep [deep].", .func = command_display_sleep},
         {.command = "display_wake", .help = "Wake AMOLED from sleep or deep standby: display_wake [deep].", .func = command_display_wake},
+        {.command = "display_sleep_test", .help = "Cycle AMOLED sleep and deep standby with operator checks.", .func = command_display_sleep_test},
         {.command = "touch_test", .help = "Require a touch in all four display quadrants.", .func = command_touch_test},
         {.command = "led_test", .help = "Show red, green, and blue on the addressable LED.", .func = command_led_test},
         {.command = "sdcard_test", .help = "Mount, write, verify, remove, and unmount a test file.", .func = command_sdcard_test},
         {.command = "speaker_test", .help = "Play a short low-level square-wave tone.", .func = command_speaker_test},
         {.command = "microphone_test", .help = "Capture audio and check for a non-zero signal.", .func = command_microphone_test},
-        {.command = "camera_test", .help = "Probe the DVP sensor and open its ESP Video node.", .func = command_camera_test},
+        {.command = "camera_test", .help = "Capture DVP frames and verify size, content, and motion.", .func = command_camera_test},
         {.command = "mark", .help = "Record a manual result: mark TEST pass|fail|skip [detail].", .func = command_mark},
     };
     for (size_t index = 0; index < sizeof(commands) / sizeof(commands[0]); ++index) {

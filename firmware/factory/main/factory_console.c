@@ -6,17 +6,29 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
+#include <unistd.h>
 
 #include "bsp/esp-bsp.h"
 #include "driver/i2c_master.h"
 #include "esp_app_desc.h"
 #include "esp_chip_info.h"
 #include "esp_console.h"
+#include "esp_event.h"
 #include "esp_flash.h"
 #include "esp_heap_caps.h"
+#include "esp_mac.h"
+#include "esp_netif.h"
 #include "esp_psram.h"
 #include "esp_system.h"
+#include "esp_timer.h"
+#include "esp_wifi.h"
+#include "nvs_flash.h"
 #include "sdkconfig.h"
+
+#if CONFIG_BT_ENABLED
+#include "esp_bt.h"
+#endif
 
 #include "factory_console.h"
 #include "factory_peripherals.h"
@@ -61,9 +73,18 @@ static int command_board_info(int argc, char **argv)
 
     esp_chip_info_t chip_info;
     uint32_t flash_size = 0;
+    uint8_t base_mac[6] = {0};
     esp_chip_info(&chip_info);
     const esp_app_desc_t *app = esp_app_get_description();
     const esp_err_t flash_err = esp_flash_get_size(NULL, &flash_size);
+    const esp_err_t mac_err = esp_read_mac(base_mac, ESP_MAC_WIFI_STA);
+
+    char mac_text[18] = "unavailable";
+    if (mac_err == ESP_OK) {
+        snprintf(mac_text, sizeof(mac_text), "%02x:%02x:%02x:%02x:%02x:%02x",
+                 base_mac[0], base_mac[1], base_mac[2],
+                 base_mac[3], base_mac[4], base_mac[5]);
+    }
 
     printf("board=%s\n", BSP_BOARD_NAME);
     printf("board_revision=%s\n", BSP_BOARD_REVISION);
@@ -71,6 +92,7 @@ static int command_board_info(int argc, char **argv)
     printf("idf_version=%s\n", app->idf_ver);
     printf("app_version=%s\n", app->version);
     printf("bsp_revision=%s\n", CANDIS_S31_BSP_GIT_REV);
+    printf("base_mac=%s\n", mac_text);
     printf("cores=%u\n", (unsigned)chip_info.cores);
     printf("silicon_revision=%u.%u\n",
            (unsigned)(chip_info.revision / 100),
@@ -79,12 +101,214 @@ static int command_board_info(int argc, char **argv)
     printf("flash_bytes=%" PRIu32 "\n", flash_err == ESP_OK ? flash_size : 0);
     printf("psram_bytes=%zu\n", esp_psram_get_size());
     printf("free_internal_heap=%zu\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-    printf("FACTORY_INFO {\"board\":\"%s\",\"board_revision\":\"%s\","
-           "\"target\":\"%s\",\"idf\":\"%s\",\"app\":\"%s\","
-           "\"bsp\":\"%s\",\"reset\":\"%s\"}\n",
-           BSP_BOARD_NAME, BSP_BOARD_REVISION, CONFIG_IDF_TARGET, app->idf_ver,
-           app->version, CANDIS_S31_BSP_GIT_REV, reset_reason_name(esp_reset_reason()));
+    fputs("FACTORY_INFO {\"board\":", stdout);
+    factory_report_print_json_string(BSP_BOARD_NAME);
+    fputs(",\"board_revision\":", stdout);
+    factory_report_print_json_string(BSP_BOARD_REVISION);
+    fputs(",\"target\":", stdout);
+    factory_report_print_json_string(CONFIG_IDF_TARGET);
+    fputs(",\"idf\":", stdout);
+    factory_report_print_json_string(app->idf_ver);
+    fputs(",\"app\":", stdout);
+    factory_report_print_json_string(app->version);
+    fputs(",\"bsp\":", stdout);
+    factory_report_print_json_string(CANDIS_S31_BSP_GIT_REV);
+    fputs(",\"mac\":", stdout);
+    factory_report_print_json_string(mac_text);
+    fputs(",\"reset\":", stdout);
+    factory_report_print_json_string(reset_reason_name(esp_reset_reason()));
+    fputs("}\n", stdout);
     return ESP_OK;
+}
+
+char factory_console_ask_operator(const char *test_name, const char *question,
+                                  unsigned timeout_s)
+{
+    /* Discard anything typed while the test itself was running. */
+    char discard[32];
+    for (;;) {
+        fd_set read_set;
+        FD_ZERO(&read_set);
+        FD_SET(STDIN_FILENO, &read_set);
+        struct timeval no_wait = {.tv_sec = 0, .tv_usec = 0};
+        if (select(STDIN_FILENO + 1, &read_set, NULL, NULL, &no_wait) <= 0) {
+            break;
+        }
+        if (read(STDIN_FILENO, discard, sizeof(discard)) <= 0) {
+            break;
+        }
+    }
+
+    fputs("FACTORY_PROMPT {\"test\":", stdout);
+    factory_report_print_json_string(test_name);
+    fputs(",\"question\":", stdout);
+    factory_report_print_json_string(question);
+    printf(",\"timeout_s\":%u}\n", timeout_s);
+    printf("%s [y=yes n=no s=skip, %us] ", question, timeout_s);
+    fflush(stdout);
+
+    const int64_t deadline = esp_timer_get_time() + (int64_t)timeout_s * 1000000;
+    while (esp_timer_get_time() < deadline) {
+        fd_set read_set;
+        FD_ZERO(&read_set);
+        FD_SET(STDIN_FILENO, &read_set);
+        struct timeval slice = {.tv_sec = 0, .tv_usec = 100000};
+        if (select(STDIN_FILENO + 1, &read_set, NULL, NULL, &slice) <= 0) {
+            continue;
+        }
+        char answer = '\0';
+        if (read(STDIN_FILENO, &answer, 1) != 1) {
+            continue;
+        }
+        switch (answer) {
+        case 'y':
+        case 'Y':
+        case 'n':
+        case 'N':
+        case 's':
+        case 'S':
+            answer = (char)(answer | 0x20);
+            printf("%c\n", answer);
+            fflush(stdout);
+            return answer;
+        default:
+            break;
+        }
+    }
+    printf("no answer within %us\n", timeout_s);
+    return 0;
+}
+
+static esp_err_t ensure_nvs(void)
+{
+    esp_err_t error = nvs_flash_init();
+    if (error == ESP_ERR_NVS_NO_FREE_PAGES ||
+            error == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        if (nvs_flash_erase() == ESP_OK) {
+            error = nvs_flash_init();
+        }
+    }
+    return error;
+}
+
+static int command_wifi_scan(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+
+    esp_err_t error = ensure_nvs();
+    if (error == ESP_OK) {
+        error = esp_netif_init();
+    }
+    if (error == ESP_OK) {
+        error = esp_event_loop_create_default();
+        if (error == ESP_ERR_INVALID_STATE) {
+            error = ESP_OK; /* another test already created the loop */
+        }
+    }
+    esp_netif_t *station = NULL;
+    if (error == ESP_OK) {
+        station = esp_netif_create_default_wifi_sta();
+        if (station == NULL) {
+            error = ESP_FAIL;
+        }
+    }
+    bool started = false;
+    if (error == ESP_OK) {
+        wifi_init_config_t init_config = WIFI_INIT_CONFIG_DEFAULT();
+        error = esp_wifi_init(&init_config);
+    }
+    if (error == ESP_OK) {
+        error = esp_wifi_set_mode(WIFI_MODE_STA);
+    }
+    if (error == ESP_OK) {
+        error = esp_wifi_start();
+        started = error == ESP_OK;
+    }
+
+    uint16_t ap_count = 0;
+    if (error == ESP_OK) {
+        error = esp_wifi_scan_start(NULL, true);
+    }
+    if (error == ESP_OK) {
+        error = esp_wifi_scan_get_ap_num(&ap_count);
+    }
+    wifi_ap_record_t *records = NULL;
+    if (error == ESP_OK && ap_count > 0) {
+        const uint16_t listed = ap_count < 10 ? ap_count : 10;
+        records = calloc(listed, sizeof(*records));
+        uint16_t fetched = listed;
+        if (records != NULL &&
+                esp_wifi_scan_get_ap_records(&fetched, records) == ESP_OK) {
+            for (uint16_t index = 0; index < fetched; ++index) {
+                /* ssid is a fixed 33-byte field, not always NUL-terminated */
+                printf("ap[%u] ssid=%.*s rssi=%d channel=%u\n", index, 32,
+                       (const char *)records[index].ssid, records[index].rssi,
+                       records[index].primary);
+            }
+        }
+        free(records);
+    }
+    if (started) {
+        esp_wifi_stop();
+    }
+    esp_wifi_deinit();
+    if (station != NULL) {
+        esp_netif_destroy_default_wifi(station);
+    }
+
+    char detail[64];
+    if (error != ESP_OK) {
+        snprintf(detail, sizeof(detail), "scan failed: %s", esp_err_to_name(error));
+        factory_report_set(FACTORY_TEST_WIFI, FACTORY_STATUS_FAIL, detail);
+        factory_report_print_one(FACTORY_TEST_WIFI);
+        return error;
+    }
+    snprintf(detail, sizeof(detail), "aps_found=%u", ap_count);
+    factory_report_set(FACTORY_TEST_WIFI,
+                       ap_count > 0 ? FACTORY_STATUS_PASS : FACTORY_STATUS_FAIL,
+                       detail);
+    factory_report_print_one(FACTORY_TEST_WIFI);
+    return ap_count > 0 ? ESP_OK : ESP_FAIL;
+}
+
+static int command_ble_smoke(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+
+#if CONFIG_BT_ENABLED
+    esp_err_t error = ensure_nvs();
+    if (error == ESP_OK) {
+        esp_bt_controller_config_t config = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+        error = esp_bt_controller_init(&config);
+    }
+    if (error == ESP_OK) {
+        error = esp_bt_controller_enable(ESP_BT_MODE_BLE);
+    }
+    if (error == ESP_OK) {
+        esp_bt_controller_disable();
+    }
+    esp_bt_controller_deinit();
+
+    if (error != ESP_OK) {
+        char detail[96];
+        snprintf(detail, sizeof(detail), "BLE controller init/enable failed: %s",
+                 esp_err_to_name(error));
+        factory_report_set(FACTORY_TEST_BLE, FACTORY_STATUS_FAIL, detail);
+        factory_report_print_one(FACTORY_TEST_BLE);
+        return error;
+    }
+    factory_report_set(FACTORY_TEST_BLE, FACTORY_STATUS_PASS,
+                       "BLE controller init enable disable deinit passed");
+    factory_report_print_one(FACTORY_TEST_BLE);
+    return ESP_OK;
+#else
+    factory_report_set(FACTORY_TEST_BLE, FACTORY_STATUS_SKIP,
+                       "built without CONFIG_BT_ENABLED");
+    factory_report_print_one(FACTORY_TEST_BLE);
+    return ESP_OK;
+#endif
 }
 
 static int command_safe_state(int argc, char **argv)
@@ -315,6 +539,16 @@ esp_err_t factory_console_start(void)
             .command = "i2c_scan",
             .help = "Scan one bus: i2c_scan main|lp.",
             .func = command_i2c_scan,
+        },
+        {
+            .command = "wifi_scan",
+            .help = "Scan for Wi-Fi access points in station mode.",
+            .func = command_wifi_scan,
+        },
+        {
+            .command = "ble_smoke",
+            .help = "Initialize and release the BLE controller.",
+            .func = command_ble_smoke,
         },
         {
             .command = "report",

@@ -33,6 +33,12 @@ static factory_result_t s_results[FACTORY_TEST_COUNT] = {
     [FACTORY_TEST_SPEAKER] = {.name = "speaker"},
     [FACTORY_TEST_MICROPHONE] = {.name = "microphone"},
     [FACTORY_TEST_CAMERA] = {.name = "camera"},
+    [FACTORY_TEST_CHARGE] = {.name = "charge"},
+    [FACTORY_TEST_RTC_ALARM] = {.name = "rtc_alarm"},
+    [FACTORY_TEST_BUTTONS] = {.name = "buttons"},
+    [FACTORY_TEST_WIFI] = {.name = "wifi"},
+    [FACTORY_TEST_BLE] = {.name = "ble"},
+    [FACTORY_TEST_DISPLAY_SLEEP] = {.name = "display_sleep"},
 };
 
 static const char *status_name(factory_status_t status)
@@ -44,6 +50,8 @@ static const char *status_name(factory_status_t status)
         return "FAIL";
     case FACTORY_STATUS_SKIP:
         return "SKIP";
+    case FACTORY_STATUS_WARN:
+        return "WARN";
     case FACTORY_STATUS_NOT_RUN:
     default:
         return "NOT_RUN";
@@ -55,7 +63,7 @@ static bool test_is_valid(factory_test_id_t test)
     return test >= 0 && test < FACTORY_TEST_COUNT;
 }
 
-static void print_json_string(const char *value)
+void factory_report_print_json_string(const char *value)
 {
     putchar('"');
     for (const unsigned char *cursor = (const unsigned char *)value;
@@ -104,7 +112,8 @@ void factory_report_init(void)
 
 esp_err_t factory_report_set(factory_test_id_t test, factory_status_t status, const char *detail)
 {
-    if (!test_is_valid(test) || status < FACTORY_STATUS_NOT_RUN || status > FACTORY_STATUS_SKIP) {
+    if (!test_is_valid(test) || status < FACTORY_STATUS_NOT_RUN ||
+            status >= FACTORY_STATUS_COUNT) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -123,17 +132,17 @@ void factory_report_print_one(factory_test_id_t test)
     const factory_result_t *result = &s_results[test];
     printf("%-16s %-8s %s\n", result->name, status_name(result->status), result->detail);
     fputs("FACTORY_RESULT {\"test\":", stdout);
-    print_json_string(result->name);
+    factory_report_print_json_string(result->name);
     fputs(",\"status\":", stdout);
-    print_json_string(status_name(result->status));
+    factory_report_print_json_string(status_name(result->status));
     fputs(",\"detail\":", stdout);
-    print_json_string(result->detail);
+    factory_report_print_json_string(result->detail);
     fputs("}\n", stdout);
 }
 
 void factory_report_print(void)
 {
-    unsigned counts[FACTORY_STATUS_SKIP + 1] = {0};
+    unsigned counts[FACTORY_STATUS_COUNT] = {0};
     for (int test = 0; test < FACTORY_TEST_COUNT; ++test) {
         ++counts[s_results[test].status];
         factory_report_print_one((factory_test_id_t)test);
@@ -142,15 +151,18 @@ void factory_report_print(void)
     factory_status_t overall = FACTORY_STATUS_PASS;
     if (counts[FACTORY_STATUS_FAIL] > 0) {
         overall = FACTORY_STATUS_FAIL;
+    } else if (counts[FACTORY_STATUS_WARN] > 0) {
+        overall = FACTORY_STATUS_WARN;
     } else if (counts[FACTORY_STATUS_NOT_RUN] > 0) {
         overall = FACTORY_STATUS_NOT_RUN;
     }
 
     printf("FACTORY_SUMMARY {\"overall\":\"%s\",\"pass\":%u,\"fail\":%u,"
-           "\"skip\":%u,\"not_run\":%u}\n",
+           "\"warn\":%u,\"skip\":%u,\"not_run\":%u}\n",
            status_name(overall),
            counts[FACTORY_STATUS_PASS],
            counts[FACTORY_STATUS_FAIL],
+           counts[FACTORY_STATUS_WARN],
            counts[FACTORY_STATUS_SKIP],
            counts[FACTORY_STATUS_NOT_RUN]);
 }

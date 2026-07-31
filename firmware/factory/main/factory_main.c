@@ -5,6 +5,9 @@
 #include "bsp/esp-bsp.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "factory_console.h"
 #include "factory_report.h"
@@ -27,6 +30,11 @@ void app_main(void)
 
     const esp_err_t console_err = factory_console_start();
     if (console_err != ESP_OK) {
-        ESP_LOGE(TAG, "Unable to start the factory console: %s", esp_err_to_name(console_err));
+        /* A factory image without a console cannot be driven at all; give
+         * the host a few seconds to read the log, then try again cleanly. */
+        ESP_LOGE(TAG, "Unable to start the factory console: %s; restarting in 5 s",
+                 esp_err_to_name(console_err));
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        esp_restart();
     }
 }

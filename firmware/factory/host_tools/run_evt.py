@@ -1,0 +1,388 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+"""Drive the Candis-S31 factory firmware through the EVT test flow.
+
+The script opens the factory console over UART, sends each test command in a
+fixed order, parses the machine-readable FACTORY_INFO / FACTORY_RESULT /
+FACTORY_PROMPT / FACTORY_SUMMARY lines, forwards operator answers to the
+board, and writes a JSON report plus the complete console log.
+
+Usage:
+    python3 run_evt.py --port /dev/ttyUSB0 [--board-id EVT-0042]
+    python3 run_evt.py --port /dev/ttyUSB0 --non-interactive   # skip prompts
+    python3 run_evt.py --self-test    # pty-based dry run, no hardware
+"""
+
+import argparse
+import datetime
+import json
+import os
+import select
+import sys
+import threading
+import time
+
+import serial
+
+# (command, console timeout in seconds, expected report test name or marker)
+STAGES = [
+    ("board_info", 10, "INFO"),
+    ("safe_state", 10, "safe_state"),
+    ("flash_test", 15, "flash"),
+    ("psram_test", 20, "psram"),
+    ("i2c_scan main", 20, "i2c_main"),
+    ("i2c_scan lp", 20, "i2c_low_power"),
+    ("pmic_test", 10, "pmic"),
+    ("charge_test", 10, "charge"),
+    ("rtc_test", 10, "rtc"),
+    ("rtc_alarm", 80, "rtc_alarm"),  # waits for the next minute boundary
+    ("irq_test", 10, "shared_irq"),
+    ("buttons", 60, "buttons"),  # two operator key presses on the board
+    ("typec_test", 10, "type_c"),
+    ("wifi_scan", 30, "wifi"),
+    ("ble_smoke", 20, "ble"),
+    ("display_test", 45, "display"),
+    ("touch_test", 30, "touch"),
+    ("display_sleep_test", 150, "display_sleep"),  # four operator questions
+    ("led_test", 45, "rgb_led"),
+    ("sdcard_test", 20, "sdcard"),
+    ("speaker_test", 45, "speaker"),
+    ("microphone_test", 30, "microphone"),
+    ("camera_test", 20, "camera"),
+]
+
+RESULT_PREFIX = "FACTORY_RESULT "
+SUMMARY_PREFIX = "FACTORY_SUMMARY "
+INFO_PREFIX = "FACTORY_INFO "
+PROMPT_PREFIX = "FACTORY_PROMPT "
+
+
+def parse_payload(line, prefix):
+    if not line.startswith(prefix):
+        return None
+    try:
+        return json.loads(line[len(prefix):])
+    except json.JSONDecodeError:
+        return None
+
+
+def stdin_answer(question, timeout_s):
+    """Ask the local operator for y/n/s; returns the char or '' on timeout."""
+    print("PROMPT: %s [y/n/s, %ds] " % (question, timeout_s), end="", flush=True)
+    ready, _, _ = select.select([sys.stdin], [], [], timeout_s)
+    if not ready:
+        print("<no answer>")
+        return ""
+    answer = sys.stdin.read(1).lower()
+    print(answer)
+    return answer if answer in "yns" else ""
+
+
+def skip_answer(question, timeout_s):
+    print("PROMPT: %s -> auto 's' (skip)" % question)
+    return "s"
+
+
+class EvtRunner:
+    def __init__(self, ser, out_dir, board_id=None, answer_fn=None,
+                 timeout_cap=None, verbose=True):
+        self.ser = ser
+        self.out_dir = out_dir
+        self.board_id = board_id
+        self.answer_fn = answer_fn if answer_fn is not None else stdin_answer
+        self.timeout_cap = timeout_cap
+        self.verbose = verbose
+        self.log_lines = []
+        self.info = {}
+        self.results = {}
+        self.summary = None
+        self.prompts_answered = []
+
+    def _log(self, line):
+        self.log_lines.append(line)
+        if self.verbose:
+            print(line)
+
+    def _read_line(self, deadline):
+        """Read one CR/LF-terminated line; returns None on timeout."""
+        data = bytearray()
+        while time.monotonic() < deadline:
+            chunk = self.ser.read(1)
+            if not chunk:
+                continue
+            if chunk == b"\r":
+                continue
+            if chunk == b"\n":
+                return data.decode("utf-8", errors="replace")
+            data += chunk
+        return None
+
+    def _handle_prompt(self, payload):
+        question = payload.get("question", "operator check")
+        timeout_s = int(payload.get("timeout_s", 30))
+        answer = self.answer_fn(question, timeout_s)
+        if answer:
+            # The firmware accepts the first y/n/s byte; the trailing CRLF is
+            # ignored by its reader and mirrors a human pressing Enter.
+            self.ser.write(answer.encode("ascii") + b"\r\n")
+            self.prompts_answered.append(
+                {"test": payload.get("test"), "answer": answer})
+
+    def _run_stage(self, command, timeout_s, expect):
+        if self.timeout_cap is not None:
+            timeout_s = min(timeout_s, self.timeout_cap)
+        self._log(">>> " + command)
+        self.ser.write(command.encode("ascii") + b"\r\n")
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            line = self._read_line(deadline)
+            if line is None:
+                break
+            self._log(line)
+            payload = parse_payload(line, PROMPT_PREFIX)
+            if payload is not None:
+                # The board applies its own prompt timeout; answering simply
+                # consumes part of the stage budget.
+                self._handle_prompt(payload)
+                continue
+            payload = parse_payload(line, RESULT_PREFIX)
+            if payload is not None:
+                self.results[payload.get("test", "?")] = payload
+                if expect == payload.get("test"):
+                    return True
+                continue
+            payload = parse_payload(line, INFO_PREFIX)
+            if payload is not None:
+                self.info = payload
+                if expect == "INFO":
+                    return True
+        return False
+
+    def run(self, stages):
+        for command, timeout_s, expect in stages:
+            if not self._run_stage(command, timeout_s, expect) and expect != "INFO":
+                self.results.setdefault(expect, {
+                    "test": expect,
+                    "status": "TIMEOUT",
+                    "detail": "no FACTORY_RESULT within %ds" % timeout_s,
+                })
+                self._log("!!! timeout waiting for %s" % expect)
+
+        self._log(">>> report")
+        self.ser.write(b"report\r\n")
+        deadline = time.monotonic() + (self.timeout_cap or 15)
+        while time.monotonic() < deadline:
+            line = self._read_line(deadline)
+            if line is None:
+                break
+            self._log(line)
+            payload = parse_payload(line, RESULT_PREFIX)
+            if payload is not None:
+                test = payload.get("test", "?")
+                # Keep TIMEOUT markers: those stages never actually ran, and
+                # the board-side report only knows its own NOT_RUN state.
+                if self.results.get(test, {}).get("status") != "TIMEOUT":
+                    self.results[test] = payload
+                continue
+            payload = parse_payload(line, SUMMARY_PREFIX)
+            if payload is not None:
+                self.summary = payload
+                break
+
+        return self._write_report()
+
+    def _write_report(self):
+        board = self.board_id or (
+            self.info.get("mac", "unknown").replace(":", "") or "unknown")
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        os.makedirs(self.out_dir, exist_ok=True)
+        base = os.path.join(self.out_dir, "evt_%s_%s" % (board, stamp))
+        with open(base + ".log", "w", encoding="utf-8") as handle:
+            handle.write("\n".join(self.log_lines) + "\n")
+        report = {
+            "board": board,
+            "timestamp": stamp,
+            "info": self.info,
+            "results": self.results,
+            "summary": self.summary,
+            "prompts_answered": self.prompts_answered,
+        }
+        with open(base + ".json", "w", encoding="utf-8") as handle:
+            json.dump(report, handle, indent=2, sort_keys=True)
+        print("report written to %s.json / %s.log" % (base, base))
+        report["_base"] = base  # consumed by the self test, not persisted
+        return report
+
+
+# ---------------------------------------------------------------------------
+# Self test: a scripted fake firmware on the master side of a pty pair.
+# ---------------------------------------------------------------------------
+
+FAKE_RESPONSES = {
+    "board_info": ['FACTORY_INFO {"board":"Candis-S31","board_revision":"EVT1",'
+                   '"mac":"aa:bb:cc:dd:ee:ff","reset":"power_on"}'],
+    "safe_state": ['FACTORY_RESULT {"test":"safe_state","status":"PASS","detail":"ok"}'],
+    "flash_test": ['FACTORY_RESULT {"test":"flash","status":"PASS","detail":"size=16777216"}'],
+    "psram_test": ['FACTORY_RESULT {"test":"psram","status":"PASS","detail":"tested=65536"}'],
+    "i2c_scan main": ['FACTORY_RESULT {"test":"i2c_main","status":"PASS","detail":"devices=3"}'],
+    "i2c_scan lp": ['FACTORY_RESULT {"test":"i2c_low_power","status":"PASS","detail":"devices=2"}'],
+    "pmic_test": ['FACTORY_RESULT {"test":"pmic","status":"PASS","detail":"id=0x47"}'],
+    "charge_test": ['FACTORY_RESULT {"test":"charge","status":"WARN",'
+                    '"detail":"no vbus; charger path not exercised"}'],
+    "rtc_test": ['FACTORY_RESULT {"test":"rtc","status":"PASS","detail":"valid=yes"}'],
+    "rtc_alarm": ['FACTORY_RESULT {"test":"rtc_alarm","status":"PASS","detail":"fired"}'],
+    "irq_test": ['FACTORY_RESULT {"test":"shared_irq","status":"PASS","detail":"released=yes"}'],
+    "buttons": ['FACTORY_RESULT {"test":"buttons","status":"FAIL","detail":"boot=yes power=no"}'],
+    "typec_test": ['FACTORY_RESULT {"test":"type_c","status":"WARN",'
+                   '"detail":"attached but orientation unknown"}'],
+    "wifi_scan": ['FACTORY_RESULT {"test":"wifi","status":"PASS","detail":"aps_found=4"}'],
+    "ble_smoke": ['FACTORY_RESULT {"test":"ble","status":"PASS","detail":"init ok"}'],
+    "display_test": "PROMPT",      # asks, then scores the forwarded answer
+    "touch_test": ['FACTORY_RESULT {"test":"touch","status":"PASS","detail":"quadrants=0x0f"}'],
+    "display_sleep_test": ['FACTORY_RESULT {"test":"display_sleep","status":"NOT_RUN",'
+                           '"detail":"confirmed=0/4; use mark"}'],
+    "led_test": ['FACTORY_RESULT {"test":"rgb_led","status":"PASS","detail":"confirmed"}'],
+    "sdcard_test": ['FACTORY_RESULT {"test":"sdcard","status":"FAIL","detail":"no card"}'],
+    "speaker_test": ['FACTORY_RESULT {"test":"speaker","status":"PASS","detail":"confirmed"}'],
+    "microphone_test": ['FACTORY_RESULT {"test":"microphone","status":"PASS","detail":"peak=1200"}'],
+    "camera_test": "SILENT",       # exercises the runner timeout path
+}
+
+
+def _self_test():
+    import pty
+    import tempfile
+
+    master_fd, slave_fd = pty.openpty()
+    slave_name = os.ttyname(slave_fd)
+    os.set_blocking(master_fd, False)
+    received_answers = []
+    stop = threading.Event()
+
+    def fake_firmware():
+        buffer = b""
+        while not stop.is_set():
+            try:
+                chunk = os.read(master_fd, 256)
+            except (BlockingIOError, InterruptedError):
+                time.sleep(0.01)
+                continue
+            except OSError:
+                break
+            if not chunk:
+                continue
+            buffer += chunk
+            while b"\n" in buffer:
+                line, buffer = buffer.split(b"\n", 1)
+                command = line.strip().decode("ascii", errors="replace")
+                if len(command) == 1 and command in "yns":
+                    received_answers.append(command)
+                    status = {"y": "PASS", "n": "FAIL"}.get(command, "NOT_RUN")
+                    os.write(master_fd,
+                             ('FACTORY_RESULT {"test":"display","status":"%s",'
+                              '"detail":"operator answered"}\n' % status).encode())
+                    continue
+                response = FAKE_RESPONSES.get(command)
+                if response == "PROMPT":
+                    os.write(master_fd,
+                             b'FACTORY_PROMPT {"test":"display",'
+                             b'"question":"Pattern ok?","timeout_s":5}\n')
+                elif response == "SILENT" or response is None:
+                    if command == "report":
+                        os.write(master_fd,
+                                 b'FACTORY_RESULT {"test":"camera","status":"NOT_RUN",'
+                                 b'"detail":"not executed"}\n'
+                                 b'FACTORY_SUMMARY {"overall":"FAIL","pass":13,'
+                                 b'"fail":2,"warn":2,"skip":0,"not_run":4}\n')
+                else:
+                    for out_line in response:
+                        os.write(master_fd, (out_line + "\n").encode())
+
+    thread = threading.Thread(target=fake_firmware, daemon=True)
+    thread.start()
+
+    ser = serial.Serial(slave_name, 115200, timeout=0.05)
+    with tempfile.TemporaryDirectory() as out_dir:
+        runner = EvtRunner(ser, out_dir, answer_fn=lambda q, t: "y",
+                           timeout_cap=2, verbose=False)
+        report = runner.run(STAGES)
+        base = report.pop("_base")
+
+        results = report["results"]
+        failures = []
+
+        def check(condition, message):
+            if not condition:
+                failures.append(message)
+
+        check(report["board"] == "aabbccddeeff",
+              "board id should come from the FACTORY_INFO MAC, got %r"
+              % report["board"])
+        check(results["flash"]["status"] == "PASS", "flash PASS path broken")
+        check(results["buttons"]["status"] == "FAIL", "buttons FAIL path broken")
+        check(results["charge"]["status"] == "WARN", "charge WARN path broken")
+        check(results["display_sleep"]["status"] == "NOT_RUN",
+              "display_sleep NOT_RUN path broken")
+        check(results["display"]["status"] == "PASS",
+              "prompt y-answer should score display PASS")
+        check(received_answers == ["y"],
+              "prompt answer was not forwarded to the board: %r" % received_answers)
+        check(report["prompts_answered"] == [{"test": "display", "answer": "y"}],
+              "prompts_answered mismatch: %r" % report["prompts_answered"])
+        check(results["camera"]["status"] == "TIMEOUT",
+              "silent camera command should record TIMEOUT, got %r"
+              % results["camera"])
+        check(report["summary"] is not None and
+              report["summary"]["overall"] == "FAIL" and
+              report["summary"]["warn"] == 2,
+              "summary parse failed: %r" % report["summary"])
+        check(os.path.exists(base + ".json") and os.path.exists(base + ".log"),
+              "report files were not written")
+        check(len(results) == len([s for s in STAGES if s[2] != "INFO"]),
+              "expected one result per stage, got %d" % len(results))
+
+    stop.set()
+    ser.close()
+    os.close(master_fd)
+    os.close(slave_fd)
+    thread.join(timeout=2)
+
+    if failures:
+        for failure in failures:
+            print("SELF-TEST FAIL:", failure)
+        return 1
+    print("self-test passed: PASS/FAIL/WARN/NOT_RUN/TIMEOUT paths, "
+          "prompt forwarding, summary parse, and report files all verified")
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--port", help="serial port, for example /dev/ttyUSB0")
+    parser.add_argument("--baud", type=int, default=115200)
+    parser.add_argument("--board-id",
+                        help="override the board identity used in file names")
+    parser.add_argument("--out", default="evt_logs", help="output directory")
+    parser.add_argument("--non-interactive", action="store_true",
+                        help="answer 's' (skip) to every operator prompt")
+    parser.add_argument("--self-test", action="store_true",
+                        help="run the pty-based self test and exit")
+    args = parser.parse_args()
+
+    if args.self_test:
+        return _self_test()
+
+    if not args.port:
+        parser.error("--port is required unless --self-test is given")
+
+    ser = serial.Serial(args.port, args.baud, timeout=0.1)
+    runner = EvtRunner(ser, args.out, board_id=args.board_id,
+                       answer_fn=skip_answer if args.non_interactive else None)
+    report = runner.run(STAGES)
+    summary = report.get("summary") or {}
+    print("overall:", summary.get("overall", "no summary received"))
+    return 0 if summary.get("overall") in ("PASS", "WARN") else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
