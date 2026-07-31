@@ -4,8 +4,22 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
+
+env:
+  # Update the tag and commit together after the new version passes validation.
+  IDF_REF: v6.1-beta1
+  IDF_COMMIT: b1d13e9fe441c4f75e240c98a26fd631b7b3232f
+  # ESP-BSP commit that carries bsp/candis_s31 and the reusable drivers.
+  # NOTE: the locally validated worktree has uncommitted changes on top of
+  # this commit; CI can only fetch the complete BSP after those changes are
+  # pushed to LeenixP/esp-bsp.
+  ESP_BSP_COMMIT: 522c90f102366f6625e33516af80e0ff58af5a0d
 
 jobs:
   getting-started:
@@ -14,10 +28,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install ESP-IDF
-        env:
-          # Update the tag and commit together after the new version passes validation.
-          IDF_REF: v6.1-beta1
-          IDF_COMMIT: b1d13e9fe441c4f75e240c98a26fd631b7b3232f
         run: |
           git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git "$RUNNER_TEMP/esp-idf"
           test "$(git -C "$RUNNER_TEMP/esp-idf" rev-parse HEAD)" = "$IDF_COMMIT"
@@ -28,3 +38,58 @@ jobs:
           . "$RUNNER_TEMP/esp-idf/export.sh"
           idf.py --preview -C examples/esp-idf/getting-started set-target esp32s31
           idf.py --preview -C examples/esp-idf/getting-started build
+
+  factory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Fetch ESP-BSP (Candis-S31 BSP)
+        run: |
+          git clone https://github.com/LeenixP/esp-bsp.git "$RUNNER_TEMP/esp-bsp"
+          git -C "$RUNNER_TEMP/esp-bsp" checkout "$ESP_BSP_COMMIT"
+
+      - name: Build factory firmware
+        run: |
+          . ~/esp-idf/export.sh
+          CANDIS_S31_BSP_PATH="$RUNNER_TEMP/esp-bsp/bsp/candis_s31" \
+            idf.py --preview -C firmware/factory -D IDF_TARGET=esp32s31 build
+          idf.py --preview -C firmware/factory merge-bin \
+            --output candis_s31_factory_merged.bin --format raw
+
+      # Packaging dry-run only: this assembles the release staging directory
+      # and archive as CI artifacts. Publishing a GitHub Release stays a
+      # manual step performed after hardware validation.
+      - name: Pack factory release (dry-run)
+        run: |
+          CANDIS_S31_BSP_PATH="$RUNNER_TEMP/esp-bsp/bsp/candis_s31" \
+          IDF_PATH=~/esp-idf \
+            tools/release/pack_factory_release.sh firmware/factory "$RUNNER_TEMP/factory-release"
+
+      - name: Upload factory release dry-run
+        uses: actions/upload-artifact@v4
+        with:
+          name: candis-s31-factory-release-dryrun
+          path: ${{ runner.temp }}/factory-release.zip
+          if-no-files-found: error
