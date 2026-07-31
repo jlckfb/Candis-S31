@@ -18,7 +18,7 @@ env:
   # ESP-BSP commit that carries bsp/candis_s31 and the reusable drivers.
   # This is the tip of the feat/candis-s31 branch on LeenixP/esp-bsp that
   # passed the local 12-target build verification on 2026-07-31.
-  ESP_BSP_COMMIT: 8d16d766c8063836f0084e62de4735edbce8be4d
+  ESP_BSP_COMMIT: ea761abe458bc05a4684e048729b5da0a641ff17
 
 jobs:
   getting-started:
