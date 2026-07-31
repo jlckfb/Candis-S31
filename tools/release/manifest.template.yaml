@@ -1,0 +1,63 @@
+# Candis-S31 Factory release manifest template.
+#
+# Fields map one-to-one to the eight release requirements listed in
+# firmware/factory/README.md ("Release requirements"). Values in <angle
+# brackets> are placeholders: tools/release/pack_factory_release.sh fills the
+# build-derived ones and a human must replace the rest before a real release.
+# This file is a template; filled manifests are local staging artifacts under
+# firmware/factory/release/ and are not committed.
+
+release:
+  # Release name; must match the GitHub Release tag referenced by
+  # firmware/recovery/launchpad.toml.
+  name: "@RELEASE_NAME@"
+  # (5) Supported board revision.
+  board_revision: "@BOARD_REV@"
+  packaged_at: "@DATE@"
+
+# (1) One merged binary (or the complete image and offset list).
+artifacts:
+  - file: candis_s31_factory_merged.bin
+    flash_offset: "0x0"
+    # (2) SHA-256 checksums; also stored beside the image as
+    # candis_s31_factory_merged.bin.sha256.
+    sha256: "@BIN_SHA256@"
+
+# (3) Application and BSP source commits.
+source:
+  app_repo: "https://github.com/jlckfb/Candis-S31"
+  app_commit: "@APP_COMMIT@"
+  app_dirty: "@APP_DIRTY@"
+  bsp_repo: "https://github.com/LeenixP/esp-bsp"
+  bsp_commit: "@BSP_COMMIT@"
+  bsp_dirty: "@BSP_DIRTY@"
+
+# (4) Exact ESP-IDF version and generated dependency lock.
+toolchain:
+  esp_idf_version: "@IDF_VERSION@"
+  esp_idf_commit: "@IDF_COMMIT@"
+  dependencies_lock: "dependencies.lock"
+  dependencies_lock_sha256: "@LOCK_SHA256@"
+
+# (6) Flash command and expected ROM/application output.
+flashing:
+  command: "esptool.py --chip esp32s31 -p PORT write-flash 0x0 candis_s31_factory_merged.bin"
+  rom_log_required: true
+  expected_application_output: |
+    Candis-S31 Factory Bring-up
+    safe_state       PASS     direct power domains disabled
+    candis-factory>
+
+# (7) Fixture version and required measurement equipment.
+fixture:
+  version: "<FIXTURE_VERSION or none>"
+  equipment:
+    - "USB data cable on the Type-C1 programming port (CH343P)"
+    - "<measurement equipment per EVT bring-up sheet>"
+
+# (8) Completed test manifest and known limitations.
+test_manifest:
+  results: "<path to evt_<board>_<timestamp>.json from host_tools/run_evt.py; NOT_RUN before EVT1>"
+  known_limitations:
+    - "EVT1 has not been fabricated; every hardware result remains NOT_RUN."
+    - "<add confirmed limitations here>"
