@@ -31,7 +31,10 @@ EVT1 is still in layout. The current schematic is revision 0.5, exported on 2026
 ## Suggested Factory order
 
 Use the serial commands one at a time. Stop at the first unexpected voltage,
-current, temperature, reset, or console error.
+current, temperature, reset, or console error. If the console does not come
+up, or flashing fails, stop and follow
+[`firmware/recovery/`](../firmware/recovery/README.md) for download-mode
+recovery instead of re-running stages blindly.
 
 1. Run `board_info`, `power_status`, `flash_test`, and `psram_test` without any external load attached.
 2. Run `i2c_scan lp`, `pmic_test`, `pmic power_on_source`, and `rtc_test`;
@@ -57,7 +60,10 @@ current, temperature, reset, or console error.
 7. Run `camera_test` and keep the ESP Video sensor log.
 8. Run `irq_test` once with the shared line idle and again after a known RTC or PMIC event. The command must release GPIO2 after clearing both devices.
 9. Run `typec_test` with no cable, then with known sink/source fixtures. Test `otg` only after the CC and boost path measurements are ready.
-10. Run `report` and save the complete console log with the board serial number and rework state.
+10. Run `wifi_scan` (PASS requires at least one AP in range) and `ble_smoke`
+    to confirm both radio stacks initialize and release cleanly; keep the
+    scan output with the board evidence.
+11. Run `report` and save the complete console log with the board serial number and rework state.
 
 Visual and audible commands do not mark themselves as passed. A display
 transfer, LED update, or audio write can succeed while the external device is
@@ -89,24 +95,26 @@ Low-power bus traffic at 0x34 during boot is therefore expected.
 
 ## Rail map and measurement points
 
-TG28_SW rail assignments from schematic revision 0.5:
+TG28_SW rail assignments from schematic revision 0.5. Unless noted, the
+acceptance criterion is nominal ±5 %, measured at the net with the rail
+loaded to its limit. Unconnected rails have no node to measure.
 
-| Rail | Net | Voltage / limit | Note |
-|---|---|---|---|
-| DCDC1 | VCC_3V3_MAIN | 3.3 V, 2 A | Always on |
-| DCDC2 | CAM_DVDD_1V5_SW | 1.5 V, 2 A | Camera digital core |
-| DCDC3 | — | — | Unconnected; confirm disabled in OTP readback, no node to measure |
-| DCDC4 | — | — | Unconnected; confirm disabled in OTP readback, no node to measure |
-| CPUSLDO | — | — | Unconnected |
-| DLDO1 (DC1SW) | WS2812B_PWR_SW | 3.3 V pass-through of DCDC1 | Default off; no output until the BSP LED init enables it |
-| DLDO2 (DC4SW) | — | — | Unconnected |
-| ALDO1 | LCD_3V3_SW | 3.3 V, 300 mA | Display logic |
-| ALDO2 | LCD_CTP_3V3_SW | 3.3 V, 300 mA | Touch |
-| ALDO3 | AUDIO_3V3_SW | 3.3 V, 300 mA | Through the U21 (TPS22917) load switch |
-| ALDO4 | CAM_AVDD_2V8_SW | 2.8 V, 300 mA | Camera analog |
-| BLDO1 | CAM_DOVDD_2V8_SW | 2.8 V, 300 mA | Camera I/O |
-| BLDO2 | 3V3_EXT_SW | 3.3 V, 300 mA | EXT connector pin 2 |
-| RTCLDO | TG28_VRTC | 3.0 V | Always on; also feeds the RX8130CE VBAT input |
+| Rail | Net | Voltage / limit | Tolerance criterion | Note |
+|---|---|---|---|---|
+| DCDC1 | VCC_3V3_MAIN | 3.3 V, 2 A | ±5 % (3.14–3.47 V) | Always on |
+| DCDC2 | CAM_DVDD_1V5_SW | 1.5 V, 2 A | ±5 % (1.43–1.58 V) | Camera digital core |
+| DCDC3 | — | — | n/a (no node) | Unconnected; confirm disabled in OTP readback, no node to measure |
+| DCDC4 | — | — | n/a (no node) | Unconnected; confirm disabled in OTP readback, no node to measure |
+| CPUSLDO | — | — | n/a (no node) | Unconnected |
+| DLDO1 (DC1SW) | WS2812B_PWR_SW | 3.3 V pass-through of DCDC1 | ±5 % of 3.3 V, follows DCDC1 (no regulation of its own) | Default off; no output until the BSP LED init enables it |
+| DLDO2 (DC4SW) | — | — | n/a (no node) | Unconnected |
+| ALDO1 | LCD_3V3_SW | 3.3 V, 300 mA | ±5 % (3.14–3.47 V) | Display logic |
+| ALDO2 | LCD_CTP_3V3_SW | 3.3 V, 300 mA | ±5 % (3.14–3.47 V) | Touch |
+| ALDO3 | AUDIO_3V3_SW | 3.3 V, 300 mA | ±5 % (3.14–3.47 V), measured after U21 | Through the U21 (TPS22917) load switch |
+| ALDO4 | CAM_AVDD_2V8_SW | 2.8 V, 300 mA | ±5 % (2.66–2.94 V) | Camera analog |
+| BLDO1 | CAM_DOVDD_2V8_SW | 2.8 V, 300 mA | ±5 % (2.66–2.94 V) | Camera I/O |
+| BLDO2 | 3V3_EXT_SW | 3.3 V, 300 mA | ±5 % (3.14–3.47 V) | EXT connector pin 2 |
+| RTCLDO | TG28_VRTC | 3.0 V | ±5 % (2.85–3.15 V); keep within the RX8130CE VBAT input range | Always on; also feeds the RX8130CE VBAT input |
 
 ## Shared interrupt
 
@@ -141,9 +149,52 @@ measurement evidence.
 | Supply voltage / current limit | |
 | Operator / UTC timestamp | |
 
+Record every executed command as one line in a `command | result | notes`
+table so later stages can be re-checked against the serial log:
+
+| Command | Result | Notes |
+|---|---|---|
+| `board_info` | PASS | MAC aa:bb:cc:dd:ee:ff; reset power_on |
+| `i2c_scan main` | WARN | FUSB303B at 0x31: strap mismatch |
+| `report` | FAIL | sdcard FAIL (no card), camera NOT_RUN |
+
 For every command, record the exact command line, start/end timestamp, complete
 console output, measured values or fixture result, and the final
 `PASS`/`FAIL`/`SKIP` decision with rationale. Attach the final `report` JSON
 summary, ROM boot log, oscilloscope captures, thermal observations, and any
 known limitation. Hardware-dependent items remain **待 EVT1** until this
 evidence exists.
+
+## Per-board checklist
+
+Copy this section into the board's report file and tick items off as they are
+completed — one checklist per physical board.
+
+- [ ] Board serial / fixture position: __________
+- [ ] Base MAC recorded from `board_info`: __________
+- [ ] Factory firmware commit and ESP-IDF version recorded: __________
+- [ ] Supply current limit / input voltage recorded: __________
+
+### First power-on
+
+- [ ] Current-limited supply set; charger, PMIC, and off-state rails validated before enabling large loads
+- [ ] 3.3 V, VRTC, VDD_SPI, PSRAM rail, and `CHIP_PU` measured and recorded
+- [ ] Flash access and the 40 MHz clock confirmed
+- [ ] RTC, display, audio, camera, TF card, and RGB added one subsystem at a time
+- [ ] Voltage, ripple, inrush, steady current, temperature, and off-state voltage recorded for every controlled rail
+- [ ] Type-C2 source behavior tested last
+
+### Factory tests (manual order)
+
+- [ ] `board_info`, `power_status`, `flash_test`, `psram_test` with no external load
+- [ ] `i2c_scan lp`, `pmic_test`, `pmic power_on_source`, `rtc_test`; battery/VBUS cross-checked with a meter; `pmic charge_current` confirmed at 50 mA; RTC set + power-cycle retention check
+- [ ] Each optional rail measured on and off with `peripheral_power`
+- [ ] Display: `display_brightness 30` first, then `display_test` with sleep/wake and `deep` variants; `mark display` recorded
+- [ ] `touch_test`, `led_test`, `sdcard_test` with the required parts fitted
+- [ ] `speaker_test` at the supplied low level (audible result recorded) and `microphone_test`
+- [ ] `camera_test` with the ESP Video sensor log kept
+- [ ] `irq_test` once with the shared line idle and once after a known RTC/PMIC event; GPIO2 released
+- [ ] `typec_test` without cable and with known sink/source fixtures; `otg` only after CC and boost path measurements
+- [ ] `wifi_scan` and `ble_smoke`; scan output kept with the board evidence
+- [ ] Final `report` and complete console log saved with the board serial number and rework state
+- [ ] Report filled in from the template above, with the per-command table and attached evidence

@@ -26,8 +26,8 @@ session. Recovery requires esptool 5.3.0 or newer. Check the tool and ROM
 communication first:
 
 ```bash
-esptool.py version
-esptool.py --chip esp32s31 -p PORT chip-id
+esptool version
+esptool --chip esp32s31 -p PORT chip-id
 ```
 
 The installed package must contain the ESP32-S31 flasher stub. If no EVT board
