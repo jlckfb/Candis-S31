@@ -5,7 +5,9 @@
 The script opens the factory console over UART, sends each test command in a
 fixed order, parses the machine-readable FACTORY_INFO / FACTORY_RESULT /
 FACTORY_PROMPT / FACTORY_SUMMARY lines, forwards operator answers to the
-board, and writes a JSON report plus the complete console log.
+board, and writes a JSON report plus the complete console log. It first
+issues `report_reset`, so results persisted in NVS by an earlier run on the
+same board cannot leak into the final summary.
 
 Usage:
     python3 run_evt.py --port /dev/ttyUSB0 [--board-id EVT-0042]
@@ -177,7 +179,31 @@ class EvtRunner:
                     return True
         return False
 
+    def _run_report_reset(self):
+        """Clear results persisted in NVS by an earlier run on this board.
+
+        Factory results survive power cycles, so without a reset a second
+        EVT pass would let the board-side FACTORY_SUMMARY mix stale results
+        in (a stage that times out can then look as if it passed). The
+        command keeps the boot-only safe_state result, which the firmware
+        re-evaluates at every boot anyway.
+        """
+        timeout_s = self.timeout_cap or 10
+        self._log(">>> report_reset")
+        self.ser.write(b"report_reset\r\n")
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            line = self._read_line(deadline)
+            if line is None:
+                break
+            self._log(line)
+            if "Factory results reset" in line:
+                return True
+        self._log("!!! no report_reset acknowledgment within %ds" % timeout_s)
+        return False
+
     def run(self, stages):
+        self._run_report_reset()
         for command, timeout_s, expect in stages:
             if not self._run_stage(command, timeout_s, expect) and expect != "INFO":
                 self.results.setdefault(expect, {
@@ -276,10 +302,12 @@ def _self_test():
     slave_name = os.ttyname(slave_fd)
     os.set_blocking(master_fd, False)
     received_answers = []
+    received_commands = []
     stop = threading.Event()
 
     def fake_firmware():
         buffer = b""
+        stale_results = True  # results persisted in NVS by an earlier run
         while not stop.is_set():
             try:
                 chunk = os.read(master_fd, 256)
@@ -306,6 +334,13 @@ def _self_test():
                              b'FACTORY_RESULT {"test":"rtc","status":"PASS",'
                              b'"detail":"set ok"}\n')
                     continue
+                received_commands.append(command)
+                if command == "report_reset":
+                    stale_results = False
+                    os.write(master_fd,
+                             b"Factory results reset to NOT_RUN"
+                             b" (safe_state kept: it only runs at boot)\n")
+                    continue
                 response = FAKE_RESPONSES.get(command)
                 if response == "PROMPT":
                     os.write(master_fd,
@@ -313,11 +348,21 @@ def _self_test():
                              b'"question":"Pattern ok?","timeout_s":5}\n')
                 elif response == "SILENT" or response is None:
                     if command == "report":
-                        os.write(master_fd,
-                                 b'FACTORY_RESULT {"test":"camera","status":"NOT_RUN",'
-                                 b'"detail":"not executed"}\n'
-                                 b'FACTORY_SUMMARY {"overall":"FAIL","pass":13,'
-                                 b'"fail":2,"warn":2,"skip":0,"not_run":4}\n')
+                        if stale_results:
+                            # The runner must have reset first; a stale
+                            # board-side result would flip the summary into
+                            # a false PASS.
+                            os.write(master_fd,
+                                     b'FACTORY_RESULT {"test":"camera",'
+                                     b'"status":"PASS","detail":"stale from NVS"}\n'
+                                     b'FACTORY_SUMMARY {"overall":"PASS","pass":14,'
+                                     b'"fail":1,"warn":2,"skip":0,"not_run":3}\n')
+                        else:
+                            os.write(master_fd,
+                                     b'FACTORY_RESULT {"test":"camera",'
+                                     b'"status":"NOT_RUN","detail":"not executed"}\n'
+                                     b'FACTORY_SUMMARY {"overall":"FAIL","pass":13,'
+                                     b'"fail":2,"warn":2,"skip":0,"not_run":4}\n')
                 else:
                     for out_line in response:
                         os.write(master_fd, (out_line + "\n").encode())
@@ -342,6 +387,16 @@ def _self_test():
         check(report["board"] == "aabbccddeeff",
               "board id should come from the FACTORY_INFO MAC, got %r"
               % report["board"])
+        check(received_commands and received_commands[0] == "report_reset",
+              "report_reset must precede the first test stage, first commands: %r"
+              % received_commands[:4])
+        check("report" in received_commands and
+              received_commands.index("report_reset") <
+              received_commands.index("report"),
+              "report_reset must be acknowledged before the final report")
+        check(report["summary"]["overall"] == "FAIL",
+              "stale NVS results must not leak into the final summary, got %r"
+              % report["summary"])
         check(results["flash"]["status"] == "PASS", "flash PASS path broken")
         check(results["buttons"]["status"] == "FAIL", "buttons FAIL path broken")
         check(results["charge"]["status"] == "WARN", "charge WARN path broken")
@@ -375,8 +430,9 @@ def _self_test():
         for failure in failures:
             print("SELF-TEST FAIL:", failure)
         return 1
-    print("self-test passed: PASS/FAIL/WARN/NOT_RUN/TIMEOUT paths, "
-          "prompt forwarding, summary parse, and report files all verified")
+    print("self-test passed: report_reset before the first stage, "
+          "PASS/FAIL/WARN/NOT_RUN/TIMEOUT paths, prompt forwarding, "
+          "summary parse, and report files all verified")
     return 0
 
 

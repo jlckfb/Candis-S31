@@ -483,21 +483,42 @@ static int command_i2c_scan(int argc, char **argv)
     const bool fusb_31 = addresses[0x31];
     bool touch_on = false, audio_on = false;
     bool cam_dvdd = false, cam_avdd = false, cam_dovdd = false;
-    bsp_pmic_regulator_is_enabled(BSP_PMIC_ALDO2, &touch_on);
-    bsp_pmic_regulator_is_enabled(BSP_PMIC_ALDO3, &audio_on);
-    bsp_pmic_regulator_is_enabled(BSP_PMIC_DCDC2, &cam_dvdd);
-    bsp_pmic_regulator_is_enabled(BSP_PMIC_ALDO4, &cam_avdd);
-    bsp_pmic_regulator_is_enabled(BSP_PMIC_BLDO1, &cam_dovdd);
+    /* A PMIC read failure means the rail power state is unknown, not "off":
+     * a silent device behind an unreadable rail must not be graded as a
+     * missing powered device. Record the failing rails and grade a WARN. */
+    bool power_known = true;
+    char unknown_rails[64] = {0};
+    const struct {
+        bsp_pmic_regulator_t reg;
+        bool *enabled;
+    } power_rails[] = {
+        { BSP_PMIC_ALDO2, &touch_on },
+        { BSP_PMIC_ALDO3, &audio_on },
+        { BSP_PMIC_DCDC2, &cam_dvdd },
+        { BSP_PMIC_ALDO4, &cam_avdd },
+        { BSP_PMIC_BLDO1, &cam_dovdd },
+    };
+    for (size_t i = 0; i < sizeof(power_rails) / sizeof(power_rails[0]); ++i) {
+        const esp_err_t perr = bsp_pmic_regulator_is_enabled(
+            power_rails[i].reg, power_rails[i].enabled);
+        if (perr != ESP_OK) {
+            power_known = false;
+            const size_t used = strlen(unknown_rails);
+            snprintf(unknown_rails + used, sizeof(unknown_rails) - used,
+                     "%s%s", used ? "," : "",
+                     bsp_pmic_regulator_name(power_rails[i].reg));
+        }
+    }
     const bool camera_on = cam_dvdd && cam_avdd && cam_dovdd;
 
     unsigned missing = 0;
-    if (touch_on && !addresses[0x15]) {
+    if (power_known && touch_on && !addresses[0x15]) {
         missing |= 0x01;
     }
-    if (audio_on && !addresses[0x20]) {
+    if (power_known && audio_on && !addresses[0x20]) {
         missing |= 0x02;
     }
-    if (camera_on && !addresses[0x3c]) {
+    if (power_known && camera_on && !addresses[0x3c]) {
         missing |= 0x04;
     }
     unsigned unexpected = 0;
@@ -520,18 +541,31 @@ static int command_i2c_scan(int argc, char **argv)
     } else if (fusb_31) {
         verdict = FACTORY_STATUS_WARN;
         note = "FUSB303B at 0x31: strap mismatch, record it";
-    } else if (missing != 0) {
-        verdict = FACTORY_STATUS_WARN;
-        note = "powered device silent";
     } else if (unexpected > 0) {
         verdict = FACTORY_STATUS_WARN;
         note = "unexpected address answered";
     } else if (addresses[0x0c]) {
         verdict = FACTORY_STATUS_WARN;
         note = "0x0c answered: unconfirmed VCM";
+    } else if (!power_known) {
+        verdict = FACTORY_STATUS_WARN;
+        note = "rail power state unknown";
+    } else if (missing != 0) {
+        verdict = FACTORY_STATUS_WARN;
+        note = "powered device silent";
     }
-    snprintf(detail, sizeof(detail), "%s (devices=%u missing=0x%x extra=%u)",
-             note, found, missing, unexpected);
+    /* Keep each snprintf provably within FACTORY_DETAIL_LENGTH (96) for
+     * -Wformat-truncation: when a PMIC read failed the counts carry no
+     * information (missing is gated by power_known), so that path reports
+     * the failed rails instead of the counts. The rail list is at most
+     * five 5-char names plus commas, which fits %.29s exactly. */
+    if (unknown_rails[0] != '\0') {
+        snprintf(detail, sizeof(detail), "%s; PMIC read failed: %.29s",
+                 note, unknown_rails);
+    } else {
+        snprintf(detail, sizeof(detail), "%s (devices=%u missing=0x%x extra=%u)",
+                 note, found, missing, unexpected);
+    }
     factory_report_set(test, verdict, detail);
     factory_report_print_one(test);
     return verdict == FACTORY_STATUS_FAIL ? ESP_FAIL : ESP_OK;

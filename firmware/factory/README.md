@@ -266,13 +266,17 @@ python3 host_tools/run_evt.py --port /dev/ttyUSB0 --board-id EVT-0042
 The script sends each test command in a fixed order, parses `FACTORY_INFO`,
 `FACTORY_RESULT`, `FACTORY_PROMPT`, and `FACTORY_SUMMARY` lines, relays local
 operator answers to the board's prompts, and writes `evt_<board>_<timestamp>.json`
-plus the complete `.log` under `evt_logs/`. Before `rtc_test` it first issues
-an `rtc_set` from the host clock (UTC), because a fresh board powers up with
-an invalid RTC time. The board identity defaults to the base MAC from
-`board_info`. `--non-interactive` answers `s` (skip) to every prompt for
-log-only runs. `python3 host_tools/run_evt.py --self-test` verifies the parser
-and report writer against a scripted fake firmware on a pseudo terminal and
-needs no hardware.
+plus the complete `.log` under `evt_logs/`. Before the first test stage it
+issues `report_reset` and waits for its acknowledgment: results persist in NVS
+across power cycles, so a second run on the same board would otherwise mix
+stale entries into the summary and can turn a timed-out stage into a false
+`PASS`. Before `rtc_test` it first issues an `rtc_set` from the host clock
+(UTC), because a fresh board powers up with an invalid RTC time. The board
+identity defaults to the base MAC from `board_info`. `--non-interactive`
+answers `s` (skip) to every prompt for log-only runs.
+`python3 host_tools/run_evt.py --self-test` verifies the parser and report
+writer against a scripted fake firmware on a pseudo terminal and needs no
+hardware.
 
 ## Release requirements
 
