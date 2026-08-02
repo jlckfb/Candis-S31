@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# build-all.sh — Candis-S31 build baseline: compile all 12 ESP-IDF targets serially.
+# build-all.sh — Candis-S31 build baseline: compile all 14 ESP-IDF targets serially.
 #
 # Targets (baseline ESP-IDF v6.1-beta1; esp32s31 is a *preview* target -> --preview):
-#   example:<name>   6 esp-bsp examples (display, display_camera_video,
+#   example:<name>   8 esp-bsp examples (display, display_camera_video,
 #                    display_lvgl_demos, display_lvgl_benchmark, display_sdcard,
-#                    display_usb_hid), built with the esp-bsp convention
+#                    display_usb_hid, audio, display_audio_photo), built with
+#                    the esp-bsp convention
 #                    `-D SDKCONFIG_DEFAULTS=sdkconfig.bsp.candis_s31`,
 #                    build dir `build_candis_s31/` inside each example.
 #   testapp:<name>   4 driver component test_apps (tg28_sw, rx8130ce, fusb303b,
@@ -32,7 +33,7 @@
 #     respective .gitignore files (esp-bsp: `build*`; this repo: `**/build/`).
 #
 # Usage:
-#   tools/build-all.sh                          # all 12 targets
+#   tools/build-all.sh                          # all 14 targets
 #   tools/build-all.sh getting-started factory  # subset (names from --list)
 #   tools/build-all.sh --list                   # print target names
 #
@@ -61,7 +62,7 @@ fi
 command -v idf.py >/dev/null 2>&1 || die "idf.py still not available after activation"
 
 # --- target table ------------------------------------------------------------
-BSP_EXAMPLES=(display display_camera_video display_lvgl_demos display_lvgl_benchmark display_sdcard display_usb_hid)
+BSP_EXAMPLES=(display display_camera_video display_lvgl_demos display_lvgl_benchmark display_sdcard display_usb_hid audio display_audio_photo)
 TEST_APPS=(tg28_sw rx8130ce fusb303b cst820)
 
 ALL_TARGETS=()
