@@ -7,7 +7,10 @@ set -euo pipefail
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 port=${1:-PORT}
 image=${2:-"${script_dir}/../factory/release/candis_s31_factory_merged.bin"}
-baud=${3:-460800}
+# Default to the conservative baud: the UART0 series resistors (998 ohm TX /
+# 499 ohm RX) are unverified on EVT1. Raise to 460800 only after the download
+# path passes at the intended high baud.
+baud=${3:-115200}
 
 if [[ "${port}" == "PORT" ]]; then
     echo "usage: $0 PORT [MERGED_IMAGE] [BAUD]" >&2
@@ -19,8 +22,10 @@ if [[ ! -f "${image}" ]]; then
     exit 2
 fi
 
-if command -v esptool.py >/dev/null 2>&1; then
-    esptool=(esptool.py)
+# The esptool.py shim is deprecated; prefer the esptool entry point and fall
+# back to the module form.
+if command -v esptool >/dev/null 2>&1; then
+    esptool=(esptool)
 elif python -m esptool version >/dev/null 2>&1; then
     esptool=(python -m esptool)
 else
@@ -29,7 +34,7 @@ else
 fi
 
 version_output=$("${esptool[@]}" version 2>&1)
-version=$(sed -nE 's/[^0-9]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' <<<"${version_output}" | head -n 1)
+version=$(sed -nE 's/[^0-9]*([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/p' <<<"${version_output}" | head -n 1)
 if [[ -z "${version}" ]]; then
     echo "cannot parse esptool version: ${version_output}" >&2
     exit 2

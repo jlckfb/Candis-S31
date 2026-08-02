@@ -40,6 +40,16 @@ die() { echo "pack_factory_release: ERROR: $*" >&2; exit 2; }
 [ -f "$TEMPLATE" ] || die "missing template $TEMPLATE"
 command -v git >/dev/null || die "git not found"
 
+# Canonicalize OUT_DIR: the zip step runs inside it, so a relative path would
+# otherwise resolve the package name against the wrong directory.
+mkdir -p "$OUT_DIR"
+OUT_DIR=$(cd -- "$OUT_DIR" && pwd)
+case "$OUT_DIR" in
+    /|"$HOME") die "refusing to use $OUT_DIR as the staging directory" ;;
+esac
+# The staging directory belongs to this script: drop leftovers from previous
+# runs so the package contains exactly this run's payload.
+rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 cp "$FACTORY_DIR/build/$MERGED" "$OUT_DIR/$MERGED"
 

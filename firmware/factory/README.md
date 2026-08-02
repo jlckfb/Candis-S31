@@ -38,6 +38,7 @@ absolute path is stored in the repository.
 | `pmic_test` | Read TG28_SW identity, battery, VBUS, and charger state | No |
 | `pmic power_on_source` | Read the raw TG28_SW REG20 boot-source bitmap | No |
 | `pmic charge_current [MILLIAMPS]` | Read or set the exact TG28_SW REG62 charge-current limit | Optional write |
+| `pmic temperature` | Read the TG28_SW ADC channels (VBAT/VBUS/VSYS/TS/TDIE) in millivolts | Enables an ADC channel for the measurement, then restores it |
 | `charge_test` | Read back the input-current limit and charge voltage, then grade charger activity from VBUS and charge flags | No |
 | `rail NAME status` | Read one TG28_SW regulator setting | No |
 | `rail NAME on MILLIVOLTS` | Program and enable one TG28_SW regulator | Yes |
@@ -48,7 +49,7 @@ absolute path is stored in the repository.
 | `rtc_alarm` | Arm an alarm at the next minute boundary and wait for the RX8130CE alarm flag; minute granularity only | Rearms RTC alarm registers |
 | `irq_test` | Read and clear TG28_SW/RX8130CE flags until their shared line is released | Yes, clears interrupt flags |
 | `buttons` | Wait for a BOOT key pulse on GPIO61, then a short PWR key press reported through the TG28_SW power-key IRQ | No |
-| `typec_test` | Read FUSB303B identity and connection state; PASS for a clean attach or a clean detach, WARN for ambiguous CC state | Enables the CC controller only |
+| `typec_test` | Read FUSB303B identity and connection state; FAIL when the controller is not in DRP mode or stays silent, WARN for ambiguous CC state | Enables the CC controller only |
 | `otg on default\|1.5\|3.0` | Select source role and arm the protected Type-C2 boost path | Yes, sources VBUS after CC attach |
 | `otg off` | Disable Type-C2 VBUS, CC role, and controller power | Yes, disables only |
 | `wifi_scan` | Scan for access points in station mode; PASS requires at least one AP | No |
@@ -63,10 +64,10 @@ absolute path is stored in the repository.
 | `sdcard_test` | Mount, write, read, verify, remove, and unmount a test file | Writes the inserted card |
 | `speaker_test` | Play a short, low-level square-wave tone, then ask the operator to confirm | Yes |
 | `microphone_test` | Capture audio and check its peak level | Yes |
-| `camera_test` | Capture five DVP frames and verify frame size, non-blank content, and frame-to-frame change | Yes |
+| `camera_test` | Capture five DVP frames and verify frame size, non-blank content, and frame-to-frame change; each frame wait is bounded by a 3 s timeout | Yes |
 | `mark TEST pass\|fail\|skip [detail]` | Record an operator result; details may contain spaces | Report only |
 | `report` | Print every result and a JSON summary | No |
-| `report_reset` | Return every collected result to `NOT_RUN` | Report only |
+| `report_reset` | Return every collected result to `NOT_RUN` (keeps `safe_state`, which only runs at boot) | Report only |
 | `reboot` | Restart the SoC | Yes |
 
 Run `rail`, `peripheral_power`, and `otg` only after checking the matching rail
@@ -79,16 +80,23 @@ The console registers 36 top-level commands including `help`. `pmic_test`
 already reads the fuel-gauge SOC and voltage; `pmic charge_current 500` adds
 the EVT target-current check without changing the OTP/default setting at boot.
 Use it only with current limiting and battery temperature monitoring, then
-restore the confirmed 50 mA default with `pmic charge_current 50`.
+restore the confirmed 50 mA default with `pmic charge_current 50`. EVT1 has no
+battery NTC (the TS pin is a fixed input), so `pmic temperature` is the
+on-board monitoring channel: it reads the TS input and the TDIE die-sensor
+voltage trend during the high-current step; watch the cell itself with an
+external probe.
 
 The OV5640 autofocus/VCM path is intentionally not exposed as a command until
 the module supplier confirms VCM power and the actuator control interface.
 
-An I2C scan with no responding address is recorded as `FAIL`. This is expected
-on the main bus while its switched peripheral rails are disabled; it prevents
-an electrically unverified or unpowered bus from being reported as working.
-The low-power bus passes only when both the RX8130CE at `0x32` and TG28_SW at
-`0x34` respond.
+An I2C scan on the main bus is graded against the expected device set:
+FUSB303B must answer at exactly one of `0x21`/`0x31` (missing or answering at
+both is `FAIL`); `0x31` records a `WARN` because the address strap then
+mismatches the schematic. Devices behind switched rails (CST820 `0x15`,
+ES8389 `0x20`, OV5640 `0x3C`) may stay silent while their rail is off; a
+powered device that does not answer, an unexpected address, or an answer at
+the unconfirmed VCM address `0x0C` records a `WARN`. The low-power bus passes
+only when both the RX8130CE at `0x32` and TG28_SW at `0x34` respond.
 
 ## Operator checks and manual results
 
@@ -114,9 +122,10 @@ and `display_sleep` — accept a manually entered `PASS` or `FAIL` through
 `mark`. Automated tests must be run through their own command. Any test can be
 marked `SKIP` when the omission is intentional and documented.
 
-`camera_test` blocks on frame delivery from the 10 fps sensor. A dead or
-unpowered sensor stalls the command instead of timing out; power-cycle the
-board to recover, then investigate the sensor power and DVP wiring.
+`camera_test` bounds each frame wait with a 3 s `VIDIOC_S_DQBUF_TIMEOUT`. A
+dead or unpowered sensor now fails the command with `ESP_ERR_TIMEOUT` instead
+of stalling the console; investigate the sensor power and DVP wiring, then
+rerun.
 
 Valid `rail` names are `dcdc1` through `dcdc4`, `aldo1` through `aldo4`,
 `bldo1` through `bldo2`, `cpusldo`, and `dldo1` through `dldo2`. `cpusldo` is
@@ -176,11 +185,11 @@ The raw merged image is written under `build/` and is intended for flash offset
 procedure have been verified.
 
 During local BSP development, Component Manager writes checkout-relative
-override paths into `dependencies.lock`. That generated file is ignored here
-because it cannot reproduce the build on another machine. The Factory release
-manifest must still record the ESP-IDF commit and BSP commit. Once the BSP and
-its drivers are available through their public component sources, the project
-can resolve a portable lock file and include it with the matching release
+override paths into `dependencies.lock`. That generated file cannot reproduce
+the build on another machine, so the release package ships it only as build
+evidence next to the recorded ESP-IDF and BSP commits. Once the BSP and its
+drivers are available through their public component sources, the project can
+resolve a portable lock file and include it with the matching release
 evidence. Do not edit a generated lock by hand.
 
 ## Serial session
@@ -219,7 +228,14 @@ Every implemented test is one of:
   (for example `charge_test` without VBUS, or a Type-C attach without a valid
   CC orientation);
 - `SKIP`: the operator intentionally skipped an applicable check;
-- `NOT_RUN`: no result has been collected since boot.
+- `NOT_RUN`: no result has been collected since boot or the last `report_reset`.
+
+Test results persist in the `factory` NVS namespace, so the bring-up steps
+that power-cycle the board keep their history: after a reboot the `report`
+command still shows results collected before the power cut. `report_reset`
+clears both the live and the persisted state (keeping only `safe_state`,
+which re-runs at every boot). A blob written by a different firmware layout
+is ignored and the state falls back to `NOT_RUN`.
 
 Commands print a readable line followed by JSON Lines output:
 
@@ -236,7 +252,8 @@ peripheral is never converted to `PASS`.
 
 If the console itself fails to start, the firmware logs the error, waits five
 seconds, and restarts so a transient stdio or heap failure cannot strand a
-board on the line.
+board on the line. After three consecutive failures it halts with the error
+visible instead of reboot-looping; power-cycle to retry.
 
 ## Host automation
 
@@ -249,11 +266,13 @@ python3 host_tools/run_evt.py --port /dev/ttyUSB0 --board-id EVT-0042
 The script sends each test command in a fixed order, parses `FACTORY_INFO`,
 `FACTORY_RESULT`, `FACTORY_PROMPT`, and `FACTORY_SUMMARY` lines, relays local
 operator answers to the board's prompts, and writes `evt_<board>_<timestamp>.json`
-plus the complete `.log` under `evt_logs/`. The board identity defaults to the
-base MAC from `board_info`. `--non-interactive` answers `s` (skip) to every
-prompt for log-only runs. `python3 host_tools/run_evt.py --self-test` verifies
-the parser and report writer against a scripted fake firmware on a pseudo
-terminal and needs no hardware.
+plus the complete `.log` under `evt_logs/`. Before `rtc_test` it first issues
+an `rtc_set` from the host clock (UTC), because a fresh board powers up with
+an invalid RTC time. The board identity defaults to the base MAC from
+`board_info`. `--non-interactive` answers `s` (skip) to every prompt for
+log-only runs. `python3 host_tools/run_evt.py --self-test` verifies the parser
+and report writer against a scripted fake firmware on a pseudo terminal and
+needs no hardware.
 
 ## Release requirements
 

@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "nvs.h"
+
 #include "factory_report.h"
 
 #define FACTORY_DETAIL_LENGTH 96
@@ -15,6 +17,23 @@ typedef struct {
     factory_status_t status;
     char detail[FACTORY_DETAIL_LENGTH];
 } factory_result_t;
+
+/* Results persist across the power-cycle steps of the bring-up flow. The
+ * magic/version/count triple rejects blobs written by another firmware. */
+#define FACTORY_NVS_NAMESPACE "factory"
+#define FACTORY_NVS_KEY       "results"
+#define FACTORY_NVS_MAGIC     UINT32_C(0xca5d15e1)
+#define FACTORY_NVS_VERSION   1
+
+typedef struct {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t count;
+    struct {
+        uint8_t status;
+        char detail[FACTORY_DETAIL_LENGTH];
+    } tests[FACTORY_TEST_COUNT];
+} factory_nvs_blob_t;
 
 static factory_result_t s_results[FACTORY_TEST_COUNT] = {
     [FACTORY_TEST_SAFE_STATE] = {.name = "safe_state"},
@@ -63,6 +82,28 @@ static bool test_is_valid(factory_test_id_t test)
     return test >= 0 && test < FACTORY_TEST_COUNT;
 }
 
+/* Best-effort persistence: a missing or unusable NVS never blocks a test. */
+static void factory_report_persist(void)
+{
+    factory_nvs_blob_t blob = {
+        .magic = FACTORY_NVS_MAGIC,
+        .version = FACTORY_NVS_VERSION,
+        .count = FACTORY_TEST_COUNT,
+    };
+    for (int test = 0; test < FACTORY_TEST_COUNT; ++test) {
+        blob.tests[test].status = (uint8_t)s_results[test].status;
+        memcpy(blob.tests[test].detail, s_results[test].detail,
+               FACTORY_DETAIL_LENGTH);
+    }
+    nvs_handle_t handle;
+    if (nvs_open(FACTORY_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+        return;
+    }
+    nvs_set_blob(handle, FACTORY_NVS_KEY, &blob, sizeof(blob));
+    nvs_commit(handle);
+    nvs_close(handle);
+}
+
 void factory_report_print_json_string(const char *value)
 {
     putchar('"');
@@ -108,6 +149,42 @@ void factory_report_init(void)
         s_results[test].status = FACTORY_STATUS_NOT_RUN;
         snprintf(s_results[test].detail, sizeof(s_results[test].detail), "not executed");
     }
+    /* Drop the persisted copy as well, so a later reboot stays cleared. */
+    nvs_handle_t handle;
+    if (nvs_open(FACTORY_NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
+        nvs_erase_key(handle, FACTORY_NVS_KEY);
+        nvs_commit(handle);
+        nvs_close(handle);
+    }
+}
+
+void factory_report_load(void)
+{
+    factory_nvs_blob_t blob;
+    size_t length = sizeof(blob);
+    nvs_handle_t handle;
+    bool loaded = false;
+    if (nvs_open(FACTORY_NVS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
+        const esp_err_t error = nvs_get_blob(handle, FACTORY_NVS_KEY, &blob,
+                                             &length);
+        nvs_close(handle);
+        loaded = error == ESP_OK && length == sizeof(blob) &&
+                 blob.magic == FACTORY_NVS_MAGIC &&
+                 blob.version == FACTORY_NVS_VERSION &&
+                 blob.count == FACTORY_TEST_COUNT;
+    }
+    if (!loaded) {
+        factory_report_init();
+        return;
+    }
+    for (int test = 0; test < FACTORY_TEST_COUNT; ++test) {
+        s_results[test].status = blob.tests[test].status < FACTORY_STATUS_COUNT ?
+                                 (factory_status_t)blob.tests[test].status :
+                                 FACTORY_STATUS_NOT_RUN;
+        memcpy(s_results[test].detail, blob.tests[test].detail,
+               FACTORY_DETAIL_LENGTH);
+        s_results[test].detail[FACTORY_DETAIL_LENGTH - 1] = '\0';
+    }
 }
 
 esp_err_t factory_report_set(factory_test_id_t test, factory_status_t status, const char *detail)
@@ -120,6 +197,20 @@ esp_err_t factory_report_set(factory_test_id_t test, factory_status_t status, co
     s_results[test].status = status;
     snprintf(s_results[test].detail, sizeof(s_results[test].detail), "%s",
              detail != NULL ? detail : "");
+    factory_report_persist();
+    return ESP_OK;
+}
+
+esp_err_t factory_report_get(factory_test_id_t test, factory_status_t *status,
+                             char *detail, size_t detail_size)
+{
+    if (!test_is_valid(test) || status == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *status = s_results[test].status;
+    if (detail != NULL && detail_size > 0) {
+        snprintf(detail, detail_size, "%s", s_results[test].detail);
+    }
     return ESP_OK;
 }
 

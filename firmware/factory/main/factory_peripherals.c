@@ -20,6 +20,7 @@
 #include "freertos/task.h"
 #include "led_convert.h"
 #include "linux/videodev2.h"
+#include "esp_video_ioctl.h"
 
 #include "factory_console.h"
 #include "factory_peripherals.h"
@@ -32,6 +33,7 @@
 #define BUTTON_TEST_TIMEOUT_S     20
 #define CAMERA_CAPTURE_FRAMES     5
 #define CAMERA_BUFFER_COUNT       2
+#define CAMERA_DQBUF_TIMEOUT_MS   3000
 #define RTC_ALARM_POLL_MS         200
 
 /* EVT1 schematic SW2: the KEY_BOOT net drives GPIO61 and has an external
@@ -108,6 +110,37 @@ static int command_pmic(int argc, char **argv)
         }
         return error;
     }
+    if (argc == 2 && strcmp(argv[1], "temperature") == 0) {
+        /* EVT1 has no battery NTC: the TS pin is a fixed input. TDIE is the
+         * die-temperature sensor voltage (not degC); watch its trend during
+         * the 500 mA charge test and monitor the cell externally. */
+        static const struct {
+            bsp_pmic_adc_channel_t channel;
+            const char *label;
+        } channels[] = {
+            { BSP_PMIC_ADC_VBAT, "vbat" },
+            { BSP_PMIC_ADC_VBUS, "vbus" },
+            { BSP_PMIC_ADC_VSYS, "vsys" },
+            { BSP_PMIC_ADC_TS,   "ts"   },
+            { BSP_PMIC_ADC_TDIE, "tdie" },
+        };
+        for (unsigned index = 0; index < sizeof(channels) / sizeof(channels[0]);
+                ++index) {
+            uint16_t millivolts = 0;
+            const esp_err_t error = bsp_pmic_read_adc_mv(channels[index].channel,
+                                                         &millivolts);
+            if (error != ESP_OK) {
+                printf("%s read failed: %s\n", channels[index].label,
+                       esp_err_to_name(error));
+                return error;
+            }
+            printf("%s_mv=%u%s\n", channels[index].label, millivolts,
+                   channels[index].channel == BSP_PMIC_ADC_TS ? " (fixed input)" :
+                   channels[index].channel == BSP_PMIC_ADC_TDIE ?
+                   " (die sensor voltage, not degC)" : "");
+        }
+        return ESP_OK;
+    }
     if ((argc == 2 || argc == 3) && strcmp(argv[1], "charge_current") == 0) {
         esp_err_t error = ESP_OK;
         if (argc == 3) {
@@ -120,6 +153,10 @@ static int command_pmic(int argc, char **argv)
             printf("WARNING: changing the battery charge-current limit; "
                    "monitor battery voltage and temperature\n");
             error = bsp_pmic_set_charge_current((uint16_t)milliamps);
+            if (error != ESP_OK) {
+                printf("valid charge currents: 0-200 mA in 25 mA steps, "
+                       "300-1500 mA in 100 mA steps\n");
+            }
         }
         uint16_t actual = 0;
         if (error == ESP_OK) {
@@ -130,7 +167,7 @@ static int command_pmic(int argc, char **argv)
         }
         return error;
     }
-    printf("usage: pmic power_on_source | pmic charge_current [MILLIAMPS]\n");
+    printf("usage: pmic power_on_source | pmic charge_current [MILLIAMPS] | pmic temperature\n");
     return ESP_ERR_INVALID_ARG;
 }
 
@@ -457,7 +494,7 @@ static int command_rtc_alarm_test(int argc, char **argv)
         return error;
     }
     char detail[96];
-    snprintf(detail, sizeof(detail), "minute=%02u %s shared_irq_edge=%s",
+    snprintf(detail, sizeof(detail), "minute=%02u %s shared_irq_notified=%s",
              alarm.minute, fired ? "fired" : "no flag within timeout",
              irq_seen ? "yes" : "no");
     factory_report_set(FACTORY_TEST_RTC_ALARM,
@@ -470,7 +507,8 @@ static int command_rtc_alarm_test(int argc, char **argv)
 static bool wait_button_pulse(int gpio, unsigned timeout_s)
 {
     /* Polarity-independent: a press is the non-idle level held for at least
-     * 30 ms, followed by a release back to idle. */
+     * 30 ms, followed by a release back to idle before the deadline. A key
+     * still held at the deadline is not a pulse. */
     const int idle = gpio_get_level(gpio);
     const int64_t deadline = esp_timer_get_time() + (int64_t)timeout_s * 1000000;
     while (esp_timer_get_time() < deadline) {
@@ -479,17 +517,26 @@ static bool wait_button_pulse(int gpio, unsigned timeout_s)
             continue;
         }
         const int64_t press_start = esp_timer_get_time();
-        while (gpio_get_level(gpio) != idle &&
-                esp_timer_get_time() < deadline) {
+        bool held_30ms = false;
+        bool released = false;
+        while (esp_timer_get_time() < deadline) {
+            if (gpio_get_level(gpio) == idle) {
+                released = true;
+                break;
+            }
             if (esp_timer_get_time() - press_start >= 30000) {
-                while (gpio_get_level(gpio) != idle &&
-                        esp_timer_get_time() < deadline) {
-                    vTaskDelay(pdMS_TO_TICKS(5));
-                }
-                return true;
+                held_30ms = true;
             }
             vTaskDelay(pdMS_TO_TICKS(5));
         }
+        if (released) {
+            if (held_30ms) {
+                return true;
+            }
+            /* Too short to count as a press: keep waiting for a real one. */
+            continue;
+        }
+        return false;
     }
     return false;
 }
@@ -566,8 +613,10 @@ static int command_type_c_test(int argc, char **argv)
     factory_status_t result = FACTORY_STATUS_PASS;
     const char *verdict;
     if (status.device_type != FUSB303B_EXPECTED_DEVICE_TYPE) {
-        result = FACTORY_STATUS_WARN;
-        verdict = "unexpected FUSB303B device_type";
+        /* The controller answered but is not in the DRP role EVT1 expects:
+         * a real configuration fault, not a cable-state quirk. */
+        result = FACTORY_STATUS_FAIL;
+        verdict = "FUSB303B not in DRP mode";
     } else if (status.attached && (status.orientation == 1 || status.orientation == 2)) {
         verdict = status.vbus_ok ? "cable attached, vbus ok" : "cable attached, no vbus";
     } else if (!status.attached && status.orientation == 0) {
@@ -919,28 +968,59 @@ static int command_sdcard_test(int argc, char **argv)
     const char *path = BSP_SD_MOUNT_POINT "/.candis_factory_test";
     const char payload[] = "Candis-S31 SDMMC factory test\n";
     char readback[sizeof(payload)] = {0};
+    bool passed = true;
+    const char *phase = "write";
     FILE *file = fopen(path, "wb");
-    bool passed = file != NULL && fwrite(payload, 1, sizeof(payload), file) == sizeof(payload);
-    if (file != NULL) {
-        passed = fclose(file) == 0 && passed;
-    }
-    file = passed ? fopen(path, "rb") : NULL;
-    passed = file != NULL && fread(readback, 1, sizeof(readback), file) == sizeof(readback) &&
-             memcmp(readback, payload, sizeof(payload)) == 0;
-    if (file != NULL) {
-        passed = fclose(file) == 0 && passed;
+    if (file == NULL) {
+        passed = false;
+    } else {
+        if (fwrite(payload, 1, sizeof(payload), file) != sizeof(payload)) {
+            passed = false;
+        }
+        if (fclose(file) != 0) {
+            passed = false;
+        }
     }
     if (passed) {
-        passed = unlink(path) == 0;
+        phase = "read";
+        file = fopen(path, "rb");
+        if (file == NULL) {
+            passed = false;
+        } else {
+            if (fread(readback, 1, sizeof(readback), file) != sizeof(readback)) {
+                passed = false;
+            }
+            if (fclose(file) != 0) {
+                passed = false;
+            }
+        }
+    }
+    if (passed) {
+        phase = "verify";
+        passed = memcmp(readback, payload, sizeof(payload)) == 0;
+    }
+    /* Remove the artifact even after a failed phase, so a retry starts clean. */
+    if (unlink(path) != 0 && passed) {
+        phase = "delete";
+        passed = false;
     }
     const esp_err_t unmount_error = bsp_sdcard_unmount();
     if (unmount_error != ESP_OK) {
+        if (passed) {
+            phase = "unmount";
+        }
         passed = false;
         error = unmount_error;
     }
+    char detail[96];
+    if (passed) {
+        snprintf(detail, sizeof(detail), "mount write read verify unmount passed");
+    } else {
+        snprintf(detail, sizeof(detail), "%s failed", phase);
+    }
     factory_report_set(FACTORY_TEST_SDCARD,
                        passed ? FACTORY_STATUS_PASS : FACTORY_STATUS_FAIL,
-                       passed ? "mount write read verify unmount passed" : "file verification failed");
+                       detail);
     factory_report_print_one(FACTORY_TEST_SDCARD);
     return passed ? ESP_OK : (error != ESP_OK ? error : ESP_FAIL);
 }
@@ -1057,6 +1137,16 @@ static uint32_t camera_frame_crc(const uint8_t *pixels, uint32_t length,
     return crc;
 }
 
+static uint32_t camera_expected_frame_bytes(const struct v4l2_format *format)
+{
+    /* Enforce an exact byte count only for formats with a known fixed pixel
+     * size; anything else is checked by buffer bound and content alone. */
+    if (format->fmt.pix.pixelformat == V4L2_PIX_FMT_RGB565X) {
+        return format->fmt.pix.width * format->fmt.pix.height * 2;
+    }
+    return 0;
+}
+
 static int command_camera_test(int argc, char **argv)
 {
     (void)argc;
@@ -1068,6 +1158,17 @@ static int command_camera_test(int argc, char **argv)
         file = open(BSP_CAMERA_DEVICE, O_RDONLY);
         if (file < 0) {
             error = ESP_ERR_NOT_FOUND;
+        }
+    }
+    if (error == ESP_OK) {
+        /* A dead or unpowered sensor must not wedge the console until
+         * power-off: bound the per-frame DQBUF wait. */
+        const struct timeval dqbuf_timeout = {
+            .tv_sec = CAMERA_DQBUF_TIMEOUT_MS / 1000,
+            .tv_usec = (CAMERA_DQBUF_TIMEOUT_MS % 1000) * 1000,
+        };
+        if (ioctl(file, VIDIOC_S_DQBUF_TIMEOUT, &dqbuf_timeout) != 0) {
+            error = ESP_FAIL;
         }
     }
 
@@ -1140,14 +1241,15 @@ static int command_camera_test(int argc, char **argv)
         struct v4l2_buffer done = {0};
         done.type = type;
         done.memory = V4L2_MEMORY_MMAP;
-        /* DQBUF blocks until the 10 fps sensor delivers the next frame. */
+        /* DQBUF waits at most CAMERA_DQBUF_TIMEOUT_MS per frame (set above). */
         if (ioctl(file, VIDIOC_DQBUF, &done) != 0) {
             error = ESP_ERR_TIMEOUT;
             break;
         }
         if ((done.flags & V4L2_BUF_FLAG_DONE) != 0 && done.index < CAMERA_BUFFER_COUNT) {
-            const uint32_t expected = format.fmt.pix.width * format.fmt.pix.height * 2;
-            if (done.bytesused != expected || done.bytesused > buffer_lengths[done.index]) {
+            const uint32_t expected = camera_expected_frame_bytes(&format);
+            if ((expected != 0 && done.bytesused != expected) ||
+                    done.bytesused > buffer_lengths[done.index]) {
                 size_ok = false;
             } else {
                 bool uniform = true;
@@ -1199,8 +1301,9 @@ static int command_camera_test(int argc, char **argv)
                                     FACTORY_STATUS_WARN : FACTORY_STATUS_FAIL;
     char detail[96];
     snprintf(detail, sizeof(detail),
-             "%ux%u frames=%u bytes=%" PRIu32 "%s%s",
+             "%ux%u fmt=0x%08lx frames=%u bytes=%" PRIu32 "%s%s",
              (unsigned)format.fmt.pix.width, (unsigned)format.fmt.pix.height,
+             (unsigned long)format.fmt.pix.pixelformat,
              frames, frame_bytes,
              size_ok ? "" : " bad_size", content_ok ? "" : " blank");
     factory_report_set(FACTORY_TEST_CAMERA, result, detail);
@@ -1259,7 +1362,7 @@ esp_err_t factory_peripherals_register(void)
 {
     const esp_console_cmd_t commands[] = {
         {.command = "pmic_test", .help = "Read TG28_SW identity, battery, VBUS, and charge state.", .func = command_pmic_test},
-        {.command = "pmic", .help = "Read boot source or inspect/set the charge current.", .func = command_pmic},
+        {.command = "pmic", .help = "Read boot source, ADC channels (temperature), or inspect/set the charge current.", .func = command_pmic},
         {.command = "charge_test", .help = "Check VBUS presence and charger activity on the TG28_SW.", .func = command_charge_test},
         {.command = "rail", .help = "Inspect or explicitly control one TG28_SW rail.", .func = command_rail},
         {.command = "peripheral_power", .help = "Apply a complete peripheral power sequence.", .func = command_peripheral_power},

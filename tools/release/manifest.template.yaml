@@ -41,7 +41,7 @@ toolchain:
 
 # (6) Flash command and expected ROM/application output.
 flashing:
-  command: "esptool.py --chip esp32s31 -p PORT write-flash 0x0 candis_s31_factory_merged.bin"
+  command: "esptool --chip esp32s31 -p PORT write-flash 0x0 candis_s31_factory_merged.bin"
   rom_log_required: true
   expected_application_output: |
     Candis-S31 Factory Bring-up

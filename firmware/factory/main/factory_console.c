@@ -179,7 +179,7 @@ char factory_console_ask_operator(const char *test_name, const char *question,
     return 0;
 }
 
-static esp_err_t ensure_nvs(void)
+esp_err_t factory_console_ensure_nvs(void)
 {
     esp_err_t error = nvs_flash_init();
     if (error == ESP_ERR_NVS_NO_FREE_PAGES ||
@@ -196,7 +196,7 @@ static int command_wifi_scan(int argc, char **argv)
     (void)argc;
     (void)argv;
 
-    esp_err_t error = ensure_nvs();
+    esp_err_t error = factory_console_ensure_nvs();
     if (error == ESP_OK) {
         error = esp_netif_init();
     }
@@ -214,9 +214,11 @@ static int command_wifi_scan(int argc, char **argv)
         }
     }
     bool started = false;
+    bool wifi_inited = false;
     if (error == ESP_OK) {
         wifi_init_config_t init_config = WIFI_INIT_CONFIG_DEFAULT();
         error = esp_wifi_init(&init_config);
+        wifi_inited = error == ESP_OK;
     }
     if (error == ESP_OK) {
         error = esp_wifi_set_mode(WIFI_MODE_STA);
@@ -252,7 +254,9 @@ static int command_wifi_scan(int argc, char **argv)
     if (started) {
         esp_wifi_stop();
     }
-    esp_wifi_deinit();
+    if (wifi_inited) {
+        esp_wifi_deinit();
+    }
     if (station != NULL) {
         esp_netif_destroy_default_wifi(station);
     }
@@ -278,7 +282,7 @@ static int command_ble_smoke(int argc, char **argv)
     (void)argv;
 
 #if CONFIG_BT_ENABLED
-    esp_err_t error = ensure_nvs();
+    esp_err_t error = factory_console_ensure_nvs();
     if (error == ESP_OK) {
         esp_bt_controller_config_t config = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
         error = esp_bt_controller_init(&config);
@@ -450,29 +454,87 @@ static int command_i2c_scan(int argc, char **argv)
     unsigned found = 0;
     bool addresses[128];
     const esp_err_t err = scan_i2c_bus(handle, addresses, &found);
-    const bool expected_devices_found = use_lp_bus ?
-                                        addresses[BSP_RX8130CE_I2C_ADDRESS] &&
-                                        addresses[BSP_TG28_SW_I2C_ADDRESS] :
-                                        found > 0;
-    char detail[64];
+    char detail[96];
     if (err != ESP_OK) {
         snprintf(detail, sizeof(detail), "scan error: %s", esp_err_to_name(err));
         factory_report_set(test, FACTORY_STATUS_FAIL, detail);
-    } else if (use_lp_bus) {
+        factory_report_print_one(test);
+        return err;
+    }
+    if (use_lp_bus) {
+        const bool present = addresses[BSP_RX8130CE_I2C_ADDRESS] &&
+                             addresses[BSP_TG28_SW_I2C_ADDRESS];
         snprintf(detail, sizeof(detail), "devices=%u rtc=%s pmic=%s", found,
                  addresses[BSP_RX8130CE_I2C_ADDRESS] ? "yes" : "no",
                  addresses[BSP_TG28_SW_I2C_ADDRESS] ? "yes" : "no");
-        factory_report_set(test,
-                           expected_devices_found ? FACTORY_STATUS_PASS : FACTORY_STATUS_FAIL,
+        factory_report_set(test, present ? FACTORY_STATUS_PASS : FACTORY_STATUS_FAIL,
                            detail);
-    } else {
-        snprintf(detail, sizeof(detail), "devices=%u", found);
-        factory_report_set(test,
-                           expected_devices_found ? FACTORY_STATUS_PASS : FACTORY_STATUS_FAIL,
-                           detail);
+        factory_report_print_one(test);
+        return present ? ESP_OK : ESP_FAIL;
     }
+
+    /* Main-bus expectations (hardware/bring-up.md): FUSB303B answers at
+     * exactly one of 0x21/0x31 — 0x31 means the address strap mismatches
+     * the schematic and must be recorded. Devices behind switched rails
+     * (CST820 0x15/ALDO2, ES8389 0x20/ALDO3, OV5640 0x3C/camera rails) may
+     * stay silent while their rail is off; silent while powered is a
+     * finding. 0x0C is the unconfirmed DW9714 VCM address. */
+    const bool fusb_21 = addresses[0x21];
+    const bool fusb_31 = addresses[0x31];
+    bool touch_on = false, audio_on = false;
+    bool cam_dvdd = false, cam_avdd = false, cam_dovdd = false;
+    bsp_pmic_regulator_is_enabled(BSP_PMIC_ALDO2, &touch_on);
+    bsp_pmic_regulator_is_enabled(BSP_PMIC_ALDO3, &audio_on);
+    bsp_pmic_regulator_is_enabled(BSP_PMIC_DCDC2, &cam_dvdd);
+    bsp_pmic_regulator_is_enabled(BSP_PMIC_ALDO4, &cam_avdd);
+    bsp_pmic_regulator_is_enabled(BSP_PMIC_BLDO1, &cam_dovdd);
+    const bool camera_on = cam_dvdd && cam_avdd && cam_dovdd;
+
+    unsigned missing = 0;
+    if (touch_on && !addresses[0x15]) {
+        missing |= 0x01;
+    }
+    if (audio_on && !addresses[0x20]) {
+        missing |= 0x02;
+    }
+    if (camera_on && !addresses[0x3c]) {
+        missing |= 0x04;
+    }
+    unsigned unexpected = 0;
+    for (uint16_t address = 0x08; address <= 0x77; ++address) {
+        if (addresses[address] && address != 0x15 && address != 0x20 &&
+                address != 0x21 && address != 0x31 && address != 0x3c &&
+                address != 0x0c) {
+            ++unexpected;
+        }
+    }
+
+    factory_status_t verdict = FACTORY_STATUS_PASS;
+    const char *note = "expected set present";
+    if (!fusb_21 && !fusb_31) {
+        verdict = FACTORY_STATUS_FAIL;
+        note = "FUSB303B missing";
+    } else if (fusb_21 && fusb_31) {
+        verdict = FACTORY_STATUS_FAIL;
+        note = "FUSB303B at both 0x21/0x31";
+    } else if (fusb_31) {
+        verdict = FACTORY_STATUS_WARN;
+        note = "FUSB303B at 0x31: strap mismatch, record it";
+    } else if (missing != 0) {
+        verdict = FACTORY_STATUS_WARN;
+        note = "powered device silent";
+    } else if (unexpected > 0) {
+        verdict = FACTORY_STATUS_WARN;
+        note = "unexpected address answered";
+    } else if (addresses[0x0c]) {
+        verdict = FACTORY_STATUS_WARN;
+        note = "0x0c answered: unconfirmed VCM";
+    }
+    snprintf(detail, sizeof(detail), "%s (devices=%u missing=0x%x extra=%u)",
+             note, found, missing, unexpected);
+    factory_report_set(test, verdict, detail);
     factory_report_print_one(test);
-    return err != ESP_OK ? err : (expected_devices_found ? ESP_OK : ESP_FAIL);
+    return verdict == FACTORY_STATUS_FAIL ? ESP_FAIL : ESP_OK;
 }
 
 static int command_report(int argc, char **argv)
@@ -487,8 +549,18 @@ static int command_report_reset(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
+    /* safe_state only runs at boot; keep its result across a manual reset. */
+    factory_status_t boot_status = FACTORY_STATUS_NOT_RUN;
+    char boot_detail[96] = {0};
+    const bool keep = factory_report_get(FACTORY_TEST_SAFE_STATE, &boot_status,
+                                         boot_detail, sizeof(boot_detail)) == ESP_OK &&
+                      boot_status != FACTORY_STATUS_NOT_RUN;
     factory_report_init();
-    printf("All factory results reset to NOT_RUN\n");
+    if (keep) {
+        factory_report_set(FACTORY_TEST_SAFE_STATE, boot_status, boot_detail);
+    }
+    printf("Factory results reset to NOT_RUN%s\n",
+           keep ? " (safe_state kept: it only runs at boot)" : "");
     return ESP_OK;
 }
 

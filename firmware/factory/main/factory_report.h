@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <stddef.h>
+
 #include "esp_err.h"
 
 typedef enum {
@@ -41,11 +43,20 @@ typedef enum {
     FACTORY_STATUS_COUNT,
 } factory_status_t;
 
-/** Reset every test result to NOT_RUN. */
+/** Reset every test result to NOT_RUN and drop the persisted copy. */
 void factory_report_init(void);
 
-/** Store one test result and a short printable detail string. */
+/** Load persisted results from NVS; falls back to all-NOT_RUN when no valid
+ *  copy exists. Requires nvs_flash_init() to have run for persistence. */
+void factory_report_load(void);
+
+/** Store one test result and a short printable detail string; the result is
+ *  also persisted to NVS on a best-effort basis so power-cycle test flows
+ *  keep their history. */
 esp_err_t factory_report_set(factory_test_id_t test, factory_status_t status, const char *detail);
+
+/** Read back one stored result. */
+esp_err_t factory_report_get(factory_test_id_t test, factory_status_t *status, char *detail, size_t detail_size);
 
 /** Print one result in human-readable and JSON-lines forms. */
 void factory_report_print_one(factory_test_id_t test);

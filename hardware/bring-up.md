@@ -38,8 +38,13 @@ current, temperature, reset, or console error.
    compare battery and VBUS readings with a meter. Confirm
    `pmic charge_current` reports the agreed 50 mA default. Under current
    limiting and battery temperature monitoring, set 500 mA only for the target
-   current test, then restore 50 mA. If the RTC reports the recovery epoch, set
-   a known value with `rtc_set`, power-cycle the board, and check it again.
+   current test, then restore 50 mA. EVT1 has no battery NTC (the TS pin is a
+   fixed input), so monitor the cell with an external probe and watch the
+   TG28 die-sensor trend through `pmic temperature` (TDIE is a sensor
+   voltage, not degrees). If the RTC reports the recovery epoch, set
+   a known value with `rtc_set`, power-cycle the board, and check it again;
+   results persist across the power cycle in NVS, so the final `report`
+   still contains the pre-cycle tests.
 3. Measure each optional rail while enabling and disabling it with `peripheral_power`. Do not connect the panel, camera, speaker, or card until its off-state and on-state voltage are correct.
 4. On the first AMOLED light-up, start at low brightness
    (`display_brightness 30`) and check current draw and image before raising

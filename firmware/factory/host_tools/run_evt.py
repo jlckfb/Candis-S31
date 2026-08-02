@@ -57,6 +57,25 @@ INFO_PREFIX = "FACTORY_INFO "
 PROMPT_PREFIX = "FACTORY_PROMPT "
 
 
+def build_stages():
+    """Stage list plus an rtc_set built from the host clock (UTC).
+
+    A fresh board powers up with the RX8130CE time invalid, so rtc_test
+    alone always fails there. Setting the clock first makes the stage
+    meaningful; the bring-up power-cycle check still verifies retention.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc)
+    # firmware weekday convention: 0=Sunday .. 6=Saturday
+    rtc_command = "rtc_set %s %d" % (now.strftime("%Y-%m-%d %H:%M:%S"),
+                                     now.isoweekday() % 7)
+    stages = []
+    for command, timeout_s, expect in STAGES:
+        if command == "rtc_test":
+            stages.append((rtc_command, 10, "rtc"))
+        stages.append((command, timeout_s, expect))
+    return stages
+
+
 def parse_payload(line, prefix):
     if not line.startswith(prefix):
         return None
@@ -282,6 +301,11 @@ def _self_test():
                              ('FACTORY_RESULT {"test":"display","status":"%s",'
                               '"detail":"operator answered"}\n' % status).encode())
                     continue
+                if command.startswith("rtc_set "):
+                    os.write(master_fd,
+                             b'FACTORY_RESULT {"test":"rtc","status":"PASS",'
+                             b'"detail":"set ok"}\n')
+                    continue
                 response = FAKE_RESPONSES.get(command)
                 if response == "PROMPT":
                     os.write(master_fd,
@@ -305,7 +329,7 @@ def _self_test():
     with tempfile.TemporaryDirectory() as out_dir:
         runner = EvtRunner(ser, out_dir, answer_fn=lambda q, t: "y",
                            timeout_cap=2, verbose=False)
-        report = runner.run(STAGES)
+        report = runner.run(build_stages())
         base = report.pop("_base")
 
         results = report["results"]
@@ -338,8 +362,8 @@ def _self_test():
               "summary parse failed: %r" % report["summary"])
         check(os.path.exists(base + ".json") and os.path.exists(base + ".log"),
               "report files were not written")
-        check(len(results) == len([s for s in STAGES if s[2] != "INFO"]),
-              "expected one result per stage, got %d" % len(results))
+        check(len(results) == len(set(s[2] for s in build_stages() if s[2] != "INFO")),
+              "expected one result per unique stage name, got %d" % len(results))
 
     stop.set()
     ser.close()
@@ -378,7 +402,7 @@ def main():
     ser = serial.Serial(args.port, args.baud, timeout=0.1)
     runner = EvtRunner(ser, args.out, board_id=args.board_id,
                        answer_fn=skip_answer if args.non_interactive else None)
-    report = runner.run(STAGES)
+    report = runner.run(build_stages())
     summary = report.get("summary") or {}
     print("overall:", summary.get("overall", "no summary received"))
     return 0 if summary.get("overall") in ("PASS", "WARN") else 1

@@ -9,6 +9,10 @@
 /** Register Factory commands and start the standard I/O console. */
 esp_err_t factory_console_start(void);
 
+/** Initialize the default NVS partition, erasing and retrying once when the
+ *  partition is full or has an incompatible layout. */
+esp_err_t factory_console_ensure_nvs(void);
+
 /**
  * Ask the operator a yes/no question on the console.
  *
