@@ -14,6 +14,15 @@ esp_err_t factory_console_start(void);
 esp_err_t factory_console_ensure_nvs(void);
 
 /**
+ * Record the GPIO0 level sampled by app_main before the console starts.
+ *
+ * GPIO0 is both a boot strapping pin and the TF card-detect switch, so the
+ * boot-time level records whether the board was powered with a card fitted.
+ * board_info reports the stored level in its FACTORY_INFO line.
+ */
+void factory_console_note_gpio0_boot_level(int level);
+
+/**
  * Ask the operator a yes/no question on the console.
  *
  * Emits a machine-readable FACTORY_PROMPT line first so host tooling can

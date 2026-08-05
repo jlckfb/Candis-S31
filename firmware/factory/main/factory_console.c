@@ -42,6 +42,20 @@
 #define CANDIS_S31_BSP_GIT_REV "unknown"
 #endif
 
+/* GPIO0 level sampled by app_main before the console started; -1 until then. */
+static int s_gpio0_boot_level = -1;
+
+void factory_console_note_gpio0_boot_level(int level)
+{
+    s_gpio0_boot_level = level;
+}
+
+static const char *gpio0_boot_level_text(void)
+{
+    return s_gpio0_boot_level < 0 ? "unsampled" :
+           s_gpio0_boot_level ? "high" : "low";
+}
+
 static const char *reset_reason_name(esp_reset_reason_t reason)
 {
     switch (reason) {
@@ -98,6 +112,7 @@ static int command_board_info(int argc, char **argv)
            (unsigned)(chip_info.revision / 100),
            (unsigned)(chip_info.revision % 100));
     printf("reset_reason=%s\n", reset_reason_name(esp_reset_reason()));
+    printf("gpio0_boot=%s\n", gpio0_boot_level_text());
     printf("flash_bytes=%" PRIu32 "\n", flash_err == ESP_OK ? flash_size : 0);
     printf("psram_bytes=%zu\n", esp_psram_get_size());
     printf("free_internal_heap=%zu\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
@@ -117,6 +132,8 @@ static int command_board_info(int argc, char **argv)
     factory_report_print_json_string(mac_text);
     fputs(",\"reset\":", stdout);
     factory_report_print_json_string(reset_reason_name(esp_reset_reason()));
+    fputs(",\"gpio0_boot\":", stdout);
+    factory_report_print_json_string(gpio0_boot_level_text());
     fputs("}\n", stdout);
     return ESP_OK;
 }
@@ -198,12 +215,17 @@ static int command_wifi_scan(int argc, char **argv)
 
     esp_err_t error = factory_console_ensure_nvs();
     if (error == ESP_OK) {
+        /* esp_netif_deinit() is not supported by esp-netif, so the stack is
+         * left up; a repeat esp_netif_init() is a harmless no-op. */
         error = esp_netif_init();
     }
+    bool event_loop_created = false;
     if (error == ESP_OK) {
         error = esp_event_loop_create_default();
         if (error == ESP_ERR_INVALID_STATE) {
             error = ESP_OK; /* another test already created the loop */
+        } else {
+            event_loop_created = error == ESP_OK;
         }
     }
     esp_netif_t *station = NULL;
@@ -259,6 +281,13 @@ static int command_wifi_scan(int argc, char **argv)
     }
     if (station != NULL) {
         esp_netif_destroy_default_wifi(station);
+    }
+    if (event_loop_created) {
+        /* wifi deinit and the netif destroy above unregister every handler
+         * this command put on the default loop, so the loop itself can be
+         * deleted; a later wifi_scan then starts from the same clean state
+         * as the first call. */
+        esp_event_loop_delete_default();
     }
 
     char detail[64];
@@ -541,6 +570,13 @@ static int command_i2c_scan(int argc, char **argv)
     } else if (fusb_31) {
         verdict = FACTORY_STATUS_WARN;
         note = "FUSB303B at 0x31: strap mismatch, record it";
+    } else if (unexpected > 0 && addresses[0x0c]) {
+        /* The two answer anomalies are independent findings: report both so
+         * an unexpected address cannot mask the unconfirmed-VCM answer at
+         * 0x0c. At 46 chars this is the longest note, and it still fits
+         * FACTORY_DETAIL_LENGTH on both snprintf paths below. */
+        verdict = FACTORY_STATUS_WARN;
+        note = "unexpected address answered; 0x0c VCM answered";
     } else if (unexpected > 0) {
         verdict = FACTORY_STATUS_WARN;
         note = "unexpected address answered";
@@ -558,7 +594,9 @@ static int command_i2c_scan(int argc, char **argv)
      * -Wformat-truncation: when a PMIC read failed the counts carry no
      * information (missing is gated by power_known), so that path reports
      * the failed rails instead of the counts. The rail list is at most
-     * five 5-char names plus commas, which fits %.29s exactly. */
+     * five 5-char names plus commas, which fits %.29s exactly. The longest
+     * note is the combined unexpected+0x0c finding (46 chars), so both forms
+     * stay within budget: 46+36 with the counts, 46+20+29 with the rails. */
     if (unknown_rails[0] != '\0') {
         snprintf(detail, sizeof(detail), "%s; PMIC read failed: %.29s",
                  note, unknown_rails);

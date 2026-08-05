@@ -18,6 +18,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "fusb303b.h"
 #include "led_convert.h"
 #include "linux/videodev2.h"
 #include "esp_video_ioctl.h"
@@ -42,10 +43,6 @@
 
 /* TG28_SW INT_STATUS1 low nibble latches the power-key edge/press flags. */
 #define TG28_POWER_KEY_IRQ_MASK 0x0f
-
-/* FUSB303B is configured as DRP on EVT1. The fusb303b driver is a private
- * BSP dependency, so the expected device_type value is duplicated here. */
-#define FUSB303B_EXPECTED_DEVICE_TYPE 0x03
 
 static lv_display_t *s_display;
 static led_indicator_handle_t s_led;
@@ -612,9 +609,11 @@ static int command_type_c_test(int argc, char **argv)
 
     factory_status_t result = FACTORY_STATUS_PASS;
     const char *verdict;
-    if (status.device_type != FUSB303B_EXPECTED_DEVICE_TYPE) {
+    if (status.device_type != FUSB303B_DEVICE_TYPE_VALUE) {
         /* The controller answered but is not in the DRP role EVT1 expects:
-         * a real configuration fault, not a cable-state quirk. */
+         * a real configuration fault, not a cable-state quirk. The expected
+         * device_type is the identity constant from the driver's public
+         * header (the driver itself stays a private BSP dependency). */
         result = FACTORY_STATUS_FAIL;
         verdict = "FUSB303B not in DRP mode";
     } else if (status.attached && (status.orientation == 1 || status.orientation == 2)) {

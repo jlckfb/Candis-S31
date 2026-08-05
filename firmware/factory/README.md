@@ -218,6 +218,12 @@ That `PASS` only confirms that the GPIO API accepted the disabled levels. Rail
 voltage, leakage, sequencing, and active polarity still require measurement on
 EVT1.
 
+GPIO0 doubles as a boot strapping pin and the TF card-detect switch, so a
+board powered with a card fitted samples the strap low. The firmware records
+the pin level early in `app_main`, logs it at boot, and reports it in the
+`board_info` `FACTORY_INFO` as `gpio0_boot` (`low` means a card was fitted at
+power-on). This is observation only; the boot path itself is unchanged.
+
 ## Result format
 
 Every implemented test is one of:

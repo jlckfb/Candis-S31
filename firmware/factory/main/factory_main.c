@@ -3,6 +3,7 @@
  */
 
 #include "bsp/esp-bsp.h"
+#include "driver/gpio.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -50,6 +51,32 @@ static void console_failure_count_clear(void)
 
 void app_main(void)
 {
+    /* GPIO0 is both a boot strapping pin and the TF card-detect switch: a
+     * card fitted at power-on holds the strap low through the sampling
+     * window. Record the level so the EVT log can note "card inserted at
+     * boot"; this only reads the pin and never changes boot behavior. The
+     * read config matches bsp_sdcard_is_inserted(). */
+    const gpio_config_t sd_detect = {
+        .pin_bit_mask = 1ULL << BSP_SD_DET,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    int gpio0_boot_level = -1;
+    if (gpio_config(&sd_detect) == ESP_OK) {
+        gpio0_boot_level = gpio_get_level(BSP_SD_DET);
+    }
+    factory_console_note_gpio0_boot_level(gpio0_boot_level);
+    if (gpio0_boot_level < 0) {
+        ESP_LOGW(TAG, "GPIO0 (TF card detect / boot strap) read failed");
+    } else {
+        ESP_LOGI(TAG, "GPIO0 (TF card detect / boot strap) at boot: %s (%s)",
+                 gpio0_boot_level ? "high" : "low",
+                 gpio0_boot_level == BSP_SD_DET_ACTIVE_LEVEL ?
+                 "TF card fitted at power-on" : "no TF card at power-on");
+    }
+
     const esp_err_t nvs_err = factory_console_ensure_nvs();
     if (nvs_err != ESP_OK) {
         ESP_LOGE(TAG, "NVS init failed: %s; results will not persist",

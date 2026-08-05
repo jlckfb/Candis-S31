@@ -15,6 +15,7 @@ idf_component_register(
         esp_psram
         esp_timer
         esp_wifi
+        fusb303b
         heap
         nvs_flash
         spi_flash

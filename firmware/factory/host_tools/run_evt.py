@@ -19,12 +19,28 @@ import argparse
 import datetime
 import json
 import os
+import re
 import select
 import sys
 import threading
 import time
 
 import serial
+
+# Host-side composite stage marker, not a console command: for each peripheral
+# behind a switched rail, turn the rail off and back on and rescan the main
+# I2C bus after every toggle, proving that CST820 (0x15), ES8389 (0x20), and
+# OV5640 (0x3c) answer only while their rail is on. EvtRunner.run() expands
+# the marker into the real command sequence; --no-power-rail-scan drops it.
+POWER_RAIL_SCAN = "power_rail_scan"
+
+# (peripheral_power name, main-bus address) for the devices behind switched
+# rails that the POWER_RAIL_SCAN stage checks.
+POWER_RAIL_DEVICES = (
+    ("touch", 0x15),    # CST820 touch, ALDO2
+    ("audio", 0x20),    # ES8389 codec, ALDO3
+    ("camera", 0x3c),   # OV5640 SCCB, camera rails
+)
 
 # (command, console timeout in seconds, expected report test name or marker)
 STAGES = [
@@ -43,6 +59,10 @@ STAGES = [
     ("typec_test", 10, "type_c"),
     ("wifi_scan", 30, "wifi"),
     ("ble_smoke", 20, "ble"),
+    # First light-up: cap brightness before any pattern, per bring-up.md.
+    # display_brightness prints no FACTORY_RESULT, so it reuses the "INFO"
+    # marker semantics (send, wait out the timeout, record nothing).
+    ("display_brightness 30", 5, "INFO"),
     ("display_test", 45, "display"),
     ("touch_test", 30, "touch"),
     ("display_sleep_test", 150, "display_sleep"),  # four operator questions
@@ -51,6 +71,9 @@ STAGES = [
     ("speaker_test", 45, "speaker"),
     ("microphone_test", 30, "microphone"),
     ("camera_test", 20, "camera"),
+    # Optional closed-loop rail check, expanded by the runner; must stay last
+    # so every device test has already powered its rail once.
+    (POWER_RAIL_SCAN, 120, POWER_RAIL_SCAN),
 ]
 
 RESULT_PREFIX = "FACTORY_RESULT "
@@ -58,13 +81,19 @@ SUMMARY_PREFIX = "FACTORY_SUMMARY "
 INFO_PREFIX = "FACTORY_INFO "
 PROMPT_PREFIX = "FACTORY_PROMPT "
 
+# scan_i2c_bus() in the firmware prints one of these per answering address.
+FOUND_DEVICE_RE = re.compile(r"found I2C device at 0x([0-9a-fA-F]{2})$")
 
-def build_stages():
+
+def build_stages(power_rail_scan=True):
     """Stage list plus an rtc_set built from the host clock (UTC).
 
     A fresh board powers up with the RX8130CE time invalid, so rtc_test
     alone always fails there. Setting the clock first makes the stage
     meaningful; the bring-up power-cycle check still verifies retention.
+
+    power_rail_scan=False drops the optional POWER_RAIL_SCAN marker, which
+    restores the exact stage set this script has always run.
     """
     now = datetime.datetime.now(datetime.timezone.utc)
     # firmware weekday convention: 0=Sunday .. 6=Saturday
@@ -72,6 +101,8 @@ def build_stages():
                                      now.isoweekday() % 7)
     stages = []
     for command, timeout_s, expect in STAGES:
+        if command == POWER_RAIL_SCAN and not power_rail_scan:
+            continue
         if command == "rtc_test":
             stages.append((rtc_command, 10, "rtc"))
         stages.append((command, timeout_s, expect))
@@ -179,6 +210,90 @@ class EvtRunner:
                     return True
         return False
 
+    def _send_and_drain(self, command, settle_s):
+        """Send a command with no FACTORY_RESULT and drain its text output.
+
+        peripheral_power only prints on error, so a short fixed window keeps
+        the log ordered without stalling the flow.
+        """
+        self._log(">>> " + command)
+        self.ser.write(command.encode("ascii") + b"\r\n")
+        deadline = time.monotonic() + settle_s
+        while time.monotonic() < deadline:
+            line = self._read_line(deadline)
+            if line is None:
+                break
+            self._log(line)
+
+    def _run_i2c_rescan(self, timeout_s):
+        """Rescan the main bus; return (i2c_main payload or None, found set)."""
+        if self.timeout_cap is not None:
+            timeout_s = min(timeout_s, self.timeout_cap)
+        self._log(">>> i2c_scan main")
+        self.ser.write(b"i2c_scan main\r\n")
+        found = set()
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            line = self._read_line(deadline)
+            if line is None:
+                break
+            self._log(line)
+            match = FOUND_DEVICE_RE.match(line)
+            if match:
+                found.add(int(match.group(1), 16))
+                continue
+            payload = parse_payload(line, PROMPT_PREFIX)
+            if payload is not None:
+                self._handle_prompt(payload)
+                continue
+            payload = parse_payload(line, RESULT_PREFIX)
+            if payload is not None:
+                self.results[payload.get("test", "?")] = payload
+                if payload.get("test") == "i2c_main":
+                    return payload, found
+        return None, found
+
+    def _run_power_rail_scan(self, timeout_s):
+        """Toggle each switched-rail peripheral off/on and rescan the main bus.
+
+        The firmware grades a switched-rail device as allowed-silent whenever
+        its rail reads back off, so only the host can close the loop: a device
+        that still answers with its rail off (or stays silent with it back on)
+        is recorded here under the synthetic power_rail_scan result. Each
+        peripheral ends the stage powered again, so the last rescan leaves the
+        complete expected device set as the board-side i2c_main result.
+        """
+        per_scan = max(1, timeout_s // (2 * len(POWER_RAIL_DEVICES)))
+        findings = []
+        for name, address in POWER_RAIL_DEVICES:
+            for enabled in (False, True):
+                self._send_and_drain("peripheral_power %s %s"
+                                     % (name, "on" if enabled else "off"), 0.5)
+                payload, found = self._run_i2c_rescan(per_scan)
+                state = "on" if enabled else "off"
+                if payload is None:
+                    findings.append("%s: no i2c_main result with rail %s"
+                                    % (name, state))
+                elif enabled and address not in found:
+                    findings.append("%s: 0x%02x silent with rail on"
+                                    % (name, address))
+                elif not enabled and address in found:
+                    findings.append("%s: 0x%02x answered with rail off"
+                                    % (name, address))
+        if findings:
+            status = "FAIL"
+            detail = "; ".join(findings)
+            self._log("!!! %s FAIL: %s" % (POWER_RAIL_SCAN, detail))
+        else:
+            status = "PASS"
+            detail = "switched-rail devices answer only while powered"
+            self._log("%s PASS: %s" % (POWER_RAIL_SCAN, detail))
+        self.results[POWER_RAIL_SCAN] = {
+            "test": POWER_RAIL_SCAN,
+            "status": status,
+            "detail": detail,
+        }
+
     def _run_report_reset(self):
         """Clear results persisted in NVS by an earlier run on this board.
 
@@ -205,6 +320,10 @@ class EvtRunner:
     def run(self, stages):
         self._run_report_reset()
         for command, timeout_s, expect in stages:
+            if command == POWER_RAIL_SCAN:
+                # Host-side composite stage; the board has no such command.
+                self._run_power_rail_scan(timeout_s)
+                continue
             if not self._run_stage(command, timeout_s, expect) and expect != "INFO":
                 self.results.setdefault(expect, {
                     "test": expect,
@@ -269,7 +388,7 @@ FAKE_RESPONSES = {
     "safe_state": ['FACTORY_RESULT {"test":"safe_state","status":"PASS","detail":"ok"}'],
     "flash_test": ['FACTORY_RESULT {"test":"flash","status":"PASS","detail":"size=16777216"}'],
     "psram_test": ['FACTORY_RESULT {"test":"psram","status":"PASS","detail":"tested=65536"}'],
-    "i2c_scan main": ['FACTORY_RESULT {"test":"i2c_main","status":"PASS","detail":"devices=3"}'],
+    # i2c_scan main is answered from the simulated rail state below instead.
     "i2c_scan lp": ['FACTORY_RESULT {"test":"i2c_low_power","status":"PASS","detail":"devices=2"}'],
     "pmic_test": ['FACTORY_RESULT {"test":"pmic","status":"PASS","detail":"id=0x47"}'],
     "charge_test": ['FACTORY_RESULT {"test":"charge","status":"WARN",'
@@ -308,6 +427,8 @@ def _self_test():
     def fake_firmware():
         buffer = b""
         stale_results = True  # results persisted in NVS by an earlier run
+        # Switched-rail state; the earlier device tests left every rail on.
+        rail_on = {name: True for name, _address in POWER_RAIL_DEVICES}
         while not stop.is_set():
             try:
                 chunk = os.read(master_fd, 256)
@@ -340,6 +461,24 @@ def _self_test():
                     os.write(master_fd,
                              b"Factory results reset to NOT_RUN"
                              b" (safe_state kept: it only runs at boot)\n")
+                    continue
+                if command.startswith("peripheral_power "):
+                    fields = command.split()
+                    if len(fields) == 3 and fields[1] in rail_on:
+                        rail_on[fields[1]] = fields[2] == "on"
+                    continue
+                if command == "i2c_scan main":
+                    # FUSB303B is always powered; the rest answer only while
+                    # their simulated rail is on.
+                    found = [0x21] + [address for name, address in
+                                      POWER_RAIL_DEVICES if rail_on[name]]
+                    for address in sorted(found):
+                        os.write(master_fd, ("found I2C device at 0x%02x\n"
+                                             % address).encode())
+                    os.write(master_fd,
+                             ('FACTORY_RESULT {"test":"i2c_main","status":"PASS",'
+                              '"detail":"expected set present (devices=%d '
+                              'missing=0x0 extra=0)"}\n' % len(found)).encode())
                     continue
                 response = FAKE_RESPONSES.get(command)
                 if response == "PROMPT":
@@ -411,6 +550,18 @@ def _self_test():
         check(results["camera"]["status"] == "TIMEOUT",
               "silent camera command should record TIMEOUT, got %r"
               % results["camera"])
+        check(results["power_rail_scan"]["status"] == "PASS",
+              "well-behaved fake rails should score power_rail_scan PASS, got %r"
+              % results.get("power_rail_scan"))
+        for name, _address in POWER_RAIL_DEVICES:
+            off_command = "peripheral_power %s off" % name
+            on_command = "peripheral_power %s on" % name
+            check(off_command in received_commands and
+                  on_command in received_commands and
+                  received_commands.index(off_command) <
+                  received_commands.index(on_command),
+                  "power_rail_scan must toggle %s off before on, commands: %r"
+                  % (name, received_commands))
         check(report["summary"] is not None and
               report["summary"]["overall"] == "FAIL" and
               report["summary"]["warn"] == 2,
@@ -432,7 +583,7 @@ def _self_test():
         return 1
     print("self-test passed: report_reset before the first stage, "
           "PASS/FAIL/WARN/NOT_RUN/TIMEOUT paths, prompt forwarding, "
-          "summary parse, and report files all verified")
+          "rail toggle + rescan, summary parse, and report files all verified")
     return 0
 
 
@@ -445,6 +596,9 @@ def main():
     parser.add_argument("--out", default="evt_logs", help="output directory")
     parser.add_argument("--non-interactive", action="store_true",
                         help="answer 's' (skip) to every operator prompt")
+    parser.add_argument("--no-power-rail-scan", action="store_true",
+                        help="skip the optional stage that toggles each switched "
+                             "peripheral rail and rescans the main I2C bus")
     parser.add_argument("--self-test", action="store_true",
                         help="run the pty-based self test and exit")
     args = parser.parse_args()
@@ -458,7 +612,7 @@ def main():
     ser = serial.Serial(args.port, args.baud, timeout=0.1)
     runner = EvtRunner(ser, args.out, board_id=args.board_id,
                        answer_fn=skip_answer if args.non_interactive else None)
-    report = runner.run(build_stages())
+    report = runner.run(build_stages(power_rail_scan=not args.no_power_rail_scan))
     summary = report.get("summary") or {}
     print("overall:", summary.get("overall", "no summary received"))
     return 0 if summary.get("overall") in ("PASS", "WARN") else 1
