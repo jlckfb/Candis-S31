@@ -29,11 +29,11 @@ The current baseline is ESP-IDF `v6.1-beta1`. Installation Manager (EIM), the of
 
 Arduino and PlatformIO projects will be added only after they build with their normal public tools. A board variant or JSON manifest cannot add a new SoC by itself. This repository does not provide a private ESP-IDF fork, patched framework, or copied third-party libraries.
 
-### Build verification — 2026-07-31
+### Build verification — 2026-08-05
 
-Baseline: ESP-IDF `v6.1-beta1`, target `esp32s31` (preview). `tools/build-all.sh` compiles the twelve targets below serially; as of 2026-07-31 all twelve pass. "Compiles" means exactly a successful compile — **no target has run on hardware; every board function is pending EVT measurement**.
+Baseline: ESP-IDF `v6.1-beta1`, target `esp32s31` (preview). `tools/build-all.sh` compiles the fourteen targets below serially; as of 2026-08-05 all fourteen pass. "Compiles" means exactly a successful compile — **no target has run on hardware; every board function is pending EVT measurement**.
 
-| Target (`tools/build-all.sh --list`) | Source | Status (2026-07-31) |
+| Target (`tools/build-all.sh --list`) | Source | Status (2026-08-05) |
 |---|---|---|
 | `example:display` | esp-bsp worktree `examples/display` | Compiles; pending EVT hardware test |
 | `example:display_camera_video` | esp-bsp worktree `examples/display_camera_video` | Compiles; pending EVT hardware test |
@@ -41,6 +41,8 @@ Baseline: ESP-IDF `v6.1-beta1`, target `esp32s31` (preview). `tools/build-all.sh
 | `example:display_lvgl_benchmark` | esp-bsp worktree `examples/display_lvgl_benchmark` | Compiles; pending EVT hardware test |
 | `example:display_sdcard` | esp-bsp worktree `examples/display_sdcard` | Compiles; pending EVT hardware test |
 | `example:display_usb_hid` | esp-bsp worktree `examples/display_usb_hid` | Compiles; pending EVT hardware test |
+| `example:audio` | esp-bsp worktree `examples/audio` | Compiles; pending EVT hardware test |
+| `example:display_audio_photo` | esp-bsp worktree `examples/display_audio_photo` | Compiles; pending EVT hardware test |
 | `testapp:tg28_sw` | esp-bsp worktree `components/tg28_sw/test_apps` | Compiles; pending EVT hardware test |
 | `testapp:rx8130ce` | esp-bsp worktree `components/rx8130ce/test_apps` | Compiles; pending EVT hardware test |
 | `testapp:fusb303b` | esp-bsp worktree `components/fusb303b/test_apps` | Compiles; pending EVT hardware test |
