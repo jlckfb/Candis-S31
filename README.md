@@ -31,9 +31,9 @@ Arduino and PlatformIO projects will be added only after they build with their n
 
 ### Build verification — 2026-08-05
 
-Baseline: ESP-IDF `v6.1-beta1`, target `esp32s31` (preview). `tools/build-all.sh` compiles the fourteen targets below serially; as of 2026-08-05 all fourteen pass. "Compiles" means exactly a successful compile — **no target has run on hardware; every board function is pending EVT measurement**.
+Baseline: ESP-IDF `v6.1-beta1`, target `esp32s31` (preview). `tools/build-all.sh` compiles the fifteen targets below serially; as of 2026-08-06 all fifteen pass. "Compiles" means exactly a successful compile — **no target has run on hardware; every board function is pending EVT measurement**.
 
-| Target (`tools/build-all.sh --list`) | Source | Status (2026-08-05) |
+| Target (`tools/build-all.sh --list`) | Source | Status (2026-08-06) |
 |---|---|---|
 | `example:display` | esp-bsp worktree `examples/display` | Compiles; pending EVT hardware test |
 | `example:display_camera_video` | esp-bsp worktree `examples/display_camera_video` | Compiles; pending EVT hardware test |
@@ -49,6 +49,7 @@ Baseline: ESP-IDF `v6.1-beta1`, target `esp32s31` (preview). `tools/build-all.sh
 | `testapp:cst820` | esp-bsp worktree `components/lcd_touch/esp_lcd_touch_cst820/test_apps` | Compiles; pending EVT hardware test |
 | `factory` | `firmware/factory` (with `CANDIS_S31_BSP_PATH`) | Compiles; pending EVT hardware test |
 | `getting-started` | `examples/esp-idf/getting-started` | Compiles; pending EVT hardware test |
+| `low-power` | `examples/esp-idf/low-power` (with `CANDIS_S31_BSP_PATH`) | Compiles; pending EVT hardware test |
 
 ## Repository layout
 

@@ -87,8 +87,8 @@ is committed to the project.
 As of 2026-08-05 the local verification environment is ESP-IDF `v6.1-beta1`
 (commit `b1d13e9f`, checked out at `.tools/esp-idf` in the workspace root, two
 levels above this repository) plus the local ESP-BSP worktree (commit
-`04b52fef`, clean). All fourteen `tools/build-all.sh` targets pass in this
-combination as of 2026-08-05 (incremental re-verification over build trees
+`f3d40203`, clean). All fifteen `tools/build-all.sh` targets pass in this
+combination as of 2026-08-06 (incremental re-verification over build trees
 that match the current sources), and the Factory project compiled and merged
 successfully on 2026-07-31 (merged image about
 1.9 MB against the 4 MB factory partition), and the Board Manager definition

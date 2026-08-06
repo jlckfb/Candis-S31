@@ -31,9 +31,9 @@ Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会
 
 ### 构建验证 — 2026-08-05
 
-基线：ESP-IDF `v6.1-beta1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 14 个目标；截至 2026-08-05 全部通过。「编译通过」仅表示编译成功——**所有目标都还没有在硬件上运行过，每一项板载功能都待 EVT 实测**。
+基线：ESP-IDF `v6.1-beta1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 15 个目标；截至 2026-08-06 全部通过。「编译通过」仅表示编译成功——**所有目标都还没有在硬件上运行过，每一项板载功能都待 EVT 实测**。
 
-| 目标（`tools/build-all.sh --list`） | 源码位置 | 状态（2026-08-05） |
+| 目标（`tools/build-all.sh --list`） | 源码位置 | 状态（2026-08-06） |
 |---|---|---|
 | `example:display` | esp-bsp 工作区 `examples/display` | 编译通过；待 EVT 实测 |
 | `example:display_camera_video` | esp-bsp 工作区 `examples/display_camera_video` | 编译通过；待 EVT 实测 |
@@ -49,6 +49,7 @@ Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会
 | `testapp:cst820` | esp-bsp 工作区 `components/lcd_touch/esp_lcd_touch_cst820/test_apps` | 编译通过；待 EVT 实测 |
 | `factory` | `firmware/factory`（经 `CANDIS_S31_BSP_PATH`） | 编译通过；待 EVT 实测 |
 | `getting-started` | `examples/esp-idf/getting-started` | 编译通过；待 EVT 实测 |
+| `low-power` | `examples/esp-idf/low-power`（经 `CANDIS_S31_BSP_PATH`） | 编译通过；待 EVT 实测 |
 
 ## 仓库目录
 
