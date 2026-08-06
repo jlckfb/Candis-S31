@@ -4,7 +4,7 @@
 
 Candis-S31 is a compact ESP32-S31 development board built around a square 2.0-inch 460 × 460 AMOLED. It also includes touch, battery charging and power management, RTC, two USB Type-C ports, audio, a DVP camera connector, a TF card slot, buttons, and one RGB LED.
 
-> **Hardware status:** EVT1 is still in layout and has not been fabricated. The ESP-IDF starter and Factory Bring-up project are compile-tested, but no board function has been verified on hardware.
+> **Hardware status:** EVT1 (schematic v0.5) went to fabrication on 2026-08-03 as `v0.5_260803_1544`; the boards have not arrived yet. The ESP-IDF starter, Factory Bring-up, and low-power projects are compile-tested, but no board function has been verified on Candis-S31 hardware.
 
 ## Getting started
 

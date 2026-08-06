@@ -31,7 +31,7 @@ TEMPLATE=$SCRIPT_DIR/manifest.template.yaml
 MERGED=candis_s31_factory_merged.bin
 
 RELEASE_NAME=${RELEASE_NAME:-<tag>}
-BOARD_REV=${BOARD_REV:-EVT1 (schematic v0.5, unfabricated)}
+BOARD_REV=${BOARD_REV:-EVT1 (schematic v0.5, fab v0.5_260803_1544)}
 IDF_PATH=${IDF_PATH:-}
 
 die() { echo "pack_factory_release: ERROR: $*" >&2; exit 2; }
