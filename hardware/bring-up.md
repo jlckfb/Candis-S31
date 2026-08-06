@@ -17,6 +17,8 @@ EVT1 is still in layout. The current schematic is revision 0.5, exported on 2026
 | Camera / JTAG mux | Confirm GPIO54-57 are released from JTAG before DVP use and that camera capture is stable; document the alternative debug route | Disable camera while JTAG is active, or disable JTAG before powering the camera |
 | Type-C2 source mode | Test DRP, short circuit, dual-plug, backfeed, and temperature behavior | Keep source mode disabled or DNP |
 | Reset key | Confirm the TG28_SW `TG28_PWROK` output type, sink current, and timing | Isolate or rework the key input |
+| Deep-sleep counter retention | Run the low-power example through S0→S1→deep-sleep→wake and confirm the `RTC_NOINIT_ATTR` cycle counter survives the wake and escalates to shutdown at the configured count | If the counter is lost across deep sleep the machine loops in deep sleep instead of escalating; the RTC-timer wake still recovers the board, so treat shutdown escalation as best-effort until this passes |
+| Soft power-off with VBUS | Trigger `bsp_pmic_power_off` (TG28 REG10 bit0) with VBUS attached and confirm whether the board powers off, reboots, or needs a guard — the Linux reference reboots instead of powering off in this case | If it reboots or misbehaves with VBUS present, add a VBUS-present guard (deliberate reboot, or only allow power-off when VBUS is absent) |
 
 ## First power-on order
 
