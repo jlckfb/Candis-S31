@@ -1,0 +1,5 @@
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# The BSP header pulls in LVGL even though this example never starts it, so the
+# application does not fit the 1 MB default app partition.
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y

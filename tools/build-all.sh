@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build-all.sh — Candis-S31 build baseline: compile all 14 ESP-IDF targets serially.
+# build-all.sh — Candis-S31 build baseline: compile all 15 ESP-IDF targets serially.
 #
 # Targets (baseline ESP-IDF v6.1-beta1; esp32s31 is a *preview* target -> --preview):
 #   example:<name>   8 esp-bsp examples (display, display_camera_video,
@@ -13,6 +13,8 @@
 #   factory          firmware/factory, needs CANDIS_S31_BSP_PATH pointing at the
 #                    local esp-bsp worktree (bsp/candis_s31). Default build/ dir.
 #   getting-started  examples/esp-idf/getting-started. Default build/ dir.
+#   low-power        examples/esp-idf/low-power, also needs CANDIS_S31_BSP_PATH
+#                    (HP light-sleep state machine plus an LP core companion).
 #
 # Why not `set-target`: idf.py global options (-B/-D/--preview) must precede the
 # action verb. The 2026-07-31 ws1 script wrote `set-target esp32s31 -B dir build`,
@@ -33,7 +35,7 @@
 #     respective .gitignore files (esp-bsp: `build*`; this repo: `**/build/`).
 #
 # Usage:
-#   tools/build-all.sh                          # all 14 targets
+#   tools/build-all.sh                          # all 15 targets
 #   tools/build-all.sh getting-started factory  # subset (names from --list)
 #   tools/build-all.sh --list                   # print target names
 #
@@ -68,7 +70,7 @@ TEST_APPS=(tg28_sw rx8130ce fusb303b cst820)
 ALL_TARGETS=()
 for ex in "${BSP_EXAMPLES[@]}"; do ALL_TARGETS+=("example:$ex"); done
 for ta in "${TEST_APPS[@]}"; do ALL_TARGETS+=("testapp:$ta"); done
-ALL_TARGETS+=(factory getting-started)
+ALL_TARGETS+=(factory getting-started low-power)
 
 testapp_dir() {
     case "$1" in
@@ -137,6 +139,11 @@ build_one() {
             ;;
         getting-started)
             run_target "$name" "$CANDIS_REPO/examples/esp-idf/getting-started" \
+                idf.py --preview -D IDF_TARGET=$IDF_TARGET build
+            ;;
+        low-power)
+            run_target "$name" "$CANDIS_REPO/examples/esp-idf/low-power" \
+                env CANDIS_S31_BSP_PATH="$ESP_BSP_ROOT/bsp/candis_s31" \
                 idf.py --preview -D IDF_TARGET=$IDF_TARGET build
             ;;
         *) die "unknown target: $name" ;;
