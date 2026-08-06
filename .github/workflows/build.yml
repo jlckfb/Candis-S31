@@ -38,6 +38,55 @@ jobs:
           idf.py --preview -C examples/esp-idf/getting-started set-target esp32s31
           idf.py --preview -C examples/esp-idf/getting-started build
 
+  # The four development drivers live in the ESP-BSP worktree, not in this
+  # repository. Their test apps are the acceptance gate for the components that
+  # bsp/candis_s31 and firmware/factory depend on, so CI compiles them with the
+  # same flags tools/build-all.sh uses locally.
+  drivers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Fetch ESP-BSP (Candis-S31 drivers)
+        run: |
+          git clone https://github.com/LeenixP/esp-bsp.git "$RUNNER_TEMP/esp-bsp"
+          git -C "$RUNNER_TEMP/esp-bsp" checkout "$ESP_BSP_COMMIT"
+
+      - name: Build driver test apps
+        run: |
+          . ~/esp-idf/export.sh
+          for app in \
+            components/tg28_sw/test_apps \
+            components/rx8130ce/test_apps \
+            components/fusb303b/test_apps \
+            components/lcd_touch/esp_lcd_touch_cst820/test_apps; do
+            echo "::group::$app"
+            ( cd "$RUNNER_TEMP/esp-bsp/$app" \
+              && idf.py --preview -B build_esp32s31 -D IDF_TARGET=esp32s31 build )
+            echo "::endgroup::"
+          done
+
   factory:
     runs-on: ubuntu-latest
     timeout-minutes: 45
