@@ -507,7 +507,8 @@ static int command_i2c_scan(int argc, char **argv)
      * the schematic and must be recorded. Devices behind switched rails
      * (CST820 0x15/ALDO2, ES8389 0x20/ALDO3, OV5640 0x3C/camera rails) may
      * stay silent while their rail is off; silent while powered is a
-     * finding. 0x0C is the unconfirmed DW9714 VCM address. */
+     * finding. This board has no VCM driver, so any other answer — including
+     * the 0x0C slot a VCM would use — is unexpected. */
     const bool fusb_21 = addresses[0x21];
     const bool fusb_31 = addresses[0x31];
     bool touch_on = false, audio_on = false;
@@ -553,8 +554,7 @@ static int command_i2c_scan(int argc, char **argv)
     unsigned unexpected = 0;
     for (uint16_t address = 0x08; address <= 0x77; ++address) {
         if (addresses[address] && address != 0x15 && address != 0x20 &&
-                address != 0x21 && address != 0x31 && address != 0x3c &&
-                address != 0x0c) {
+                address != 0x21 && address != 0x31 && address != 0x3c) {
             ++unexpected;
         }
     }
@@ -570,19 +570,9 @@ static int command_i2c_scan(int argc, char **argv)
     } else if (fusb_31) {
         verdict = FACTORY_STATUS_WARN;
         note = "FUSB303B at 0x31: strap mismatch, record it";
-    } else if (unexpected > 0 && addresses[0x0c]) {
-        /* The two answer anomalies are independent findings: report both so
-         * an unexpected address cannot mask the unconfirmed-VCM answer at
-         * 0x0c. At 46 chars this is the longest note, and it still fits
-         * FACTORY_DETAIL_LENGTH on both snprintf paths below. */
-        verdict = FACTORY_STATUS_WARN;
-        note = "unexpected address answered; 0x0c VCM answered";
     } else if (unexpected > 0) {
         verdict = FACTORY_STATUS_WARN;
         note = "unexpected address answered";
-    } else if (addresses[0x0c]) {
-        verdict = FACTORY_STATUS_WARN;
-        note = "0x0c answered: unconfirmed VCM";
     } else if (!power_known) {
         verdict = FACTORY_STATUS_WARN;
         note = "rail power state unknown";
@@ -595,8 +585,9 @@ static int command_i2c_scan(int argc, char **argv)
      * information (missing is gated by power_known), so that path reports
      * the failed rails instead of the counts. The rail list is at most
      * five 5-char names plus commas, which fits %.29s exactly. The longest
-     * note is the combined unexpected+0x0c finding (46 chars), so both forms
-     * stay within budget: 46+36 with the counts, 46+20+29 with the rails. */
+     * note is the FUSB303B 0x31 strap-mismatch finding (43 chars), so both
+     * forms stay within budget: 43+36 with the counts, 43+20+29 with the
+     * rails. */
     if (unknown_rails[0] != '\0') {
         snprintf(detail, sizeof(detail), "%s; PMIC read failed: %.29s",
                  note, unknown_rails);
