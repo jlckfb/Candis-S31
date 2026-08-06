@@ -14,7 +14,6 @@ EVT1 is still in layout. The current schematic is revision 0.5, exported on 2026
 | GPIO36 strap | Scope TF_PWR_EN_N through the strap-sampling window and pass only if its pull-up is compatible with VDD_SPI=3.3 V and boot is repeatable | Keep GPIO36 high-impedance through sampling; rework the pull or SD power gate |
 | UART0 series resistors | Repeat ROM sync and verified flashing through the series resistors — TX chain R17+R37 (499 ohm each, 998 ohm total), RX chain R36 (499 ohm) — at 115200, 460800, and the intended high baud without framing errors | Use the highest repeatable lower baud or rework the series resistors |
 | Main-bus I2C addresses | Scan with the required rails on; pass only if ES8389 responds at 0x20 and FUSB303B at exactly one of 0x21/0x31 with valid identity | Do not initialize the conflicting device; rework its address strap |
-| OV5640 AF/VCM | Obtain module-vendor confirmation of VCM voltage, supply ownership, and actuator command protocol, then demonstrate repeatable near/far focus | Leave autofocus disabled and keep any unverified VCM supply off |
 | Camera / JTAG mux | Confirm GPIO54-57 are released from JTAG before DVP use and that camera capture is stable; document the alternative debug route | Disable camera while JTAG is active, or disable JTAG before powering the camera |
 | Type-C2 source mode | Test DRP, short circuit, dual-plug, backfeed, and temperature behavior | Keep source mode disabled or DNP |
 | Reset key | Confirm the TG28_SW `TG28_PWROK` output type, sink current, and timing | Isolate or rework the key input |
@@ -79,7 +78,6 @@ With the matching rails on, the buses should show exactly these devices:
 | Main | 0x20 | ES8389 audio codec | AUDIO_3V3_SW (ALDO3) on |
 | Main | 0x21 | FUSB303B Type-C controller | None |
 | Main | 0x3C | OV5640 SCCB | Camera rails on |
-| Main | 0x0C | DW9714 VCM | Pending module-vendor confirmation |
 | Low power (GPIO6/7) | 0x32 | RX8130CE RTC | Always present |
 | Low power | 0x34 | TG28_SW PMIC | Always present |
 
