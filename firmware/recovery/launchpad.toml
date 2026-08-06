@@ -1,5 +1,10 @@
 # Self-host this file together with the matching factory release artifact.
-# SHA-256: 3971b412d7710809b0ad66e4e3ee8967ef54158984f4f3d4bf942084a9dbb32e
+# SHA-256: <sha256>
+#   Fill this in when the release is actually published, together with <tag>
+#   below. Take the value from candis_s31_factory_merged.bin.sha256, which
+#   tools/release/pack_factory_release.sh writes next to the image. The
+#   checksum changes with every rebuild of the factory firmware, so never
+#   leave a value here that belongs to an older build.
 esp_toml_version = 1.0
 supported_apps = ["Candis-S31-Factory"]
 multipart = true
