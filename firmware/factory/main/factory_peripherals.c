@@ -28,7 +28,9 @@
 #include "factory_report.h"
 
 #define TOUCH_TEST_SECONDS        15
-#define AUDIO_SAMPLE_RATE         22050
+/* Follow the BSP instead of pinning a rate here: the default must stay a row of
+ * the es8389 driver's coeff_div[] table, and the BSP owns that decision. */
+#define AUDIO_SAMPLE_RATE         BSP_I2S_SAMPLE_RATE
 #define AUDIO_FRAME_COUNT         512
 #define OPERATOR_PROMPT_TIMEOUT_S 30
 #define BUTTON_TEST_TIMEOUT_S     20
