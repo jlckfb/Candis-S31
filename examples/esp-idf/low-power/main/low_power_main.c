@@ -8,26 +8,34 @@
  * @file
  * @brief Candis-S31 low-power framework prototype.
  *
- * Three power states, walked in a loop so the whole machine is exercised:
+ * Four power states, walked in a loop so the whole machine is exercised:
  *
- *   S0 RUN       display on, LP housekeeper polls the shared IRQ line while
- *                the HP core light-sleeps between mailbox reports.
+ *   S0 RUN        display on, LP housekeeper polls the shared IRQ line while
+ *                 the HP core light-sleeps between mailbox reports.
  *   S1 SCREEN_OFF CO5300 in sleep, CST820 in monitor mode, HP in light sleep.
- *                Wake sources: touch INT, shared IRQ line, RTC timer.
- *   S2 SHUTDOWN  peripheral rails off, RX8130CE alarm armed, then the TG28
- *                main rail is dropped. The ESP loses power, so the "wake"
- *                from S2 is a cold boot after the PMIC powers the board again.
+ *                 Wake sources: touch INT, shared IRQ line, RTC timer.
+ *   DEEP_SLEEP    SoC deep sleep entered on S1 timeout, woken by the SoC RTC
+ *                 timer or the shared IRQ line (EXT1 on GPIO2). Waking is a
+ *                 reboot; a cycle counter kept in RTC memory decides whether
+ *                 the machine gets another S0 pass or escalates to S2.
+ *   S2 SHUTDOWN   peripheral rails off, RX8130CE alarm armed, then the PMIC
+ *                 performs a software power-off (bsp_pmic_power_off()). The
+ *                 ESP loses power, so the "wake" from S2 is a cold boot after
+ *                 the PMIC powers the board again.
  *
- * Deep sleep is deliberately absent from the main path: on ESP32-S31 silicon
- * v0.0 with ESP-IDF v6.1-beta1 the chip does not wake from deep sleep (timer
- * wake-up at 10 s and 20 s both fail, and the unmodified IDF
- * examples/system/deep_sleep reproduces it). See the README.
+ * Deep sleep works on ESP32-S31: both the plain timer wake-up and EXT1 on a
+ * pulled pin wake the chip reliably. Earlier revisions of this file claimed
+ * otherwise because the EXT1 pin under test was left floating. The one hard
+ * requirement is a defined level on every EXT1 wake pin: a floating pad keeps
+ * the chip in deep sleep forever. GPIO2 is pulled up through R10 on this
+ * board, so it is safe to use as the EXT1 source here. See the README.
  */
 
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
+#include "esp_attr.h"
 #include "esp_bit_defs.h"
 #include "esp_check.h"
 #include "esp_err.h"
@@ -57,18 +65,6 @@
 extern const uint8_t lp_core_main_bin_start[] asm("_binary_lp_core_main_bin_start");
 extern const uint8_t lp_core_main_bin_end[] asm("_binary_lp_core_main_bin_end");
 
-/**
- * Last step of S2: drop the TG28 main rail (DCDC1) and with it the ESP.
- *
- * Disabled by default. tg28_sw exposes no dedicated "power off" or "shipping
- * mode" entry point, only the generic regulator enable used here, and whether
- * clearing the DCDC1 enable bit is the sanctioned board-off path has not been
- * confirmed against the TG28 switch-charger datasheet. Turning this on will
- * cut power to the board, so it must be validated on EVT hardware first. See
- * the API-gap section of the README.
- */
-#define CANDIS_ENABLE_MAIN_RAIL_CUTOFF 0
-
 /** Seconds spent in S0 before dropping to S1. */
 #define S0_DWELL_SECONDS        15
 /** Light-sleep slice used inside S0 while waiting for LP reports. */
@@ -81,6 +77,12 @@ extern const uint8_t lp_core_main_bin_end[] asm("_binary_lp_core_main_bin_end");
 #define S2_ALARM_MINUTES        5
 /** Depth of the queue draining LP mailbox reports into the state machine. */
 #define LP_REPORT_QUEUE_DEPTH   16
+/** SoC RTC timer period used as a deep-sleep wake source. */
+#define DEEP_SLEEP_WAKE_US      (20 * 1000 * 1000ULL)
+/** Number of deep-sleep passes before the machine escalates to S2. */
+#define DEEP_SLEEP_MAX_CYCLES   2
+/** Magic guarding the RTC-memory deep-sleep counter against power-on garbage. */
+#define DEEP_SLEEP_COUNT_MAGIC  0xDEE5C311U
 
 static const char *TAG = "candis_lp";
 
@@ -88,6 +90,7 @@ static const char *TAG = "candis_lp";
 typedef enum {
     CANDIS_STATE_RUN = 0,       /**< S0: full operation, LP core delegated. */
     CANDIS_STATE_SCREEN_OFF,    /**< S1: panel asleep, HP in light sleep. */
+    CANDIS_STATE_DEEP_SLEEP,    /**< SoC deep sleep between S1 and S2. */
     CANDIS_STATE_SHUTDOWN,      /**< S2: rails down, RTC alarm armed. */
     CANDIS_STATE_COUNT,
 } candis_state_t;
@@ -95,6 +98,7 @@ typedef enum {
 static const char *const s_state_names[CANDIS_STATE_COUNT] = {
     [CANDIS_STATE_RUN] = "S0-RUN",
     [CANDIS_STATE_SCREEN_OFF] = "S1-SCREEN_OFF",
+    [CANDIS_STATE_DEEP_SLEEP] = "DEEP_SLEEP",
     [CANDIS_STATE_SHUTDOWN] = "S2-SHUTDOWN",
 };
 
@@ -110,6 +114,44 @@ static QueueHandle_t s_lp_reports;
 static const char *state_name(candis_state_t state)
 {
     return state < CANDIS_STATE_COUNT ? s_state_names[state] : "invalid";
+}
+
+/* ---------------------------------------------------------------------------
+ * Deep-sleep cycle counter
+ *
+ * Waking from deep sleep reboots the chip, so the machine needs state that
+ * survives the reboot to tell "first pass" from "budget exhausted". RTC slow
+ * memory survives deep sleep but not the power loss of S2, which is exactly
+ * the lifetime needed here; the magic value rejects the undefined contents
+ * seen right after a real power cycle. Whether the RTC memory actually holds
+ * across deep sleep on S31 silicon still needs EVT confirmation - if it is
+ * lost every time, the counter reads zero forever and the machine degrades
+ * to looping S0..S1..deep sleep without ever reaching S2. It still cannot
+ * wedge, because the RTC timer wake source fires either way.
+ * ------------------------------------------------------------------------- */
+
+/** Reboot-surviving record of the deep-sleep passes in this power session. */
+typedef struct {
+    uint32_t magic;     /**< DEEP_SLEEP_COUNT_MAGIC when cycles is valid. */
+    uint32_t cycles;    /**< Deep-sleep entries so far. */
+} deep_sleep_counter_t;
+
+static RTC_NOINIT_ATTR deep_sleep_counter_t s_deep_sleep_counter;
+
+/** Number of deep-sleep passes recorded for the current power session. */
+static uint32_t deep_sleep_cycles_done(void)
+{
+    if (s_deep_sleep_counter.magic != DEEP_SLEEP_COUNT_MAGIC) {
+        return 0;
+    }
+    return s_deep_sleep_counter.cycles;
+}
+
+/** Start a fresh power session: any non-deep-sleep boot invalidates RTC memory. */
+static void deep_sleep_counter_reset(void)
+{
+    s_deep_sleep_counter.magic = DEEP_SLEEP_COUNT_MAGIC;
+    s_deep_sleep_counter.cycles = 0;
 }
 
 /* ---------------------------------------------------------------------------
@@ -639,7 +681,7 @@ static esp_err_t enter_screen_off(void)
  * Light-sleep in S1 until a wake source fires or the escalation budget ends.
  *
  * @return true when the user asked to come back (touch), false when the budget
- *         ran out and the machine should escalate to S2. The result is
+ *         ran out and the machine should drop into deep sleep. The result is
  *         returned explicitly instead of re-reading esp_sleep_get_wakeup_causes()
  *         afterwards: a shared-IRQ wake also sets the GPIO cause bit, so the
  *         cause bitmap alone cannot tell "user touched" from "PMIC/RTC event".
@@ -696,8 +738,81 @@ static void exit_screen_off(void)
 }
 
 /**
- * Enter S2: shed the peripheral rails, arm the RTC alarm, then drop the main
- * rail so the board powers off.
+ * Enter deep sleep, the step between S1 and S2.
+ *
+ * Panel and touch are already in their S1 low-power modes and stay that way.
+ * The peripheral rails are kept powered on purpose, the touch rail first and
+ * foremost: without it neither a touch nor the devices behind the shared IRQ
+ * line can pull GPIO2 and wake the chip.
+ *
+ * Wake sources are the SoC RTC timer and EXT1 (any low) on the shared IRQ
+ * line. Waking from deep sleep reboots the chip, so this function does not
+ * return on success; app_main reads the cycle counter from RTC memory on the
+ * next boot and routes the machine back to S0 or on to S2.
+ */
+static esp_err_t enter_deep_sleep(void)
+{
+    /* Idempotent: S1 already stopped the housekeeper, but this guarantees
+     * GPIO2 is back on the HP side however the machine got here. */
+    stop_lp_housekeeper();
+
+    /* The S1 light-sleep sources use the digital pad function; EXT1 needs the
+     * RTC function instead, so they must go before the pad is re-muxed. */
+    disarm_light_sleep_sources(true);
+
+    const esp_err_t timer_error =
+        esp_sleep_enable_timer_wakeup(DEEP_SLEEP_WAKE_US);
+    if (timer_error != ESP_OK) {
+        ESP_LOGE(TAG, "deep-sleep timer wake-up arm failed: %s",
+                 esp_err_to_name(timer_error));
+    }
+
+    /* EXT1 on the shared IRQ line. GPIO2 is pulled up through R10; enable the
+     * internal pull-up as well so the pad keeps a defined level even without
+     * the external resistor. A floating EXT1 pin is exactly what keeps the
+     * chip in deep sleep forever. */
+    esp_err_t ext1_error = rtc_gpio_init(BSP_PMIC_RTC_INT);
+    if (ext1_error == ESP_OK) {
+        ext1_error = rtc_gpio_set_direction(BSP_PMIC_RTC_INT,
+                                            RTC_GPIO_MODE_INPUT_ONLY);
+    }
+    if (ext1_error == ESP_OK) {
+        ext1_error = rtc_gpio_pullup_en(BSP_PMIC_RTC_INT);
+    }
+    if (ext1_error == ESP_OK) {
+        ext1_error = esp_sleep_enable_ext1_wakeup_io(BIT(BSP_PMIC_RTC_INT),
+                                                     ESP_EXT1_WAKEUP_ANY_LOW);
+    }
+    if (ext1_error != ESP_OK) {
+        ESP_LOGE(TAG, "deep-sleep EXT1 wake-up arm failed: %s",
+                 esp_err_to_name(ext1_error));
+    }
+
+    if (timer_error != ESP_OK && ext1_error != ESP_OK) {
+        /* With no wake source armed, deep sleep would be permanent. Refuse it
+         * so the state machine escalates to S2 instead. */
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    s_deep_sleep_counter.magic = DEEP_SLEEP_COUNT_MAGIC;
+    s_deep_sleep_counter.cycles++;
+
+    ESP_LOGW(TAG, "deep sleep: cycle %u/%u, wake on RTC timer (%u s) or "
+             "GPIO%d low (EXT1)",
+             (unsigned)s_deep_sleep_counter.cycles,
+             (unsigned)DEEP_SLEEP_MAX_CYCLES,
+             (unsigned)(DEEP_SLEEP_WAKE_US / 1000000ULL),
+             BSP_PMIC_RTC_INT);
+    vTaskDelay(pdMS_TO_TICKS(50));   /* let the log drain */
+    esp_deep_sleep_start();
+
+    /* Not reached: waking from deep sleep reboots the chip. */
+    return ESP_OK;
+}
+
+/**
+ * Enter S2: shed the peripheral rails, arm the RTC alarm, then ask the PMIC
+ * for a software power-off so the board loses power.
  *
  * Order matters. Peripherals go first so nothing is back-fed while its supply
  * collapses, the alarm is armed while I2C is still alive, and DCDC1 is last
@@ -747,26 +862,21 @@ static esp_err_t enter_shutdown(void)
                         "RTC wake-up alarm failed");
 
     /* Let the shared line double as the PMIC's wake path. GPIO2 configuration
-     * is pointless once the ESP is unpowered, but it keeps the intent explicit
-     * for the case where the cutoff below stays disabled. */
+     * is pointless once the ESP is unpowered; it only matters if the power-off
+     * call below unexpectedly returns. */
     const esp_err_t gpio_error = arm_light_sleep_sources(true);
     if (gpio_error != ESP_OK) {
         ESP_LOGW(TAG, "shutdown wake-source arm failed: %s",
                  esp_err_to_name(gpio_error));
     }
 
-#if CANDIS_ENABLE_MAIN_RAIL_CUTOFF
-    ESP_LOGW(TAG, "cutting DCDC1: the board loses power now");
+    ESP_LOGW(TAG, "requesting PMIC power-off: the board loses power now");
     vTaskDelay(pdMS_TO_TICKS(50));   /* let the log drain */
-    const esp_err_t cutoff = bsp_pmic_regulator_enable(BSP_PMIC_DCDC1, false);
-    ESP_LOGE(TAG, "DCDC1 cutoff returned %s - still powered, so the generic "
-             "regulator disable is not the board-off path",
-             esp_err_to_name(cutoff));
-#else
-    ESP_LOGW(TAG, "main-rail cutoff disabled at compile time: tg28_sw has no "
-             "shipping-mode API and the DCDC1 route is unverified. "
-             "Set CANDIS_ENABLE_MAIN_RAIL_CUTOFF to 1 to try it on EVT.");
-#endif
+    const esp_err_t power_off = bsp_pmic_power_off();
+    /* Reached only when the PMIC refused: a successful software power-off
+     * drops DCDC1 and the ESP dies with it. */
+    ESP_LOGE(TAG, "bsp_pmic_power_off() returned %s - still powered",
+             esp_err_to_name(power_off));
     return ESP_OK;
 }
 
@@ -844,7 +954,28 @@ void app_main(void)
     }
     report_boot_reason();
 
-    candis_state_t state = CANDIS_STATE_RUN;
+    /* Route the boot. Waking from deep sleep reboots the chip with a real
+     * wake cause (timer, EXT1, ...); every other boot - power-on, reset, or
+     * the cold start after S2 cut the power - reports UNDEFINED and starts a
+     * fresh cycle with the counter zeroed. For a deep-sleep wake the counter
+     * in RTC memory decides between another S0 pass and the escalation to S2.
+     * This does not disturb report_boot_reason(): an S2 restart still shows
+     * up as UNDEFINED there, because the ESP was unpowered, not deep-sleeping. */
+    candis_state_t state;
+    if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
+        deep_sleep_counter_reset();
+        state = CANDIS_STATE_RUN;
+    } else if (deep_sleep_cycles_done() >= DEEP_SLEEP_MAX_CYCLES) {
+        ESP_LOGI(TAG, "deep-sleep budget exhausted (%u cycles), going to S2",
+                 (unsigned)deep_sleep_cycles_done());
+        state = CANDIS_STATE_SHUTDOWN;
+    } else {
+        ESP_LOGI(TAG, "woke from deep sleep, cycle %u/%u, returning to S0",
+                 (unsigned)deep_sleep_cycles_done(),
+                 (unsigned)DEEP_SLEEP_MAX_CYCLES);
+        state = CANDIS_STATE_RUN;
+    }
+
     while (1) {
         ESP_LOGI(TAG, "==> entering %s", state_name(state));
         switch (state) {
@@ -868,18 +999,31 @@ void app_main(void)
             {
                 const bool user_wake = run_state_screen_off();
                 exit_screen_off();
-                /* A touch returns to S0; exhausting the budget escalates to S2. */
-                state = user_wake ? CANDIS_STATE_RUN : CANDIS_STATE_SHUTDOWN;
+                /* A touch returns to S0; exhausting the budget drops the
+                 * machine into deep sleep first. */
+                state = user_wake ? CANDIS_STATE_RUN : CANDIS_STATE_DEEP_SLEEP;
             }
+            break;
+
+        case CANDIS_STATE_DEEP_SLEEP:
+            if (enter_deep_sleep() != ESP_OK) {
+                /* No wake source could be armed: deep sleep would be
+                 * permanent. Escalate to S2 instead. */
+                ESP_LOGE(TAG, "deep-sleep entry failed, escalating to S2");
+                state = CANDIS_STATE_SHUTDOWN;
+                break;
+            }
+            /* Not reached: waking from deep sleep reboots the chip. */
+            state = CANDIS_STATE_RUN;
             break;
 
         case CANDIS_STATE_SHUTDOWN:
             if (enter_shutdown() != ESP_OK) {
                 ESP_LOGE(TAG, "S2 entry failed");
             }
-            /* Reached only when the main-rail cutoff is disabled or refused.
-             * Idle instead of looping back: the peripheral rails are down and
-             * re-running S0 would need a full re-initialization. */
+            /* Reached only when the PMIC power-off was refused. Idle instead
+             * of looping back: the peripheral rails are down and re-running
+             * S0 would need a full re-initialization. */
             ESP_LOGW(TAG, "still powered after S2; idling. Reset the board or "
                      "cycle power to restart the state machine.");
             while (1) {
