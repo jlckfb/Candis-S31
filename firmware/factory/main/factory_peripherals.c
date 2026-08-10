@@ -22,6 +22,7 @@
 #include "led_convert.h"
 #include "linux/videodev2.h"
 #include "esp_video_ioctl.h"
+#include "usb/usb_host.h"
 
 #include "factory_console.h"
 #include "factory_peripherals.h"
@@ -284,6 +285,91 @@ static int command_peripheral_power(int argc, char **argv)
         return ESP_ERR_INVALID_ARG;
     }
     return bsp_peripheral_power_set(peripheral, strcmp(argv[2], "on") == 0);
+}
+
+/* power_all_off cleanup: log each failed item, keep only the first error. */
+static esp_err_t power_off_note(const char *item, esp_err_t error,
+                                esp_err_t first_error)
+{
+    if (error == ESP_OK) {
+        return first_error;
+    }
+    printf("power_all_off: %s failed: %s\n", item, esp_err_to_name(error));
+    return first_error == ESP_OK ? error : first_error;
+}
+
+static int command_power_all_off(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    esp_err_t first_error = ESP_OK;
+
+    /* 1. Stop activity and release business-level handles first, so nothing
+     * keeps driving a peripheral while its supply is removed. Every step is
+     * best-effort and safe to repeat; cleanup never stops at a failure. */
+    if (s_display != NULL) {
+        const esp_err_t error = bsp_display_stop();
+        first_error = power_off_note("display+touch stop", error, first_error);
+        if (error == ESP_OK) {
+            s_display = NULL;
+        }
+    }
+    if (s_led != NULL) {
+        const esp_err_t error = led_indicator_delete(s_led);
+        first_error = power_off_note("LED delete", error, first_error);
+        if (error == ESP_OK) {
+            s_led = NULL;
+        }
+    }
+    if (s_speaker != NULL) {
+        const esp_err_t error = bsp_audio_codec_deinit(s_speaker);
+        first_error = power_off_note("speaker codec release", error, first_error);
+        if (error == ESP_OK) {
+            s_speaker = NULL;
+        }
+    }
+    if (s_microphone != NULL) {
+        const esp_err_t error = bsp_audio_codec_deinit(s_microphone);
+        first_error = power_off_note("microphone codec release", error, first_error);
+        if (error == ESP_OK) {
+            s_microphone = NULL;
+        }
+    }
+    first_error = power_off_note("audio deinit", bsp_audio_deinit(), first_error);
+    if (bsp_sdcard_get_handle() != NULL) {
+        first_error = power_off_note("SD card unmount", bsp_sdcard_unmount(),
+                                     first_error);
+    }
+    first_error = power_off_note("camera stop", bsp_camera_stop(), first_error);
+    first_error = power_off_note("USB host stop", bsp_usb_host_stop(), first_error);
+
+    /* 2. Board-level power-down sequence for every switched peripheral,
+     * then the RGB load switch. Powering an already-off block down again is
+     * harmless, which is what makes the command idempotent. */
+    for (int index = 0; index < BSP_PERIPHERAL_COUNT; ++index) {
+        first_error = power_off_note(bsp_peripheral_name((bsp_peripheral_t)index),
+                                     bsp_peripheral_power_set((bsp_peripheral_t)index, false),
+                                     first_error);
+    }
+    first_error = power_off_note("DC1SW (RGB rail) open",
+                                 bsp_pmic_switch_enable(BSP_PMIC_SWITCH_DC1SW, false),
+                                 first_error);
+
+    /* 3. Final sweep: Type-C controller, direct power domains, camera
+     * control pins, RGB data low, touch reset low, and the optional
+     * TG28_SW rails. */
+    first_error = power_off_note("power safe state", bsp_power_safe_state(),
+                                 first_error);
+
+    if (first_error == ESP_OK) {
+        printf("power_all_off: activity stopped, every peripheral rail off\n");
+    } else {
+        printf("power_all_off: finished with failures; first error: %s\n",
+               esp_err_to_name(first_error));
+    }
+    printf("power_all_off is software state only: verify off-state residual "
+           "voltages with a meter before the next stage\n");
+    return first_error;
 }
 
 static int command_rtc_test(int argc, char **argv)
@@ -660,6 +746,140 @@ static int command_otg(int argc, char **argv)
                                          BSP_TYPE_C_CURRENT_DEFAULT;
     printf("WARNING: enabling the USB OTG boost rail; verify VBUS before connecting a load\n");
     return bsp_usb_otg_power_set(true, current);
+}
+
+#define USB_HOST_ENUM_TIMEOUT_S 20
+
+static void usb_host_test_event_cb(const usb_host_client_event_msg_t *message,
+                                   void *arg)
+{
+    if (message->event == USB_HOST_CLIENT_EVENT_NEW_DEV) {
+        *(volatile uint8_t *)arg = message->new_dev.address;
+    }
+}
+
+/* Best-effort UTF-16LE descriptor to printable ASCII for the log line. */
+static void usb_string_to_ascii(const usb_str_desc_t *descriptor, char *out,
+                                size_t out_size)
+{
+    size_t used = 0;
+    if (out_size > 0) {
+        out[0] = '\0';
+    }
+    if (descriptor == NULL) {
+        return;
+    }
+    const size_t chars = (descriptor->bLength - 2) / 2;
+    for (size_t index = 0; index < chars && used + 1 < out_size; ++index) {
+        const uint16_t code = descriptor->wData[index];
+        out[used++] = code >= 0x20 && code < 0x7f ? (char)code : '?';
+    }
+    out[used] = '\0';
+}
+
+static int command_usb_host_test(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+
+    /* Host start also arms the Type-C2 5 V boost at the 500 mA default
+     * advertisement; this board never advertises 1.5 A/3 A. Enumeration
+     * below performs real control transfers on EP0, so a PASS is data-path
+     * evidence, not just "5 V present". */
+    esp_err_t error = bsp_usb_host_start(BSP_USB_HOST_POWER_MODE_USB_DEV, true);
+    if (error != ESP_OK) {
+        report_error(FACTORY_TEST_USB_HOST, error, "USB Host start failed");
+        return error;
+    }
+
+    volatile uint8_t new_address = 0;
+    const usb_host_client_config_t client_config = {
+        .is_synchronous = false,
+        .max_num_event_msg = 5,
+        .async = {
+            .client_event_callback = usb_host_test_event_cb,
+            .callback_arg = (void *)&new_address,
+        },
+    };
+    usb_host_client_handle_t client = NULL;
+    if (error == ESP_OK) {
+        error = usb_host_client_register(&client_config, &client);
+    }
+
+    printf("Attach a USB device to Type-C2 within %u s (500 mA budget)\n",
+           USB_HOST_ENUM_TIMEOUT_S);
+    usb_device_handle_t device = NULL;
+    usb_device_info_t info = {0};
+    const usb_device_desc_t *descriptor = NULL;
+    const int64_t deadline = esp_timer_get_time() +
+                             (int64_t)USB_HOST_ENUM_TIMEOUT_S * 1000000;
+    while (error == ESP_OK && new_address == 0 &&
+            esp_timer_get_time() < deadline) {
+        const esp_err_t event_error = usb_host_client_handle_events(
+                                          client, pdMS_TO_TICKS(200));
+        if (event_error != ESP_OK && event_error != ESP_ERR_TIMEOUT) {
+            error = event_error;
+        }
+    }
+    if (error == ESP_OK && new_address != 0) {
+        error = usb_host_device_open(client, new_address, &device);
+    }
+    if (error == ESP_OK && device != NULL) {
+        error = usb_host_device_info(device, &info);
+    }
+    if (error == ESP_OK && device != NULL) {
+        error = usb_host_get_device_descriptor(device, &descriptor);
+    }
+
+    char manufacturer[24] = {0};
+    char product[24] = {0};
+    if (error == ESP_OK && descriptor != NULL) {
+        usb_string_to_ascii(info.str_desc_manufacturer, manufacturer,
+                            sizeof(manufacturer));
+        usb_string_to_ascii(info.str_desc_product, product, sizeof(product));
+        printf("addr=%u vid=0x%04x pid=0x%04x speed=%u config=%u "
+               "manufacturer=\"%s\" product=\"%s\"\n",
+               info.dev_addr, descriptor->idVendor, descriptor->idProduct,
+               (unsigned)info.speed, (unsigned)info.bConfigurationValue,
+               manufacturer, product);
+    }
+
+    /* Full teardown on every path: close the device, deregister the client,
+     * then stop the stack and the 5 V boost. */
+    if (device != NULL) {
+        const esp_err_t close_error = usb_host_device_close(client, device);
+        if (error == ESP_OK && close_error != ESP_OK) {
+            error = close_error;
+        }
+    }
+    if (client != NULL) {
+        const esp_err_t dereg_error = usb_host_client_deregister(client);
+        if (error == ESP_OK && dereg_error != ESP_OK) {
+            error = dereg_error;
+        }
+    }
+    const esp_err_t stop_error = bsp_usb_host_stop();
+    if (error == ESP_OK && stop_error != ESP_OK) {
+        error = stop_error;
+    }
+
+    if (error != ESP_OK) {
+        report_error(FACTORY_TEST_USB_HOST, error, "USB Host enumeration failed");
+        return error;
+    }
+    if (descriptor == NULL) {
+        factory_report_set(FACTORY_TEST_USB_HOST, FACTORY_STATUS_WARN,
+                           "no device attached within timeout");
+        factory_report_print_one(FACTORY_TEST_USB_HOST);
+        return ESP_ERR_NOT_FOUND;
+    }
+    char detail[FACTORY_DETAIL_LENGTH];
+    snprintf(detail, sizeof(detail), "vid=0x%04x pid=0x%04x speed=%u",
+             descriptor->idVendor, descriptor->idProduct,
+             (unsigned)info.speed);
+    factory_report_set(FACTORY_TEST_USB_HOST, FACTORY_STATUS_PASS, detail);
+    factory_report_print_one(FACTORY_TEST_USB_HOST);
+    return ESP_OK;
 }
 
 static void create_display_pattern(void)
@@ -1367,6 +1587,7 @@ esp_err_t factory_peripherals_register(void)
         {.command = "charge_test", .help = "Check VBUS presence and charger activity on the TG28_SW.", .func = command_charge_test},
         {.command = "rail", .help = "Inspect or explicitly control one TG28_SW rail.", .func = command_rail},
         {.command = "peripheral_power", .help = "Apply a complete peripheral power sequence.", .func = command_peripheral_power},
+        {.command = "power_all_off", .help = "Stop activity and switch every peripheral rail off (best effort, idempotent).", .func = command_power_all_off},
         {.command = "rtc_test", .help = "Read RX8130CE time and retained status flags.", .func = command_rtc_test},
         {.command = "rtc_set", .help = "Set and verify RX8130CE time: rtc_set YYYY-MM-DD HH:MM:SS WEEKDAY.", .func = command_rtc_set},
         {.command = "rtc_alarm", .help = "Fire an RX8130CE alarm at the next minute and check the flag.", .func = command_rtc_alarm_test},
@@ -1374,6 +1595,7 @@ esp_err_t factory_peripherals_register(void)
         {.command = "buttons", .help = "Wait for BOOT (GPIO61) and PWR (TG28_SW IRQ) key presses.", .func = command_buttons_test},
         {.command = "typec_test", .help = "Read FUSB303B connection state without changing its role.", .func = command_type_c_test},
         {.command = "otg", .help = "Explicitly enable or disable USB source power.", .func = command_otg},
+        {.command = "usb_host_test", .help = "Install the USB Host stack and enumerate one Type-C2 device (500 mA budget).", .func = command_usb_host_test},
         {.command = "display_test", .help = "Show a four-color AMOLED inspection pattern.", .func = command_display_test},
         {.command = "display_brightness", .help = "Set AMOLED brightness from 0 to 100 percent.", .func = command_display_brightness},
         {.command = "display_sleep", .help = "Enter AMOLED sleep or deep standby: display_sleep [deep].", .func = command_display_sleep},

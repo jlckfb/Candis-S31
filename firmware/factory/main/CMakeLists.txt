@@ -19,6 +19,7 @@ idf_component_register(
         heap
         nvs_flash
         spi_flash
+        usb
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
