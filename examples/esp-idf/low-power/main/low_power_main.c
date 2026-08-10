@@ -741,14 +741,18 @@ static void exit_screen_off(void)
  * Enter deep sleep, the step between S1 and S2.
  *
  * Panel and touch are already in their S1 low-power modes and stay that way.
- * The peripheral rails are kept powered on purpose, the touch rail first and
- * foremost: without it neither a touch nor the devices behind the shared IRQ
- * line can pull GPIO2 and wake the chip.
+ * The peripheral rails are kept powered on purpose so the panel/touch low-
+ * power state survives the wake reboot without a full re-initialization;
+ * the always-on RX8130CE/TG28 behind the shared IRQ line do not depend on
+ * any peripheral rail.
  *
  * Wake sources are the SoC RTC timer and EXT1 (any low) on the shared IRQ
- * line. Waking from deep sleep reboots the chip, so this function does not
- * return on success; app_main reads the cycle counter from RTC memory on the
- * next boot and routes the machine back to S0 or on to S2.
+ * line. Only PMIC/RTC events can assert that line: the CST820 touch INT is
+ * GPIO3 and is NOT wired to GPIO2, so a touch cannot wake deep sleep in
+ * this configuration. Waking from deep sleep reboots the chip, so this
+ * function does not return on success; app_main reads the cycle counter
+ * from RTC memory on the next boot and routes the machine back to S0 or on
+ * to S2.
  */
 static esp_err_t enter_deep_sleep(void)
 {
@@ -770,7 +774,8 @@ static esp_err_t enter_deep_sleep(void)
     /* EXT1 on the shared IRQ line. GPIO2 is pulled up through R10; enable the
      * internal pull-up as well so the pad keeps a defined level even without
      * the external resistor. A floating EXT1 pin is exactly what keeps the
-     * chip in deep sleep forever. */
+     * chip in deep sleep forever. Only TG28/RX8130CE events assert this line;
+     * touch (GPIO3) is deliberately not armed - see the function comment. */
     esp_err_t ext1_error = rtc_gpio_init(BSP_PMIC_RTC_INT);
     if (ext1_error == ESP_OK) {
         ext1_error = rtc_gpio_set_direction(BSP_PMIC_RTC_INT,
@@ -850,11 +855,14 @@ static esp_err_t enter_shutdown(void)
     s_panel = NULL;
     s_panel_io = NULL;
 
-    /* DLDO1 feeds the WS2812B through the DC1SW load switch and is off after
-     * reset; close it explicitly so a re-run cannot leave it open. */
-    const esp_err_t rgb_error = bsp_pmic_regulator_enable(BSP_PMIC_DLDO1, false);
+    /* The WS2812B rail is the DC1SW load switch: the TG28 OTP straps the
+     * DLDO1 pin in SWITCH mode (input = DCDC1), so it must be opened through
+     * the switch API, never the regulator API (the DLDO1 voltage/enable
+     * registers are inert in switch mode). It is off after reset; close it
+     * explicitly so a re-run cannot leave it open. */
+    const esp_err_t rgb_error = bsp_pmic_switch_enable(BSP_PMIC_SWITCH_DC1SW, false);
     if (rgb_error != ESP_OK) {
-        ESP_LOGW(TAG, "RGB rail (DLDO1/DC1SW) disable failed: %s",
+        ESP_LOGW(TAG, "RGB rail (DC1SW load switch) open failed: %s",
                  esp_err_to_name(rgb_error));
     }
 
