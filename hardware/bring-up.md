@@ -8,9 +8,9 @@ EVT1 is still in layout. The current schematic is revision 0.5, exported on 2026
 |---|---|---|
 | PMIC interrupt and reset | Confirm TG28_SW pin 38 behavior and the `CHIP_PU/PWROK` reset chain | Rework the interrupt or reset network |
 | Display supply | Confirm the LCD connector pinout and panel supply requirements | Do not populate or power the display |
-| U18 pin 13 / LCD_VDD | Pass only after the panel vendor confirms the pin-13 function, allowed voltage, and power sequence, and the measured rail stays in that range | Leave the panel unpopulated and keep both display enables off |
+| U18 pin 13 / LCD_VDD | **Resolved**: AM200 Rev V1.0 §8 marks pin 13 `LCD_VDD 3.3V` as NC. The real supply pins are pin 14 `LCD_IOVCC`, pin 15 `VBAT` (3.3–5.5 V), and pin 1 `VCI_EN`. On the EVT1 schematic pin 13 shares `LCD_3V3_SW` with pin 14, so the NC pin is a harmless no-load branch, but ALDO1 must still be enabled because it feeds pin 14. First light-up order: ALDO1 → measure pin 14 → VBAT/pin 15 → only then raise `VCI_EN`/pin 1 | Leave the panel unpopulated and keep both display enables off |
 | Battery path | Confirm BATFET, eFuse, and VBUS wake behavior | Revise the PMIC control and protection |
-| TG28 OTP | Read back or measure VRTC=3.0 V, REG62 default=50 mA, and the agreed BATFET/VBUS/BAT power-on bits on incoming parts; confirm over the LP I2C bus (0x34) that DCDC3, DCDC4, CPUSLDO, and DLDO2 (DC4SW) read back disabled, matching the unconnected schematic outputs | Keep charging and optional rails disabled; quarantine or reprogram the lot |
+| TG28 OTP | Read back or measure VRTC=3.0 V, REG62 default=50 mA, and the agreed BATFET/VBUS/BAT power-on bits on incoming parts; confirm over the LP I2C bus (0x34) that DCDC1 and DCDC4 are the OTP step1 rails (DCDC1 3.3 V, DCDC4 1.8 V per confirmation sheet V1.3) and that DCDC2/DCDC3, ALDO1-4, BLDO1/2, CPUSLDO, and DLDO2 (DC4SW) read back disabled. DCDC4 has no external load and no measurable node, so its OTP state is proven only by the pre-safe-state register snapshot in the Factory boot log; the Factory safe state then disables DCDC4 at runtime, which is the intended safety action | Keep charging and optional rails disabled; quarantine or reprogram the lot |
 | GPIO36 strap | Scope TF_PWR_EN_N through the strap-sampling window and pass only if its pull-up is compatible with VDD_SPI=3.3 V and boot is repeatable | Keep GPIO36 high-impedance through sampling; rework the pull or SD power gate |
 | UART0 series resistors | Repeat ROM sync and verified flashing through the series resistors — TX chain R17+R37 (499 ohm each, 998 ohm total), RX chain R36 (499 ohm) — at 115200, 460800, and the intended high baud without framing errors | Use the highest repeatable lower baud or rework the series resistors |
 | Main-bus I2C addresses | Scan with the required rails on; pass only if ES8389 responds at 0x20 and FUSB303B at exactly one of 0x21/0x31 with valid identity | Do not initialize the conflicting device; rework its address strap |
@@ -37,7 +37,7 @@ up, or flashing fails, stop and follow
 [`firmware/recovery/`](../firmware/recovery/README.md) for download-mode
 recovery instead of re-running stages blindly.
 
-1. Run `board_info`, `power_status`, `flash_test`, and `psram_test` without any external load attached.
+1. Run `board_info`, `power_status`, `flash_test`, and `psram_test` without any external load attached. Copy the `OTP boot snapshot` line from the boot log into the board record; `otp_status` re-reads the live rails at any time but cannot prove the OTP after the boot safe state ran.
 2. Run `i2c_scan lp`, `pmic_test`, `pmic power_on_source`, and `rtc_test`;
    compare battery and VBUS readings with a meter. Confirm
    `pmic charge_current` reports the agreed 50 mA default. Under current
@@ -60,7 +60,7 @@ recovery instead of re-running stages blindly.
 6. Run `speaker_test` at the supplied low level, record the audible result, then run `microphone_test`.
 7. Run `camera_test` and keep the ESP Video sensor log.
 8. Run `irq_test` once with the shared line idle and again after a known RTC or PMIC event. The command must release GPIO2 after clearing both devices.
-9. Run `typec_test` with no cable, then with known sink/source fixtures. Test `otg` only after the CC and boost path measurements are ready.
+9. Run `typec_test` before the first main-bus `i2c_scan` (the boot safe state powers the FUSB303B off and `typec_test` re-enables it), with no cable, then with known sink/source fixtures. Test `otg` only after the CC and boost path measurements are ready, and remember `otg on` proves only the 5 V boost path. For host data-path evidence run `usb_host_test` with a device attached (500 mA budget; this hardware never advertises 1.5 A/3 A); for device-mode enumeration use the dedicated TinyUSB diagnostic image. Between peripheral blocks, `power_all_off` returns every switched rail to off; verify off-state residual voltages with a meter.
 10. Run `wifi_scan` (PASS requires at least one AP in range) and `ble_smoke`
     to confirm both radio stacks initialize and release cleanly; keep the
     scan output with the board evidence.
@@ -104,7 +104,7 @@ loaded to its limit. Unconnected rails have no node to measure.
 | DCDC1 | VCC_3V3_MAIN | 3.3 V, 2 A | ±5 % (3.14–3.47 V) | Always on |
 | DCDC2 | CAM_DVDD_1V5_SW | 1.5 V, 2 A | ±5 % (1.43–1.58 V) | Camera digital core |
 | DCDC3 | — | — | n/a (no node) | Unconnected; confirm disabled in OTP readback, no node to measure |
-| DCDC4 | — | — | n/a (no node) | Unconnected; confirm disabled in OTP readback, no node to measure |
+| DCDC4 | — | — | n/a (no node) | OTP step1 rail: enabled at 1.8 V per confirmation sheet V1.3, but unconnected with no node to measure; prove via the Factory boot OTP snapshot. The Factory safe state disables it at runtime (intended) |
 | CPUSLDO | — | — | n/a (no node) | Unconnected |
 | DLDO1 (DC1SW) | WS2812B_PWR_SW | 3.3 V pass-through of DCDC1 | ±5 % of 3.3 V, follows DCDC1 (no regulation of its own) | Default off; no output until the BSP LED init enables it |
 | DLDO2 (DC4SW) | — | — | n/a (no node) | Unconnected |

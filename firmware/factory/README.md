@@ -35,6 +35,7 @@ absolute path is stored in the repository.
 | `psram_test` | Write and verify a temporary 64 KiB PSRAM allocation | Temporary RAM only |
 | `i2c_scan main` | Probe the main I2C bus on GPIO33/GPIO34 | I2C address probes only |
 | `i2c_scan lp` | Probe the low-power I2C bus on GPIO6/GPIO7 | I2C address probes only |
+| `otp_status` | Read every TG28_SW rail enable/voltage and the DC1SW/DC4SW switch states | No |
 | `pmic_test` | Read TG28_SW identity, battery, VBUS, and charger state | No |
 | `pmic power_on_source` | Read the raw TG28_SW REG20 boot-source bitmap | No |
 | `pmic charge_current [MILLIAMPS]` | Read or set the exact TG28_SW REG62 charge-current limit | Optional write |
@@ -44,6 +45,7 @@ absolute path is stored in the repository.
 | `rail NAME on MILLIVOLTS` | Program and enable one TG28_SW regulator | Yes |
 | `rail NAME off` | Disable one TG28_SW regulator | Yes |
 | `peripheral_power NAME on\|off` | Apply a complete peripheral power sequence | Yes |
+| `power_all_off` | Stop activity, release handles, and switch every peripheral rail off; idempotent and best-effort (first error kept, every failure printed) | Yes, disables only |
 | `rtc_test` | Read RX8130CE calendar data and validity flags | No |
 | `rtc_set YYYY-MM-DD HH:MM:SS WEEKDAY` | Set the RTC, read it back, and verify the stored value; out-of-range fields are rejected before writing | Yes, RTC registers only |
 | `rtc_alarm` | Arm an alarm at the next minute boundary and wait for the RX8130CE alarm flag; minute granularity only | Rearms RTC alarm registers |
@@ -52,6 +54,7 @@ absolute path is stored in the repository.
 | `typec_test` | Read FUSB303B identity and connection state; FAIL when the controller is not in DRP mode or stays silent, WARN for ambiguous CC state | Enables the CC controller only |
 | `otg on default\|1.5\|3.0` | Select source role and arm the protected Type-C2 boost path | Yes, sources VBUS after CC attach |
 | `otg off` | Disable Type-C2 VBUS, CC role, and controller power | Yes, disables only |
+| `usb_host_test` | Install the USB Host stack at the 500 mA default advertisement, wait up to 20 s for a Type-C2 device, print VID/PID/speed/strings, then tear everything down | Yes, host stack + VBUS during the test |
 | `wifi_scan` | Scan for access points in station mode; PASS requires at least one AP | No |
 | `ble_smoke` | Initialize, enable, disable, and release the BLE controller | No |
 | `display_test` | Show red, green, blue, and white AMOLED quadrants, then ask the operator to confirm | Yes |
@@ -76,7 +79,18 @@ is enabled during boot. `otg on` prints an additional warning because Type-C2
 can source 5 V; the schematic's source indication gate remains part of the
 hardware safety path.
 
-The console registers 36 top-level commands including `help`. `pmic_test`
+Two ordering facts matter for the first passes:
+
+- The boot safe state powers the FUSB303B off. `typec_test` is what re-enables
+  the controller, so a main-bus `i2c_scan` before any `typec_test` reports the
+  FUSB303B missing — run `typec_test` first (the automation does).
+- The BSP panel init sequence programs the CO5300 brightness register to
+  30 % before any Display-On, and `bsp_display_backlight_on()` restores the
+  last level set through `bsp_display_brightness_set()` instead of forcing
+  100 %, so the first light-up never flashes full brightness. Raise the level
+  in steps and record current/temperature per step.
+
+The console registers 39 top-level commands including `help`. `pmic_test`
 already reads the fuel-gauge SOC and voltage; `pmic charge_current 500` adds
 the EVT target-current check without changing the OTP/default setting at boot.
 Use it only with current limiting and battery temperature monitoring, then
@@ -85,6 +99,16 @@ battery NTC (the TS pin is a fixed input), so `pmic temperature` is the
 on-board monitoring channel: it reads the TS input and the TDIE die-sensor
 voltage trend during the high-current step; watch the cell itself with an
 external probe.
+
+USB evidence boundaries, stated once: `otg on` only proves the Type-C2 5 V
+boost path; it never installs the USB Host stack and is never a Host PASS.
+`usb_host_test` is the host evidence — it enumerates a real device and reads
+its descriptors over EP0, which is actual bus traffic, then stops the stack
+and drops the boost. USB *device* mode (Type-C2 as a gadget behind an
+external host) has no Factory coverage in this round; run the dedicated
+TinyUSB-device diagnostic image for that check, per the bring-up plan. On
+this hardware the source advertisement stays at the 500 mA default; the
+1.5 A/3 A encodings exist in the API but are not a deliverable capability.
 
 The OV5640 autofocus/VCM path is intentionally not exposed as a command until
 the module supplier confirms VCM power and the actuator control interface.
@@ -205,18 +229,29 @@ Do not erase the complete flash unless the matching recovery procedure calls
 for it. Save the ROM log and the complete Factory console output for every
 board tested.
 
-On boot, all directly controlled power domains are driven to their disabled
-levels before the console starts. Expected startup text includes:
+On boot, `bsp_board_init()` first configures the GPIO2 (PMIC/RTC) and GPIO43
+(Type-C) interrupt lines as pulled-up inputs, then drives all directly
+controlled power domains to their disabled levels before the console starts.
+Before either happens, the firmware snapshots every TG28_SW rail's power-on
+(OTP) state over the LP I2C bus and logs it, because the safe state that
+follows deliberately disables the optional rails — a live `otp_status` read
+after boot can never prove what the part shipped with. Expected startup text
+includes:
 
 ```text
 Candis-S31 Factory Bring-up
 safe_state       PASS     direct power domains disabled
+OTP boot snapshot: dcdc1=on@3300mV ...
 candis-factory>
 ```
 
 That `PASS` only confirms that the GPIO API accepted the disabled levels. Rail
 voltage, leakage, sequencing, and active polarity still require measurement on
-EVT1.
+EVT1. Compare the OTP boot snapshot against the TG28 confirmation sheet for
+the lot: DCDC1 enabled at 3.3 V and DCDC4 enabled at 1.8 V (step1, no external
+load, no measurable node — register evidence only), with DCDC2/DCDC3, the
+ALDO/BLDO rails, CPUSLDO, DC1SW, and DC4SW off. A lot whose snapshot does not
+match is quarantined, not brought up.
 
 GPIO0 doubles as a boot strapping pin and the TF card-detect switch, so a
 board powered with a card fitted samples the strap low. The firmware records
