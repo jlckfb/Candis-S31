@@ -28,11 +28,17 @@ import time
 import serial
 
 # Host-side composite stage marker, not a console command: for each peripheral
-# behind a switched rail, turn the rail off and back on and rescan the main
-# I2C bus after every toggle, proving that CST820 (0x15), ES8389 (0x20), and
-# OV5640 (0x3c) answer only while their rail is on. EvtRunner.run() expands
-# the marker into the real command sequence; --no-power-rail-scan drops it.
+# behind a switched rail, run OFF -> scan -> ON -> scan -> OFF against the main
+# I2C bus, proving that CST820 (0x15), ES8389 (0x20), and OV5640 (0x3c) answer
+# only while their rail is on. A final scan with every rail off confirms none
+# of them answers. EvtRunner.run() expands the marker into the real command
+# sequence; --no-power-rail-scan drops it.
 POWER_RAIL_SCAN = "power_rail_scan"
+
+# Stage-boundary cleanup marker: the firmware command stops activity and
+# switches every peripheral rail off. It prints text but no FACTORY_RESULT,
+# so the runner drains it instead of waiting for a result.
+POWER_ALL_OFF = "power_all_off"
 
 # (peripheral_power name, main-bus address) for the devices behind switched
 # rails that the POWER_RAIL_SCAN stage checks.
@@ -48,6 +54,10 @@ STAGES = [
     ("safe_state", 10, "safe_state"),
     ("flash_test", 15, "flash"),
     ("psram_test", 20, "psram"),
+    # typec_test must precede the first main-bus scan: the boot safe state
+    # powers the FUSB303B off and typec_test is what re-enables it, so a scan
+    # before this stage would misreport the controller as missing.
+    ("typec_test", 10, "type_c"),
     ("i2c_scan main", 20, "i2c_main"),
     ("i2c_scan lp", 20, "i2c_low_power"),
     ("pmic_test", 10, "pmic"),
@@ -56,7 +66,6 @@ STAGES = [
     ("rtc_alarm", 80, "rtc_alarm"),  # waits for the next minute boundary
     ("irq_test", 10, "shared_irq"),
     ("buttons", 60, "buttons"),  # two operator key presses on the board
-    ("typec_test", 10, "type_c"),
     ("wifi_scan", 30, "wifi"),
     ("ble_smoke", 20, "ble"),
     # First light-up: cap brightness before any pattern, per bring-up.md.
@@ -66,13 +75,18 @@ STAGES = [
     ("display_test", 45, "display"),
     ("touch_test", 30, "touch"),
     ("display_sleep_test", 150, "display_sleep"),  # four operator questions
+    (POWER_ALL_OFF, 5, "INFO"),  # clear display/touch before the next block
     ("led_test", 45, "rgb_led"),
+    (POWER_ALL_OFF, 5, "INFO"),  # clear the LED block
     ("sdcard_test", 20, "sdcard"),
     ("speaker_test", 45, "speaker"),
     ("microphone_test", 30, "microphone"),
+    (POWER_ALL_OFF, 5, "INFO"),  # clear the audio block
     ("camera_test", 20, "camera"),
+    (POWER_ALL_OFF, 5, "INFO"),  # clear the camera block
     # Optional closed-loop rail check, expanded by the runner; must stay last
-    # so every device test has already powered its rail once.
+    # so every device test has already powered its rail once. The stage ends
+    # with every switched rail OFF.
     (POWER_RAIL_SCAN, 120, POWER_RAIL_SCAN),
 ]
 
@@ -254,16 +268,19 @@ class EvtRunner:
         return None, found
 
     def _run_power_rail_scan(self, timeout_s):
-        """Toggle each switched-rail peripheral off/on and rescan the main bus.
+        """Toggle each switched-rail peripheral OFF->scan->ON->scan->OFF.
 
         The firmware grades a switched-rail device as allowed-silent whenever
         its rail reads back off, so only the host can close the loop: a device
         that still answers with its rail off (or stays silent with it back on)
-        is recorded here under the synthetic power_rail_scan result. Each
-        peripheral ends the stage powered again, so the last rescan leaves the
-        complete expected device set as the board-side i2c_main result.
+        is recorded here under the synthetic power_rail_scan result. Every
+        rail is left OFF at the end of its cycle, and a final scan with all
+        rails off confirms none of the devices answers. The stage therefore
+        ends with every switched rail off; the board-side i2c_main result
+        reflects that all-off state.
         """
-        per_scan = max(1, timeout_s // (2 * len(POWER_RAIL_DEVICES)))
+        scans = 2 * len(POWER_RAIL_DEVICES) + 1
+        per_scan = max(1, timeout_s // scans)
         findings = []
         for name, address in POWER_RAIL_DEVICES:
             for enabled in (False, True):
@@ -280,13 +297,24 @@ class EvtRunner:
                 elif not enabled and address in found:
                     findings.append("%s: 0x%02x answered with rail off"
                                     % (name, address))
+            # Final OFF for this rail: command only, the closing all-off scan
+            # below covers it.
+            self._send_and_drain("peripheral_power %s off" % name, 0.5)
+        payload, found = self._run_i2c_rescan(per_scan)
+        if payload is None:
+            findings.append("no i2c_main result for the closing all-off scan")
+        else:
+            for name, address in POWER_RAIL_DEVICES:
+                if address in found:
+                    findings.append("%s: 0x%02x answered after the final rail-off"
+                                    % (name, address))
         if findings:
             status = "FAIL"
             detail = "; ".join(findings)
             self._log("!!! %s FAIL: %s" % (POWER_RAIL_SCAN, detail))
         else:
             status = "PASS"
-            detail = "switched-rail devices answer only while powered"
+            detail = "switched-rail devices answer only while powered; all rails left off"
             self._log("%s PASS: %s" % (POWER_RAIL_SCAN, detail))
         self.results[POWER_RAIL_SCAN] = {
             "test": POWER_RAIL_SCAN,
@@ -323,6 +351,10 @@ class EvtRunner:
             if command == POWER_RAIL_SCAN:
                 # Host-side composite stage; the board has no such command.
                 self._run_power_rail_scan(timeout_s)
+                continue
+            if command == POWER_ALL_OFF:
+                # Cleanup marker: prints text but no FACTORY_RESULT line.
+                self._send_and_drain(command, 2.0)
                 continue
             if not self._run_stage(command, timeout_s, expect) and expect != "INFO":
                 self.results.setdefault(expect, {
@@ -533,6 +565,28 @@ def _self_test():
               received_commands.index("report_reset") <
               received_commands.index("report"),
               "report_reset must be acknowledged before the final report")
+        check("typec_test" in received_commands and
+              "i2c_scan main" in received_commands and
+              received_commands.index("typec_test") <
+              received_commands.index("i2c_scan main"),
+              "typec_test must power the FUSB303B before the first main-bus "
+              "scan, commands: %r" % received_commands)
+        # Stage-boundary cleanup: power_all_off follows the display/touch,
+        # LED, audio, and camera blocks, in that order.
+        cleanups = [i for i, command in enumerate(received_commands)
+                    if command == POWER_ALL_OFF]
+        anchors = [command for command in
+                   ("display_sleep_test", "led_test", "microphone_test",
+                    "camera_test")
+                   if command in received_commands]
+        anchor_positions = [received_commands.index(command)
+                            for command in anchors]
+        check(len(cleanups) == 4 and len(anchor_positions) == 4 and
+              all(anchor_positions[n] < cleanups[n] and
+                  (n == 3 or cleanups[n] < anchor_positions[n + 1])
+                  for n in range(4)),
+              "power_all_off must follow each display/LED/audio/camera block, "
+              "commands: %r" % received_commands)
         check(report["summary"]["overall"] == "FAIL",
               "stale NVS results must not leak into the final summary, got %r"
               % report["summary"])
@@ -556,12 +610,23 @@ def _self_test():
         for name, _address in POWER_RAIL_DEVICES:
             off_command = "peripheral_power %s off" % name
             on_command = "peripheral_power %s on" % name
-            check(off_command in received_commands and
-                  on_command in received_commands and
-                  received_commands.index(off_command) <
-                  received_commands.index(on_command),
-                  "power_rail_scan must toggle %s off before on, commands: %r"
-                  % (name, received_commands))
+            offs = [i for i, command in enumerate(received_commands)
+                    if command == off_command]
+            ons = [i for i, command in enumerate(received_commands)
+                   if command == on_command]
+            check(len(offs) == 2 and len(ons) == 1 and
+                  offs[0] < ons[0] < offs[1],
+                  "power_rail_scan must run %s OFF->scan->ON->scan->OFF, "
+                  "commands: %r" % (name, received_commands))
+        power_positions = [i for i, command in enumerate(received_commands)
+                           if command.startswith("peripheral_power ")]
+        scan_positions = [i for i, command in enumerate(received_commands)
+                          if command == "i2c_scan main"]
+        check(power_positions and scan_positions and
+              cleanups and cleanups[-1] < power_positions[0] and
+              scan_positions[-1] > power_positions[-1],
+              "the rail scan must start after the last cleanup and end with "
+              "an all-off scan, commands: %r" % received_commands)
         check(report["summary"] is not None and
               report["summary"]["overall"] == "FAIL" and
               report["summary"]["warn"] == 2,
@@ -582,8 +647,10 @@ def _self_test():
             print("SELF-TEST FAIL:", failure)
         return 1
     print("self-test passed: report_reset before the first stage, "
-          "PASS/FAIL/WARN/NOT_RUN/TIMEOUT paths, prompt forwarding, "
-          "rail toggle + rescan, summary parse, and report files all verified")
+          "typec_test before the first main-bus scan, stage-boundary "
+          "power_all_off cleanup, PASS/FAIL/WARN/NOT_RUN/TIMEOUT paths, "
+          "prompt forwarding, rail OFF->scan->ON->scan->OFF with a closing "
+          "all-off scan, summary parse, and report files all verified")
     return 0
 
 
