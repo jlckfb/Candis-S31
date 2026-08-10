@@ -344,6 +344,96 @@ static int command_ble_smoke(int argc, char **argv)
 #endif
 }
 
+esp_err_t factory_console_capture_otp_boot_snapshot(char *out, size_t out_size)
+{
+    if (out == NULL || out_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    out[0] = '\0';
+
+    esp_err_t error = bsp_pmic_init();
+    if (error != ESP_OK) {
+        return error;
+    }
+
+    bool truncated = false;
+    size_t used = 0;
+    for (int index = 0; index < BSP_PMIC_REGULATOR_COUNT; ++index) {
+        const bsp_pmic_regulator_t regulator = (bsp_pmic_regulator_t)index;
+        bool enabled = false;
+        uint16_t millivolts = 0;
+        error = bsp_pmic_regulator_is_enabled(regulator, &enabled);
+        if (error == ESP_OK) {
+            error = bsp_pmic_regulator_get_voltage(regulator, &millivolts);
+        }
+        if (error != ESP_OK) {
+            return error;
+        }
+        const int written = snprintf(out + used, out_size - used, "%s%s=%s@%umV",
+                                     used > 0 ? " " : "",
+                                     bsp_pmic_regulator_name(regulator),
+                                     enabled ? "on" : "off",
+                                     (unsigned)millivolts);
+        if (written < 0) {
+            return ESP_FAIL;
+        }
+        if ((size_t)written >= out_size - used) {
+            truncated = true;
+            /* snprintf already truncated the output; stop appending. */
+            used = out_size - 1;
+            break;
+        }
+        used += (size_t)written;
+    }
+    for (int index = 0; index < BSP_PMIC_SWITCH_COUNT && !truncated; ++index) {
+        const bsp_pmic_switch_t sw = (bsp_pmic_switch_t)index;
+        bool enabled = false;
+        error = bsp_pmic_switch_is_enabled(sw, &enabled);
+        if (error != ESP_OK) {
+            return error;
+        }
+        const int written = snprintf(out + used, out_size - used, "%s%s=%s",
+                                     used > 0 ? " " : "",
+                                     bsp_pmic_switch_name(sw),
+                                     enabled ? "closed" : "open");
+        if (written < 0) {
+            return ESP_FAIL;
+        }
+        if ((size_t)written >= out_size - used) {
+            truncated = true;
+            used = out_size - 1;
+            break;
+        }
+        used += (size_t)written;
+    }
+    return truncated ? ESP_ERR_INVALID_SIZE : ESP_OK;
+}
+
+static int command_otp_status(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+
+    /* This is a live read. After boot the safe state has already disabled
+     * the optional rails, so a mismatch with the OTP expectations is only
+     * meaningful on the boot snapshot captured before bsp_board_init(). */
+    char snapshot[256];
+    const esp_err_t error = factory_console_capture_otp_boot_snapshot(
+                                snapshot, sizeof(snapshot));
+    if (error == ESP_ERR_INVALID_SIZE) {
+        printf("otp_status report truncated; buffer too small\n");
+        return error;
+    }
+    if (error != ESP_OK) {
+        printf("otp_status read failed: %s\n", esp_err_to_name(error));
+        return error;
+    }
+    printf("TG28_SW rails: %s\n", snapshot);
+    printf("note: optional rails were disabled by the boot safe state; "
+           "compare with the boot-log OTP snapshot, not this live read\n");
+    return ESP_OK;
+}
+
 static int command_safe_state(int argc, char **argv)
 {
     (void)argc;
@@ -659,6 +749,11 @@ esp_err_t factory_console_start(void)
             .command = "power_status",
             .help = "Show direct power-domain control states.",
             .func = command_power_status,
+        },
+        {
+            .command = "otp_status",
+            .help = "Read every TG28_SW rail enable/voltage and switch state.",
+            .func = command_otp_status,
         },
         {
             .command = "flash_test",

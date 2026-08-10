@@ -8,6 +8,9 @@
 
 #include "esp_err.h"
 
+/** Maximum length of one result detail string, including the terminator. */
+#define FACTORY_DETAIL_LENGTH 96
+
 typedef enum {
     FACTORY_TEST_SAFE_STATE = 0,
     FACTORY_TEST_FLASH,
@@ -31,6 +34,7 @@ typedef enum {
     FACTORY_TEST_WIFI,
     FACTORY_TEST_BLE,
     FACTORY_TEST_DISPLAY_SLEEP,
+    FACTORY_TEST_USB_HOST,
     FACTORY_TEST_COUNT,
 } factory_test_id_t;
 

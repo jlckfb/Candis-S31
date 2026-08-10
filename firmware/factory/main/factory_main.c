@@ -85,8 +85,26 @@ void app_main(void)
     /* Restore results from before any power cycle; falls back to NOT_RUN. */
     factory_report_load();
 
-    /* Establish disabled levels before any optional board peripheral is used. */
-    const esp_err_t safe_state_err = bsp_power_safe_state();
+    /* Capture the TG28_SW power-on (OTP) state BEFORE the board init applies
+     * its safe state: the safe state deliberately turns DCDC4 and the other
+     * optional rails off, so any rail read taken afterwards can no longer
+     * prove what the part shipped with. bsp_pmic_init() only opens the LP
+     * I2C device and services interrupt flags; it never writes regulator
+     * configuration. The snapshot is not a report verdict: the operator
+     * compares it against the TG28 confirmation sheet on a per-lot basis. */
+    char otp_boot_detail[FACTORY_DETAIL_LENGTH] = {0};
+    esp_err_t otp_boot_err = factory_console_capture_otp_boot_snapshot(
+                                 otp_boot_detail, sizeof(otp_boot_detail));
+    if (otp_boot_err != ESP_OK) {
+        ESP_LOGW(TAG, "OTP boot snapshot failed: %s",
+                 esp_err_to_name(otp_boot_err));
+    }
+
+    /* bsp_board_init() first configures the interrupt inputs (GPIO2
+     * PMIC/RTC, GPIO43 Type-C) as pulled-up inputs, then applies the power
+     * safe state. Direct bsp_power_safe_state() would leave those lines
+     * floating until something else claimed them. */
+    const esp_err_t safe_state_err = bsp_board_init();
     factory_report_set(FACTORY_TEST_SAFE_STATE,
                        safe_state_err == ESP_OK ? FACTORY_STATUS_PASS : FACTORY_STATUS_FAIL,
                        safe_state_err == ESP_OK ? "direct power domains disabled" : esp_err_to_name(safe_state_err));
@@ -94,6 +112,11 @@ void app_main(void)
     ESP_LOGI(TAG, "Candis-S31 Factory Bring-up");
     ESP_LOGW(TAG, "EVT1 hardware has not been tested; use commands one stage at a time");
     factory_report_print_one(FACTORY_TEST_SAFE_STATE);
+    if (otp_boot_err == ESP_OK) {
+        /* Mirrors the otp_status boot snapshot so the power-on rail state is
+         * captured in the serial log even when no operator runs the command. */
+        ESP_LOGI(TAG, "OTP boot snapshot: %s", otp_boot_detail);
+    }
 
     const esp_err_t console_err = factory_console_start();
     if (console_err != ESP_OK) {

@@ -10,8 +10,6 @@
 
 #include "factory_report.h"
 
-#define FACTORY_DETAIL_LENGTH 96
-
 typedef struct {
     const char *name;
     factory_status_t status;
@@ -58,6 +56,7 @@ static factory_result_t s_results[FACTORY_TEST_COUNT] = {
     [FACTORY_TEST_WIFI] = {.name = "wifi"},
     [FACTORY_TEST_BLE] = {.name = "ble"},
     [FACTORY_TEST_DISPLAY_SLEEP] = {.name = "display_sleep"},
+    [FACTORY_TEST_USB_HOST] = {.name = "usb_host"},
 };
 
 static const char *status_name(factory_status_t status)
