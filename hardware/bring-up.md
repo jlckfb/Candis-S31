@@ -37,7 +37,7 @@ up, or flashing fails, stop and follow
 [`firmware/recovery/`](../firmware/recovery/README.md) for download-mode
 recovery instead of re-running stages blindly.
 
-1. Run `board_info`, `power_status`, `flash_test`, and `psram_test` without any external load attached. Copy the `OTP boot snapshot` line from the boot log into the board record; `otp_status` re-reads the live rails at any time but cannot prove the OTP after the boot safe state ran.
+1. Run `board_info`, `power_status`, `flash_test`, and `psram_test` without any external load attached. Copy the `OTP boot snapshot` line from the boot log into the board record — it is lot evidence only when the log shows it after a power-on boot, because a warm reset leaves the TG28 exactly as the previous run left it (the firmware then downgrades the line to a warning). `otp_status` re-reads the live rails at any time but cannot prove the OTP after the boot safe state ran.
 2. Run `i2c_scan lp`, `pmic_test`, `pmic power_on_source`, and `rtc_test`;
    compare battery and VBUS readings with a meter. Confirm
    `pmic charge_current` reports the agreed 50 mA default. Under current

@@ -232,26 +232,34 @@ board tested.
 On boot, `bsp_board_init()` first configures the GPIO2 (PMIC/RTC) and GPIO43
 (Type-C) interrupt lines as pulled-up inputs, then drives all directly
 controlled power domains to their disabled levels before the console starts.
-Before either happens, the firmware snapshots every TG28_SW rail's power-on
-(OTP) state over the LP I2C bus and logs it, because the safe state that
-follows deliberately disables the optional rails — a live `otp_status` read
-after boot can never prove what the part shipped with. Expected startup text
+Before either happens, the firmware snapshots every TG28_SW rail over the LP
+I2C bus and logs it, because the safe state that follows deliberately disables
+the optional rails — a live `otp_status` read after boot can never prove what
+the part shipped with. That snapshot equals the OTP defaults **only after a
+cold power-on**: the TG28 runs from its own supply, no SoC-only reset reaches
+it, and the safe state clears enable bits without rewriting voltage codes, so
+after `esp_restart()` the enable bits still show the previous run's safe state
+(DCDC4 reads disabled, the opposite of its OTP value) and the voltage codes
+still hold whatever a test wrote. The firmware labels the line by boot type,
+so only the `OTP boot snapshot:` form is lot evidence. Expected startup text
 includes:
 
 ```text
 Candis-S31 Factory Bring-up
 safe_state       PASS     direct power domains disabled
-OTP boot snapshot: dcdc1=on@3300mV ...
+OTP boot snapshot: dcdc1=on@3300mV ...      <- power-on boot; lot evidence
 candis-factory>
 ```
 
 That `PASS` only confirms that the GPIO API accepted the disabled levels. Rail
 voltage, leakage, sequencing, and active polarity still require measurement on
-EVT1. Compare the OTP boot snapshot against the TG28 confirmation sheet for
-the lot: DCDC1 enabled at 3.3 V and DCDC4 enabled at 1.8 V (step1, no external
-load, no measurable node — register evidence only), with DCDC2/DCDC3, the
-ALDO/BLDO rails, CPUSLDO, DC1SW, and DC4SW off. A lot whose snapshot does not
-match is quarantined, not brought up.
+EVT1. After a warm reset the same line is logged as a warning that it is not
+the OTP state; power-cycle the board before recording lot evidence. Compare
+the OTP boot snapshot against the TG28 confirmation sheet for the lot: DCDC1
+enabled at 3.3 V and DCDC4 enabled at 1.8 V (step1, no external load, no
+measurable node — register evidence only), with DCDC2/DCDC3, the ALDO/BLDO
+rails, CPUSLDO, DC1SW, and DC4SW off. A lot whose snapshot does not match is
+quarantined, not brought up.
 
 GPIO0 doubles as a boot strapping pin and the TF card-detect switch, so a
 board powered with a card fitted samples the strap low. The firmware records

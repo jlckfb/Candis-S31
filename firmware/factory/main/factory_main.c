@@ -85,13 +85,20 @@ void app_main(void)
     /* Restore results from before any power cycle; falls back to NOT_RUN. */
     factory_report_load();
 
-    /* Capture the TG28_SW power-on (OTP) state BEFORE the board init applies
-     * its safe state: the safe state deliberately turns DCDC4 and the other
-     * optional rails off, so any rail read taken afterwards can no longer
-     * prove what the part shipped with. bsp_pmic_init() only opens the LP
-     * I2C device and services interrupt flags; it never writes regulator
-     * configuration. The snapshot is not a report verdict: the operator
-     * compares it against the TG28 confirmation sheet on a per-lot basis. */
+    /* Capture the TG28_SW rail state BEFORE the board init applies its safe
+     * state: the safe state deliberately turns DCDC4 and the other optional
+     * rails off, so any read taken afterwards can no longer show the
+     * power-on state. bsp_pmic_init() only opens the LP I2C device and
+     * services interrupt flags; it never writes regulator configuration.
+     *
+     * This equals the OTP defaults only after a cold power-on. The TG28 runs
+     * from its own supply and no SoC-only reset reaches it, while the safe
+     * state clears enable bits without rewriting voltage codes: after
+     * esp_restart() the enable bits still show the previous run's safe state
+     * (DCDC4 reads disabled, the opposite of its OTP value) and the voltage
+     * codes still hold whatever a test wrote (camera leaves ALDO4 at 2800mV
+     * and DCDC2 at 1500mV). The snapshot is not a report verdict: the
+     * operator compares it against the TG28 confirmation sheet per lot. */
     char otp_boot_detail[FACTORY_DETAIL_LENGTH] = {0};
     esp_err_t otp_boot_err = factory_console_capture_otp_boot_snapshot(
                                  otp_boot_detail, sizeof(otp_boot_detail));
@@ -113,9 +120,15 @@ void app_main(void)
     ESP_LOGW(TAG, "EVT1 hardware has not been tested; use commands one stage at a time");
     factory_report_print_one(FACTORY_TEST_SAFE_STATE);
     if (otp_boot_err == ESP_OK) {
-        /* Mirrors the otp_status boot snapshot so the power-on rail state is
-         * captured in the serial log even when no operator runs the command. */
-        ESP_LOGI(TAG, "OTP boot snapshot: %s", otp_boot_detail);
+        /* Label the line by boot type so a warm-reset read can never be
+         * filed as OTP evidence for the lot. */
+        if (esp_reset_reason() == ESP_RST_POWERON) {
+            ESP_LOGI(TAG, "OTP boot snapshot: %s", otp_boot_detail);
+        } else {
+            ESP_LOGW(TAG, "boot rail snapshot is NOT the OTP state (warm reset "
+                     "leaves the TG28 as the previous run left it; power-cycle "
+                     "the board to read the OTP defaults): %s", otp_boot_detail);
+        }
     }
 
     const esp_err_t console_err = factory_console_start();

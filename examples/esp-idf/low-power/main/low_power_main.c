@@ -856,10 +856,11 @@ static esp_err_t enter_shutdown(void)
     s_panel_io = NULL;
 
     /* The WS2812B rail is the DC1SW load switch: the TG28 OTP straps the
-     * DLDO1 pin in SWITCH mode (input = DCDC1), so it must be opened through
-     * the switch API, never the regulator API (the DLDO1 voltage/enable
-     * registers are inert in switch mode). It is off after reset; close it
-     * explicitly so a re-run cannot leave it open. */
+     * DLDO1 pin in SWITCH mode (input = DCDC1), so the DLDO1 voltage
+     * register is inert. The enable bit is shared (REG90 bit7 is both
+     * "DLDO1 on" and "DC1SW closed"), so the switch API is the accurate
+     * expression of what this rail is. It is off after a cold power-on
+     * (OTP default); close it explicitly so a re-run cannot leave it open. */
     const esp_err_t rgb_error = bsp_pmic_switch_enable(BSP_PMIC_SWITCH_DC1SW, false);
     if (rgb_error != ESP_OK) {
         ESP_LOGW(TAG, "RGB rail (DC1SW load switch) open failed: %s",
