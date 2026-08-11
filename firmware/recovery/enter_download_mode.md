@@ -11,7 +11,11 @@ OTG connector and is not the programming port.
 3. Run `esptool` with `--before default-reset`. The CH343P DTR/RTS download
    circuit should assert reset and the GPIO61 boot strap automatically.
 4. Confirm `esptool --chip esp32s31 --port PORT chip-id` identifies the ROM
-   loader before writing flash.
+   loader; this is the evidence that the reset sampled GPIO61 low and GPIO60
+   high enough to enter the valid Joint Download mode.
+5. Pass explicit `0 1` GPIO61 assertions to `flash_factory.sh`: `0` is the
+   observed download-reset level, while `1` is the required post-write run
+   level. The script refuses to write without both assertions.
 
 Record whether automatic entry worked. DTR/RTS polarity and reset timing must
 still be confirmed on EVT1.
@@ -35,6 +39,9 @@ connection is intermittent.
 
 ## Exit
 
-After flashing, let `--after hard-reset` reset the board. If that fails,
-release BOOT and press RESET once. A normal boot must not hold GPIO61 at the
-download-strap level.
+`flash_factory.sh` keeps the ROM session alive after writing, then performs a
+hard reset only after the caller has explicitly asserted GPIO61 run level `1`.
+Release BOOT before that reset. Save UART0 output and accept recovery only if
+the ROM log reports SPI boot and the Factory application starts. If the reset
+fails, release BOOT and press RESET once; a board that remains in download
+mode has failed recovery.

@@ -8,8 +8,8 @@
 # firmware/factory/release/ and are not committed.
 
 release:
-  # Release name; must match the GitHub Release tag referenced by
-  # firmware/recovery/launchpad.toml.
+  # Release name; must match the generated launchpad.toml packaged beside this
+  # manifest and the GitHub Release URL used to host the merged image.
   name: "@RELEASE_NAME@"
   # (5) Supported board revision.
   board_revision: "@BOARD_REV@"
@@ -41,10 +41,11 @@ toolchain:
 
 # (6) Flash command and expected ROM/application output.
 flashing:
-  command: "esptool --chip esp32s31 -p PORT write-flash 0x0 candis_s31_factory_merged.bin"
+  command: "sha256sum -c candis_s31_factory_merged.bin.sha256 && esptool --chip esp32s31 --port PORT --baud 115200 --before default-reset --after hard-reset write-flash --flash-mode dio --flash-freq 40m --flash-size 16MB 0x0 candis_s31_factory_merged.bin"
   rom_log_required: true
   expected_application_output: |
     Candis-S31 Factory Bring-up
+    EVT1 hardware has not been tested; use commands one stage at a time
     safe_state       PASS     direct power domains disabled
     candis-factory>
 

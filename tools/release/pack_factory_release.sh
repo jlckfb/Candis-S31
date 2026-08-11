@@ -2,10 +2,11 @@
 # pack_factory_release.sh — stage a Candis-S31 Factory release package locally.
 #
 # This is a packaging dry-run helper: it never publishes anything. It fills
-# tools/release/manifest.template.yaml with build facts, copies the merged
-# image, its SHA-256, and the generated dependency lock into a staging
-# directory, and zips the result. GitHub Release publication stays a manual
-# step performed only after hardware validation.
+# tools/release/manifest.template.yaml and the Recovery Launchpad template
+# with build facts, copies the merged image, its SHA-256, and the generated
+# dependency lock into a staging directory, and zips the result. GitHub
+# Release publication stays a manual step performed only after hardware
+# validation.
 #
 # Usage:
 #   tools/release/pack_factory_release.sh [FACTORY_DIR] [OUT_DIR]
@@ -17,8 +18,8 @@
 #                the git-ignored local staging area). The zip is written to
 #                <OUT_DIR>.zip.
 #
-# Env overrides: CANDIS_S31_BSP_PATH (records the BSP commit), RELEASE_NAME,
-# BOARD_REV, IDF_PATH.
+# Required env: RELEASE_NAME (the exact GitHub release tag, or a concrete CI
+# dry-run identifier). Optional: CANDIS_S31_BSP_PATH, BOARD_REV, IDF_PATH.
 
 set -euo pipefail
 
@@ -29,8 +30,9 @@ FACTORY_DIR=${1:-$REPO_ROOT/firmware/factory}
 OUT_DIR=${2:-$REPO_ROOT/firmware/factory/release}
 TEMPLATE=$SCRIPT_DIR/manifest.template.yaml
 MERGED=candis_s31_factory_merged.bin
+LAUNCHPAD_TEMPLATE=$REPO_ROOT/firmware/recovery/launchpad.template.toml
 
-RELEASE_NAME=${RELEASE_NAME:-<tag>}
+RELEASE_NAME=${RELEASE_NAME:-}
 BOARD_REV=${BOARD_REV:-EVT1 (schematic v0.5, fab v0.5_260803_1544)}
 IDF_PATH=${IDF_PATH:-}
 
@@ -38,6 +40,10 @@ die() { echo "pack_factory_release: ERROR: $*" >&2; exit 2; }
 
 [ -f "$FACTORY_DIR/build/$MERGED" ] || die "missing $FACTORY_DIR/build/$MERGED — run 'idf.py --preview merge-bin --output $MERGED --format raw' first"
 [ -f "$TEMPLATE" ] || die "missing template $TEMPLATE"
+[ -n "$RELEASE_NAME" ] || die "RELEASE_NAME must be the exact release tag (or a concrete CI dry-run identifier)"
+[[ "$RELEASE_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] ||
+    die "RELEASE_NAME must contain only letters, digits, dot, underscore, or hyphen"
+[ -f "$LAUNCHPAD_TEMPLATE" ] || die "missing template $LAUNCHPAD_TEMPLATE"
 command -v git >/dev/null || die "git not found"
 
 # Canonicalize OUT_DIR: the zip step runs inside it, so a relative path would
@@ -51,6 +57,12 @@ esac
 # runs so the package contains exactly this run's payload.
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
+cp "$REPO_ROOT/firmware/recovery/flash_factory.sh" \
+   "$OUT_DIR/flash_factory.sh"
+cp "$REPO_ROOT/firmware/recovery/README.md" "$OUT_DIR/RECOVERY.md"
+cp "$REPO_ROOT/firmware/recovery/enter_download_mode.md" \
+   "$OUT_DIR/enter_download_mode.md"
+chmod +x "$OUT_DIR/flash_factory.sh"
 cp "$FACTORY_DIR/build/$MERGED" "$OUT_DIR/$MERGED"
 
 git_field() { # git_field <dir> <rev-parse-arg...>
@@ -101,6 +113,14 @@ sed -e "s|@RELEASE_NAME@|$RELEASE_NAME|g" \
     -e "s|@IDF_COMMIT@|$IDF_COMMIT|g" \
     -e "s|@LOCK_SHA256@|$LOCK_SHA256|g" \
     "$TEMPLATE" > "$OUT_DIR/manifest.yaml"
+sed -e "s|@RELEASE_NAME@|$RELEASE_NAME|g" \
+    -e "s|@BIN_SHA256@|$BIN_SHA256|g" \
+    "$LAUNCHPAD_TEMPLATE" > "$OUT_DIR/launchpad.toml"
+
+if grep -Eq '@(RELEASE_NAME|BIN_SHA256)@|<tag>|<sha256>' \
+        "$OUT_DIR/launchpad.toml"; then
+    die "generated launchpad.toml still contains a release placeholder"
+fi
 
 if command -v zip >/dev/null; then
     PKG=${OUT_DIR%/}.zip

@@ -14,13 +14,18 @@ esp_err_t factory_console_start(void);
 esp_err_t factory_console_ensure_nvs(void);
 
 /**
- * Record the GPIO0 level sampled by app_main before the console starts.
+ * Record the GPIO0 (TF card-detect) level sampled by app_main before the
+ * console starts.
  *
- * GPIO0 is both a boot strapping pin and the TF card-detect switch, so the
+ * GPIO0 is the TF card-detect input only — not a boot strap — so the
  * boot-time level records whether the board was powered with a card fitted.
- * board_info reports the stored level in its FACTORY_INFO line.
+ * board_info reports the stored level as sd_detect_boot_level in its
+ * FACTORY_INFO line.
  */
-void factory_console_note_gpio0_boot_level(int level);
+void factory_console_note_sd_detect_boot_level(int level);
+
+/** Buffer size required for the complete TG28_SW regulator/switch snapshot. */
+#define FACTORY_OTP_SNAPSHOT_LENGTH 256
 
 /**
  * Snapshot every TG28_SW rail's enable state and programmed voltage.
@@ -31,10 +36,10 @@ void factory_console_note_gpio0_boot_level(int level);
  * bsp_pmic_init() is called internally when needed; it only opens the LP I2C
  * device and services interrupt flags, never regulator configuration.
  *
- * The output is a single-line "name=on@3300mV ..." report truncated to fit.
+ * The output is a complete single-line "name=on@3300mV ..." report.
  *
  * @param out destination buffer
- * @param out_size buffer size in bytes; pass at least FACTORY_DETAIL_LENGTH
+ * @param out_size buffer size in bytes; pass at least FACTORY_OTP_SNAPSHOT_LENGTH
  * @return ESP_OK on success, ESP_ERR_INVALID_SIZE when the report was
  *         truncated, or the underlying PMIC error.
  */

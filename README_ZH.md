@@ -6,6 +6,10 @@ Candis-S31 是一块围绕 ESP32-S31 和 2.0 英寸 460 × 460 方形 AMOLED 设
 
 > **硬件状态：** EVT1（原理图 v0.5）已于 2026-08-03 投板打样（`v0.5_260803_1544`），板子尚未回板。ESP-IDF 入门工程、Factory Bring-up 与低功耗示例均已通过编译，但开发板功能还没有在 Candis-S31 实物上验证过。
 
+> **投板阻断项：** 已审查的 `Schematic_3` 中，R6（4.7 kΩ、贴装）把
+> GPIO36/TF 电源使能上拉到 3.3 V；本设计 VDD_SPI=1.8 V，GPIO36 绑带必须为低。
+> 修正上拉/电源门控电路前不得复制或再次投板；ROM 绑带错误不能靠固件补救。
+
 ## 开始使用
 
 仓库根目录不是编译工程。请打开独立的 ESP-IDF 示例：
@@ -29,11 +33,11 @@ idf.py --preview -p PORT flash monitor
 
 Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会加入。单独的 variant 或 board JSON 不能带来一个新 SoC 的支持。本仓库不提供私有 ESP-IDF 分叉、修改版框架或复制的第三方库。
 
-### 构建验证 — 2026-08-05
+### 构建验证 — 2026-08-11
 
-基线：ESP-IDF `v6.1-beta1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 15 个目标；截至 2026-08-06 全部通过。「编译通过」仅表示编译成功——**所有目标都还没有在硬件上运行过，每一项板载功能都待 EVT 实测**。
+基线：ESP-IDF `v6.1-beta1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 15 个目标；2026-08-11 完整回归为 15/15 通过。「编译通过」仅表示编译成功——**所有目标都还没有在硬件上运行过，每一项板载功能都待 EVT 实测**。
 
-| 目标（`tools/build-all.sh --list`） | 源码位置 | 状态（2026-08-06） |
+| 目标（`tools/build-all.sh --list`） | 源码位置 | 状态（2026-08-11） |
 |---|---|---|
 | `example:display` | esp-bsp 工作区 `examples/display` | 编译通过；待 EVT 实测 |
 | `example:display_camera_video` | esp-bsp 工作区 `examples/display_camera_video` | 编译通过；待 EVT 实测 |
@@ -58,7 +62,8 @@ Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会
 ├── hardware/                  # 原理图、引脚表和 EVT 注意事项
 ├── examples/
 │   └── esp-idf/
-│       └── getting-started/   # 独立 ESP-IDF 工程
+│       ├── getting-started/   # 独立 ESP-IDF 工程
+│       └── low-power/        # S0/S1/深睡/S2 状态机原型
 ├── firmware/
 │   ├── factory/               # Factory Bring-up 源码和发布约定
 │   └── recovery/              # 恢复流程
@@ -70,7 +75,7 @@ Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会
 ## 硬件资料
 
 - [硬件资料说明](hardware/README.md)
-- [开发板原理图](hardware/schematic/Easy-S31_SCH_v0.5_2026-07-28_0924.pdf)
+- [开发板原理图](hardware/schematic/SCH_Schematic_3_2026-08-10.pdf)
 - [初版引脚表](hardware/pinout/README.md)
 - [EVT1 上电注意事项](hardware/bring-up.md)
 - [出厂固件](firmware/factory/README.md)
@@ -93,7 +98,7 @@ ESP32-S31 的通用问题才需要修改 ESP-IDF 本身。Candis-S31 的引脚�
 
 BSP 源码不会复制回本仓库。开发阶段 Factory 通过 `CANDIS_S31_BSP_PATH` 加载独立工作区，公开示例只依赖正式发布的能力。逐仓库的提交范围见[上游归属和贡献路径](UPSTREAM.md)。
 
-本地 BSP 已覆盖显示与触摸、TG28_SW 电源管理、RX8130CE RTC、FUSB303B 与 USB Host、SDMMC、ES8389 音频、DVP 摄像头链路和 RGB LED。对应的 Board Manager 定义也已使用这些开发组件完成生成和编译。这只是软件实现完成，不代表硬件验证完成；在实板测量前，EVT 结果仍统一记录为 `NOT_RUN`。
+本地 BSP 已覆盖显示与触摸、TG28_SW 电源管理、RX8130CE RTC、FUSB303B 与 USB Host、SDMMC、ES8389 音频、DVP 摄像头链路和 RGB LED。Board Manager 定义已使用开发组件完成生成和编译，但刻意不暴露 Type-C 控制器和 OTG GPIO：其当前模型无法原子保证“先 Source、后升压”和仅 500 mA 的板级约束；Type-C2 USB Host 必须使用 BSP API。这只是软件实现完成，不代表硬件验证完成；在实板测量前，EVT 结果仍统一记录为 `NOT_RUN`。
 
 ## 许可
 

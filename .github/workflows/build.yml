@@ -15,10 +15,9 @@ env:
   # Update the tag and commit together after the new version passes validation.
   IDF_REF: v6.1-beta1
   IDF_COMMIT: b1d13e9fe441c4f75e240c98a26fd631b7b3232f
-  # ESP-BSP commit that carries bsp/candis_s31 and the reusable drivers.
-  # This is the tip of the feat/candis-s31 branch on LeenixP/esp-bsp that
-  # passed the local 15-target build verification on 2026-08-06.
-  ESP_BSP_COMMIT: 5d39d58f3b945a3d3a8b44535c4d1756e5a624fe
+  # BSP revision required by the Factory and low-power APIs. Push this BSP
+  # commit before the product commit so the public CI checkout remains exact.
+  ESP_BSP_COMMIT: 27fc6bfbc218c6e7f74c651856338c6e05d2b373
 
 jobs:
   getting-started:
@@ -87,6 +86,44 @@ jobs:
             echo "::endgroup::"
           done
 
+  low-power:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Fetch ESP-BSP (Candis-S31 BSP)
+        run: |
+          git clone https://github.com/LeenixP/esp-bsp.git "$RUNNER_TEMP/esp-bsp"
+          git -C "$RUNNER_TEMP/esp-bsp" checkout "$ESP_BSP_COMMIT"
+
+      - name: Build low-power example
+        run: |
+          . ~/esp-idf/export.sh
+          CANDIS_S31_BSP_PATH="$RUNNER_TEMP/esp-bsp/bsp/candis_s31" \
+            idf.py --preview -C examples/esp-idf/low-power \
+              -D IDF_TARGET=esp32s31 build
+
   factory:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -118,6 +155,12 @@ jobs:
           git clone https://github.com/LeenixP/esp-bsp.git "$RUNNER_TEMP/esp-bsp"
           git -C "$RUNNER_TEMP/esp-bsp" checkout "$ESP_BSP_COMMIT"
 
+
+      - name: Validate Factory host and Recovery tooling
+        run: |
+          python3 firmware/factory/host_tools/run_evt.py --self-test
+          bash -n firmware/recovery/flash_factory.sh
+          bash -n tools/release/pack_factory_release.sh
       - name: Build factory firmware
         run: |
           . ~/esp-idf/export.sh
@@ -131,13 +174,15 @@ jobs:
       # manual step performed after hardware validation.
       - name: Pack factory release (dry-run)
         run: |
+          RELEASE_NAME="ci-${GITHUB_SHA}" \
           CANDIS_S31_BSP_PATH="$RUNNER_TEMP/esp-bsp/bsp/candis_s31" \
           IDF_PATH=~/esp-idf \
             tools/release/pack_factory_release.sh firmware/factory "$RUNNER_TEMP/factory-release"
+          python3 -c 'from pathlib import Path; p=Path("'"$RUNNER_TEMP"'/factory-release/launchpad.toml"); s=p.read_text(); assert "ci-${{ github.sha }}" in s and "@" not in s and "<tag>" not in s'
 
       - name: Upload factory release dry-run
         uses: actions/upload-artifact@v4
         with:
           name: candis-s31-factory-release-dryrun
-          path: ${{ runner.temp }}/factory-release.zip
+          path: ${{ runner.temp }}/factory-release.*
           if-no-files-found: error

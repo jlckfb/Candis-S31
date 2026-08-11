@@ -29,7 +29,7 @@ absolute path is stored in the repository.
 |---|---|---|
 | `help` | List commands and their usage | No |
 | `board_info` | Print chip, firmware, BSP, flash, PSRAM, and reset information | No |
-| `safe_state` | Reapply disabled levels to direct power controls | Yes, disables only |
+| `safe_state` | Stop owned peripheral activity, release handles, and switch every peripheral rail off through the same best-effort cleanup as `power_all_off` | Yes, disables only |
 | `power_status` | Show the current direct power-control levels | No |
 | `flash_test` | Check that the detected flash capacity is 16 MB | No |
 | `psram_test` | Write and verify a temporary 64 KiB PSRAM allocation | Temporary RAM only |
@@ -38,13 +38,14 @@ absolute path is stored in the repository.
 | `otp_status` | Read every TG28_SW rail enable/voltage and the DC1SW/DC4SW switch states | No |
 | `pmic_test` | Read TG28_SW identity, battery, VBUS, and charger state | No |
 | `pmic power_on_source` | Read the raw TG28_SW REG20 boot-source bitmap | No |
+| `pmic input_limit [100 \| 500 source_verified]` | Read the Type-C1 input limit, restore the 100 mA safe baseline, or explicitly arm the verified 500 mA stage | Optional write |
 | `pmic charge_current [MILLIAMPS]` | Read or set the exact TG28_SW REG62 charge-current limit | Optional write |
 | `pmic temperature` | Read the TG28_SW ADC channels (VBAT/VBUS/VSYS/TS/TDIE) in millivolts | Enables an ADC channel for the measurement, then restores it |
-| `charge_test` | Read back the input-current limit and charge voltage, then grade charger activity from VBUS and charge flags | No |
+| `charge_test [source_verified]` | Read back input-current limit and charge voltage, then grade charger activity; the token is required if the verified input limit is 500 mA | No |
 | `rail NAME status` | Read one TG28_SW regulator setting | No |
-| `rail NAME on MILLIVOLTS` | Program and enable one TG28_SW regulator | Yes |
-| `rail NAME off` | Disable one TG28_SW regulator | Yes |
-| `peripheral_power NAME on\|off` | Apply a complete peripheral power sequence | Yes |
+| `rail NAME on MILLIVOLTS` | Program and enable one TG28_SW regulator; rejected while an active display/audio owner holds that rail | Yes |
+| `rail NAME off` | Disable one TG28_SW regulator; rejected while an active display/audio owner holds that rail | Yes |
+| `peripheral_power NAME on\|off [output_only]` | Apply a complete peripheral power sequence; EXT pin 2 requires `external_3v3 on output_only` and no self-powered load | Yes |
 | `power_all_off` | Stop activity, release handles, and switch every peripheral rail off; idempotent and best-effort (first error kept, every failure printed) | Yes, disables only |
 | `rtc_test` | Read RX8130CE calendar data and validity flags | No |
 | `rtc_set YYYY-MM-DD HH:MM:SS WEEKDAY` | Set the RTC, read it back, and verify the stored value; out-of-range fields are rejected before writing | Yes, RTC registers only |
@@ -52,7 +53,7 @@ absolute path is stored in the repository.
 | `irq_test` | Read and clear TG28_SW/RX8130CE flags until their shared line is released | Yes, clears interrupt flags |
 | `buttons` | Wait for a BOOT key pulse on GPIO61, then a short PWR key press reported through the TG28_SW power-key IRQ | No |
 | `typec_test` | Read FUSB303B identity and connection state; FAIL when the controller is not in DRP mode or stays silent, WARN for ambiguous CC state | Enables the CC controller only |
-| `otg on default\|1.5\|3.0` | Select source role and arm the protected Type-C2 boost path | Yes, sources VBUS after CC attach |
+| `otg on` | Select source role and arm the protected Type-C2 boost path at the 500 mA default advertisement | Yes, sources VBUS after CC attach |
 | `otg off` | Disable Type-C2 VBUS, CC role, and controller power | Yes, disables only |
 | `usb_host_test` | Install the USB Host stack at the 500 mA default advertisement, wait up to 20 s for a Type-C2 device, print VID/PID/speed/strings, then tear everything down | Yes, host stack + VBUS during the test |
 | `wifi_scan` | Scan for access points in station mode; PASS requires at least one AP | No |
@@ -70,29 +71,41 @@ absolute path is stored in the repository.
 | `camera_test` | Capture five DVP frames and verify frame size, non-blank content, and frame-to-frame change; each frame wait is bounded by a 3 s timeout | Yes |
 | `mark TEST pass\|fail\|skip [detail]` | Record an operator result; details may contain spaces | Report only |
 | `report` | Print every result and a JSON summary | No |
-| `report_reset` | Return every collected result to `NOT_RUN` (keeps `safe_state`, which only runs at boot) | Report only |
+| `report_reset` | Return every collected result to `NOT_RUN` while retaining the most recent safe-state result | Report only |
 | `reboot` | Restart the SoC | Yes |
 
 Run `rail`, `peripheral_power`, and `otg` only after checking the matching rail
-against the EVT bring-up sheet. They are explicit commands so no switched load
-is enabled during boot. `otg on` prints an additional warning because Type-C2
-can source 5 V; the schematic's source indication gate remains part of the
+against the EVT bring-up sheet. Raw rail changes are rejected while a display
+or audio owner is active. EXT pin 2 has no reverse-current blocker, so it can
+only be enabled with the explicit `output_only` token and every self-powered
+load disconnected. `otg on` prints an additional warning because Type-C2 can
+source 5 V; the schematic's source indication gate remains part of the
 hardware safety path.
 
 Two ordering facts matter for the first passes:
 
-- The boot safe state powers the FUSB303B off. `typec_test` is what re-enables
-  the controller, so a main-bus `i2c_scan` before any `typec_test` reports the
-  FUSB303B missing — run `typec_test` first (the automation does).
+- The boot safe state powers the FUSB303B and every switched peripheral rail
+  off. Scan the main bus once in that state to prove those devices are silent,
+  then run `typec_test` and scan again: the FUSB303B must answer at the
+  schematic strap address 0x21 while its control domain is on. The host runner
+  records this second observation as `type_c_power_scan` before USB Host takes
+  ownership of the port and tears it down.
 - The BSP panel init sequence programs the CO5300 brightness register to
   30 % before any Display-On, and `bsp_display_backlight_on()` restores the
   last level set through `bsp_display_brightness_set()` instead of forcing
   100 %, so the first light-up never flashes full brightness. Raise the level
   in steps and record current/temperature per step.
 
-The console registers 39 top-level commands including `help`. `pmic_test`
-already reads the fuel-gauge SOC and voltage; `pmic charge_current 500` adds
-the EVT target-current check without changing the OTP/default setting at boot.
+The console registers 39 top-level commands including `help`. PMIC init first
+clamps the Type-C1 input-current limit to 100 mA. `pmic input_limit 500
+source_verified` is the only 500 mA path; use it only after verifying the
+source/cable and watching VBUS with a current probe, then restore the safe
+baseline with `pmic input_limit 100`. Plain `charge_test` requires that 100 mA
+baseline. Only during the instrumented 500 mA step, run `charge_test
+source_verified`.
+
+`pmic_test` already reads fuel-gauge SOC and voltage. `pmic charge_current 500`
+sets the EVT target current without changing the OTP/default setting at boot.
 Use it only with current limiting and battery temperature monitoring, then
 restore the confirmed 50 mA default with `pmic charge_current 50`. EVT1 has no
 battery NTC (the TS pin is a fixed input), so `pmic temperature` is the
@@ -107,17 +120,20 @@ its descriptors over EP0, which is actual bus traffic, then stops the stack
 and drops the boost. USB *device* mode (Type-C2 as a gadget behind an
 external host) has no Factory coverage in this round; run the dedicated
 TinyUSB-device diagnostic image for that check, per the bring-up plan. On
-this hardware the source advertisement stays at the 500 mA default; the
-1.5 A/3 A encodings exist in the API but are not a deliverable capability.
+this hardware the source always advertises the USB 500 mA default; the
+1.5 A/3 A enum values are kept only to report the peer's advertised
+capability, and any request for a higher source current fails explicitly.
 
 The OV5640 autofocus/VCM path is intentionally not exposed as a command until
 the module supplier confirms VCM power and the actuator control interface.
 
-An I2C scan on the main bus is graded against the expected device set:
-FUSB303B must answer at exactly one of `0x21`/`0x31` (missing or answering at
-both is `FAIL`); `0x31` records a `WARN` because the address strap then
-mismatches the schematic. Devices behind switched rails (CST820 `0x15`,
-ES8389 `0x20`, OV5640 `0x3C`) may stay silent while their rail is off; a
+An I2C scan on the main bus is graded against each device's power state.
+While `BSP_POWER_TYPE_C_CONTROL` is on, FUSB303B must answer at exactly one of
+`0x21`/`0x31` (missing or answering at both is `FAIL`); `0x31` records a
+`WARN` because the address strap then mismatches the schematic. Its silence
+after `power_all_off` is expected, while any answer with the control domain
+off records a `WARN`. Devices behind switched rails (CST820 `0x15`, ES8389
+`0x20`, OV5640 `0x3C`) may likewise stay silent while their rail is off; a
 powered device that does not answer, an unexpected address, or an answer at
 the unconfirmed VCM address `0x0C` records a `WARN`. The low-power bus passes
 only when both the RX8130CE at `0x32` and TG28_SW at `0x34` respond.
@@ -261,11 +277,13 @@ measurable node — register evidence only), with DCDC2/DCDC3, the ALDO/BLDO
 rails, CPUSLDO, DC1SW, and DC4SW off. A lot whose snapshot does not match is
 quarantined, not brought up.
 
-GPIO0 doubles as a boot strapping pin and the TF card-detect switch, so a
-board powered with a card fitted samples the strap low. The firmware records
-the pin level early in `app_main`, logs it at boot, and reports it in the
-`board_info` `FACTORY_INFO` as `gpio0_boot` (`low` means a card was fitted at
-power-on). This is observation only; the boot path itself is unchanged.
+GPIO0 is the TF card-detect input only — it is not a boot strap, so a
+board powered with a card fitted samples the pin low. The firmware records
+the level early in `app_main`, logs it at boot, and reports it in the
+`board_info` `FACTORY_INFO` as `sd_detect_boot_level` (`low` means a card
+was fitted at power-on). The real boot strap pins are GPIO36/GPIO37/
+GPIO60/GPIO61; GPIO0 is not part of that set. This is observation only; the
+boot path itself is unchanged.
 
 ## Result format
 
@@ -316,13 +334,20 @@ The script sends each test command in a fixed order, parses `FACTORY_INFO`,
 `FACTORY_RESULT`, `FACTORY_PROMPT`, and `FACTORY_SUMMARY` lines, relays local
 operator answers to the board's prompts, and writes `evt_<board>_<timestamp>.json`
 plus the complete `.log` under `evt_logs/`. Before the first test stage it
-issues `report_reset` and waits for its acknowledgment: results persist in NVS
+issues `report_reset` and requires its acknowledgment: results persist in NVS
 across power cycles, so a second run on the same board would otherwise mix
 stale entries into the summary and can turn a timed-out stage into a false
-`PASS`. Before `rtc_test` it first issues an `rtc_set` from the host clock
-(UTC), because a fresh board powers up with an invalid RTC time. The board
-identity defaults to the base MAC from `board_info`. `--non-interactive`
-answers `s` (skip) to every prompt for log-only runs.
+`PASS`. A missing acknowledgment aborts the run and writes a failed host report;
+no hardware stage is sent. The fixed sequence first scans the main bus with
+every optional/control rail off, then uses `typec_test` plus a second
+host-graded scan (`type_c_power_scan`) to prove the FUSB303B answers at 0x21
+only while its control domain is on. It then runs `usb_host_test`; no attached
+device scores `WARN`, while successful descriptor enumeration scores the
+software-owned USB Host result. Before `rtc_test` it first issues an `rtc_set`
+from the host clock (UTC), because a fresh board powers up with an invalid RTC
+time. The board identity defaults to the base MAC from `board_info`.
+`--non-interactive` supplies safe canned answers for unattended parser
+validation; it is not a substitute for fixture observations.
 `python3 host_tools/run_evt.py --self-test` verifies the parser and report
 writer against a scripted fake firmware on a pseudo terminal and needs no
 hardware.
@@ -343,10 +368,12 @@ The first hardware-verified release must include:
 Release binaries belong in GitHub Release assets. Build directories and
 downloaded components do not belong in Git.
 
-`firmware/factory/release/` is the local staging area: it is the default
-output of `tools/release/pack_factory_release.sh` and is git-ignored. The
-script fills `tools/release/manifest.template.yaml` with build facts and
-archives the merged image, its SHA-256, the dependency lock, and the manifest.
+`firmware/factory/release/` is the local staging area: it is the default output
+of `RELEASE_NAME=<exact-tag> tools/release/pack_factory_release.sh` and is
+git-ignored. The script requires a concrete release name, fills
+`tools/release/manifest.template.yaml`, generates a matching placeholder-free
+Recovery `launchpad.toml`, and archives the merged image, its SHA-256, the
+dependency lock, `flash_factory.sh`, the Recovery procedure, and both manifests.
 Published artifacts are uploaded as GitHub Release assets only after hardware
-validation; the CI `factory` job runs the same script as a dry-run and stores
-the archive as a build artifact.
+validation. The CI `factory` job runs the same script with a concrete
+`ci-<commit>` identifier and stores the archive as a build artifact.

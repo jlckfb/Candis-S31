@@ -35,6 +35,12 @@ import serial
 # sequence; --no-power-rail-scan drops it.
 POWER_RAIL_SCAN = "power_rail_scan"
 
+# Host-side proof that typec_test actually raised the FUSB303B control domain.
+# The board is strapped for 0x21; 0x31 is a detectable assembly mismatch.
+TYPE_C_POWER_SCAN = "type_c_power_scan"
+FUSB303B_EXPECTED_ADDRESS = 0x21
+FUSB303B_ALT_ADDRESS = 0x31
+
 # Stage-boundary cleanup marker: the firmware command stops activity and
 # switches every peripheral rail off. It prints text but no FACTORY_RESULT,
 # so the runner drains it instead of waiting for a result.
@@ -54,11 +60,14 @@ STAGES = [
     ("safe_state", 10, "safe_state"),
     ("flash_test", 15, "flash"),
     ("psram_test", 20, "psram"),
-    # typec_test must precede the first main-bus scan: the boot safe state
-    # powers the FUSB303B off and typec_test is what re-enables it, so a scan
-    # before this stage would misreport the controller as missing.
-    ("typec_test", 10, "type_c"),
+    # First prove the boot safe state: switched-rail devices and FUSB303B are
+    # expected to be silent here. Then raise only the Type-C control domain
+    # and close that loop with a second, host-graded scan before USB Host owns
+    # and tears down the port.
     ("i2c_scan main", 20, "i2c_main"),
+    ("typec_test", 10, "type_c"),
+    (TYPE_C_POWER_SCAN, 20, TYPE_C_POWER_SCAN),
+    ("usb_host_test", 30, "usb_host"),
     ("i2c_scan lp", 20, "i2c_low_power"),
     ("pmic_test", 10, "pmic"),
     ("charge_test", 10, "charge"),
@@ -267,6 +276,33 @@ class EvtRunner:
                     return payload, found
         return None, found
 
+    def _run_type_c_power_scan(self, timeout_s):
+        """Require the as-built FUSB303B address while its domain is on."""
+        payload, found = self._run_i2c_rescan(timeout_s)
+        findings = []
+        if payload is None:
+            findings.append("no i2c_main result with Type-C control on")
+        if FUSB303B_EXPECTED_ADDRESS not in found:
+            findings.append("FUSB303B 0x%02x silent with control on"
+                            % FUSB303B_EXPECTED_ADDRESS)
+        if FUSB303B_ALT_ADDRESS in found:
+            findings.append("unexpected FUSB303B strap address 0x%02x"
+                            % FUSB303B_ALT_ADDRESS)
+        if findings:
+            status = "FAIL"
+            detail = "; ".join(findings)
+            self._log("!!! %s FAIL: %s" % (TYPE_C_POWER_SCAN, detail))
+        else:
+            status = "PASS"
+            detail = "FUSB303B answered at 0x%02x only while control was on" % (
+                FUSB303B_EXPECTED_ADDRESS)
+            self._log("%s PASS: %s" % (TYPE_C_POWER_SCAN, detail))
+        self.results[TYPE_C_POWER_SCAN] = {
+            "test": TYPE_C_POWER_SCAN,
+            "status": status,
+            "detail": detail,
+        }
+
     def _run_power_rail_scan(self, timeout_s):
         """Toggle each switched-rail peripheral OFF->scan->ON->scan->OFF.
 
@@ -326,10 +362,10 @@ class EvtRunner:
         """Clear results persisted in NVS by an earlier run on this board.
 
         Factory results survive power cycles, so without a reset a second
-        EVT pass would let the board-side FACTORY_SUMMARY mix stale results
-        in (a stage that times out can then look as if it passed). The
-        command keeps the boot-only safe_state result, which the firmware
-        re-evaluates at every boot anyway.
+        EVT pass could mix stale entries into the board summary and the host
+        result map. The command keeps the latest safe_state result, which the
+        firmware establishes at boot and may re-evaluate through the
+        owner-aware cleanup command.
         """
         timeout_s = self.timeout_cap or 10
         self._log(">>> report_reset")
@@ -346,11 +382,31 @@ class EvtRunner:
         return False
 
     def run(self, stages):
-        self._run_report_reset()
+        if not self._run_report_reset():
+            detail = "report_reset was not acknowledged; no EVT stages were run"
+            self.results["report_reset"] = {
+                "test": "report_reset",
+                "status": "FAIL",
+                "detail": detail,
+            }
+            self.summary = {
+                "overall": "FAIL",
+                "pass": 0,
+                "fail": 1,
+                "warn": 0,
+                "skip": 0,
+                "not_run": 0,
+            }
+            self._log("!!! aborting EVT run: " + detail)
+            return self._write_report()
         for command, timeout_s, expect in stages:
             if command == POWER_RAIL_SCAN:
                 # Host-side composite stage; the board has no such command.
                 self._run_power_rail_scan(timeout_s)
+                continue
+            if command == TYPE_C_POWER_SCAN:
+                # Host-side composite stage; the board has no such command.
+                self._run_type_c_power_scan(timeout_s)
                 continue
             if command == POWER_ALL_OFF:
                 # Cleanup marker: prints text but no FACTORY_RESULT line.
@@ -431,6 +487,8 @@ FAKE_RESPONSES = {
     "buttons": ['FACTORY_RESULT {"test":"buttons","status":"FAIL","detail":"boot=yes power=no"}'],
     "typec_test": ['FACTORY_RESULT {"test":"type_c","status":"WARN",'
                    '"detail":"attached but orientation unknown"}'],
+    "usb_host_test": ['FACTORY_RESULT {"test":"usb_host","status":"PASS",'
+                      '"detail":"vid=303a pid=1001"}'],
     "wifi_scan": ['FACTORY_RESULT {"test":"wifi","status":"PASS","detail":"aps_found=4"}'],
     "ble_smoke": ['FACTORY_RESULT {"test":"ble","status":"PASS","detail":"init ok"}'],
     "display_test": "PROMPT",      # asks, then scores the forwarded answer
@@ -454,13 +512,15 @@ def _self_test():
     os.set_blocking(master_fd, False)
     received_answers = []
     received_commands = []
+    i2c_scan_type_c_states = []
     stop = threading.Event()
 
     def fake_firmware():
         buffer = b""
         stale_results = True  # results persisted in NVS by an earlier run
-        # Switched-rail state; the earlier device tests left every rail on.
-        rail_on = {name: True for name, _address in POWER_RAIL_DEVICES}
+        # Boot safe state leaves every optional/control rail off.
+        rail_on = {name: False for name, _address in POWER_RAIL_DEVICES}
+        type_c_on = False
         while not stop.is_set():
             try:
                 chunk = os.read(master_fd, 256)
@@ -492,7 +552,14 @@ def _self_test():
                     stale_results = False
                     os.write(master_fd,
                              b"Factory results reset to NOT_RUN"
-                             b" (safe_state kept: it only runs at boot)\n")
+                             b" (latest safe_state kept)\n")
+                    continue
+                if command == "typec_test":
+                    type_c_on = True
+                if command == POWER_ALL_OFF:
+                    type_c_on = False
+                    for name in rail_on:
+                        rail_on[name] = False
                     continue
                 if command.startswith("peripheral_power "):
                     fields = command.split()
@@ -500,17 +567,23 @@ def _self_test():
                         rail_on[fields[1]] = fields[2] == "on"
                     continue
                 if command == "i2c_scan main":
-                    # FUSB303B is always powered; the rest answer only while
-                    # their simulated rail is on.
-                    found = [0x21] + [address for name, address in
-                                      POWER_RAIL_DEVICES if rail_on[name]]
+                    # Match the board contract: FUSB303B answers only while
+                    # its direct control domain is enabled; switched-rail
+                    # devices answer only while their own rail is on.
+                    i2c_scan_type_c_states.append(type_c_on)
+                    found = ([0x21] if type_c_on else []) + [
+                        address for name, address in POWER_RAIL_DEVICES
+                        if rail_on[name]
+                    ]
                     for address in sorted(found):
                         os.write(master_fd, ("found I2C device at 0x%02x\n"
                                              % address).encode())
+                    note = ("expected set present" if type_c_on else
+                            "FUSB303B off with control domain")
                     os.write(master_fd,
                              ('FACTORY_RESULT {"test":"i2c_main","status":"PASS",'
-                              '"detail":"expected set present (devices=%d '
-                              'missing=0x0 extra=0)"}\n' % len(found)).encode())
+                              '"detail":"%s (devices=%d missing=0x0 extra=0)"}\n'
+                              % (note, len(found))).encode())
                     continue
                 response = FAKE_RESPONSES.get(command)
                 if response == "PROMPT":
@@ -565,12 +638,20 @@ def _self_test():
               received_commands.index("report_reset") <
               received_commands.index("report"),
               "report_reset must be acknowledged before the final report")
-        check("typec_test" in received_commands and
-              "i2c_scan main" in received_commands and
-              received_commands.index("typec_test") <
-              received_commands.index("i2c_scan main"),
-              "typec_test must power the FUSB303B before the first main-bus "
-              "scan, commands: %r" % received_commands)
+        scan_positions = [i for i, command in enumerate(received_commands)
+                          if command == "i2c_scan main"]
+        type_c_position = received_commands.index("typec_test")
+        usb_host_position = received_commands.index("usb_host_test")
+        check(len(scan_positions) >= 3 and
+              scan_positions[0] < type_c_position <
+              scan_positions[1] < usb_host_position,
+              "main-bus scan order must prove Type-C off then on before USB "
+              "Host ownership, commands: %r" % received_commands)
+        check(i2c_scan_type_c_states[0] is False and
+              any(i2c_scan_type_c_states) and
+              i2c_scan_type_c_states[-1] is False,
+              "main-bus scans must cover FUSB303B off, on, and final-off "
+              "states: %r" % i2c_scan_type_c_states)
         # Stage-boundary cleanup: power_all_off follows the display/touch,
         # LED, audio, and camera blocks, in that order.
         cleanups = [i for i, command in enumerate(received_commands)
@@ -607,6 +688,9 @@ def _self_test():
         check(results["power_rail_scan"]["status"] == "PASS",
               "well-behaved fake rails should score power_rail_scan PASS, got %r"
               % results.get("power_rail_scan"))
+        check(results["type_c_power_scan"]["status"] == "PASS",
+              "FUSB303B powered scan should pass, got %r"
+              % results.get("type_c_power_scan"))
         for name, _address in POWER_RAIL_DEVICES:
             off_command = "peripheral_power %s off" % name
             on_command = "peripheral_power %s on" % name
@@ -636,6 +720,28 @@ def _self_test():
         check(len(results) == len(set(s[2] for s in build_stages() if s[2] != "INFO")),
               "expected one result per unique stage name, got %d" % len(results))
 
+        class SilentSerial:
+            def __init__(self):
+                self.writes = []
+
+            def write(self, data):
+                self.writes.append(data)
+
+            def read(self, size):
+                return b""
+
+        silent_serial = SilentSerial()
+        reset_runner = EvtRunner(silent_serial, out_dir, board_id="reset-failure",
+                                 timeout_cap=0.01, verbose=False)
+        reset_report = reset_runner.run([("safe_state", 1, "safe_state")])
+        check(silent_serial.writes == [b"report_reset\r\n"],
+              "a missing report_reset acknowledgment must abort before every "
+              "EVT stage, writes: %r" % silent_serial.writes)
+        check(reset_report["summary"]["overall"] == "FAIL" and
+              reset_report["results"]["report_reset"]["status"] == "FAIL",
+              "report_reset failure must produce a failed host report: %r"
+              % reset_report)
+
     stop.set()
     ser.close()
     os.close(master_fd)
@@ -646,9 +752,9 @@ def _self_test():
         for failure in failures:
             print("SELF-TEST FAIL:", failure)
         return 1
-    print("self-test passed: report_reset before the first stage, "
-          "typec_test before the first main-bus scan, stage-boundary "
-          "power_all_off cleanup, PASS/FAIL/WARN/NOT_RUN/TIMEOUT paths, "
+    print("self-test passed: report_reset acknowledgment gates every stage, "
+          "main-bus scans prove FUSB303B off then 0x21-on before USB Host and "
+          "off again at teardown, PASS/FAIL/WARN/NOT_RUN/TIMEOUT paths, "
           "prompt forwarding, rail OFF->scan->ON->scan->OFF with a closing "
           "all-off scan, summary parse, and report files all verified")
     return 0

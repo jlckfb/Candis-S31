@@ -152,7 +152,7 @@ build_one() {
 
 # --- argument parsing ----------------------------------------------------------
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-    sed -n '2,40p' "${BASH_SOURCE[0]}"
+    sed -n '2,43p' "${BASH_SOURCE[0]}"
     exit 0
 fi
 if [ "${1:-}" = "--list" ]; then

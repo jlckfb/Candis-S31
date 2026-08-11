@@ -42,18 +42,19 @@
 #define CANDIS_S31_BSP_GIT_REV "unknown"
 #endif
 
-/* GPIO0 level sampled by app_main before the console started; -1 until then. */
-static int s_gpio0_boot_level = -1;
+/* GPIO0 (TF card-detect) level sampled by app_main before the console
+ * started; -1 until then. */
+static int s_sd_detect_boot_level = -1;
 
-void factory_console_note_gpio0_boot_level(int level)
+void factory_console_note_sd_detect_boot_level(int level)
 {
-    s_gpio0_boot_level = level;
+    s_sd_detect_boot_level = level;
 }
 
-static const char *gpio0_boot_level_text(void)
+static const char *sd_detect_boot_level_text(void)
 {
-    return s_gpio0_boot_level < 0 ? "unsampled" :
-           s_gpio0_boot_level ? "high" : "low";
+    return s_sd_detect_boot_level < 0 ? "unsampled" :
+           s_sd_detect_boot_level ? "high" : "low";
 }
 
 static const char *reset_reason_name(esp_reset_reason_t reason)
@@ -112,7 +113,7 @@ static int command_board_info(int argc, char **argv)
            (unsigned)(chip_info.revision / 100),
            (unsigned)(chip_info.revision % 100));
     printf("reset_reason=%s\n", reset_reason_name(esp_reset_reason()));
-    printf("gpio0_boot=%s\n", gpio0_boot_level_text());
+    printf("sd_detect_boot_level=%s\n", sd_detect_boot_level_text());
     printf("flash_bytes=%" PRIu32 "\n", flash_err == ESP_OK ? flash_size : 0);
     printf("psram_bytes=%zu\n", esp_psram_get_size());
     printf("free_internal_heap=%zu\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
@@ -132,8 +133,8 @@ static int command_board_info(int argc, char **argv)
     factory_report_print_json_string(mac_text);
     fputs(",\"reset\":", stdout);
     factory_report_print_json_string(reset_reason_name(esp_reset_reason()));
-    fputs(",\"gpio0_boot\":", stdout);
-    factory_report_print_json_string(gpio0_boot_level_text());
+    fputs(",\"sd_detect_boot_level\":", stdout);
+    factory_report_print_json_string(sd_detect_boot_level_text());
     fputs("}\n", stdout);
     return ESP_OK;
 }
@@ -417,7 +418,7 @@ static int command_otp_status(int argc, char **argv)
     /* This is a live read. After boot the safe state has already disabled
      * the optional rails, so a mismatch with the OTP expectations is only
      * meaningful on the boot snapshot captured before bsp_board_init(). */
-    char snapshot[256];
+    char snapshot[FACTORY_OTP_SNAPSHOT_LENGTH];
     const esp_err_t error = factory_console_capture_otp_boot_snapshot(
                                 snapshot, sizeof(snapshot));
     if (error == ESP_ERR_INVALID_SIZE) {
@@ -439,9 +440,10 @@ static int command_safe_state(int argc, char **argv)
     (void)argc;
     (void)argv;
 
-    const esp_err_t err = bsp_power_safe_state();
+    const esp_err_t err = factory_peripherals_power_all_off();
     char detail[64];
-    snprintf(detail, sizeof(detail), "bsp_power_safe_state: %s", esp_err_to_name(err));
+    snprintf(detail, sizeof(detail), "owned activity stopped, safe state: %s",
+             esp_err_to_name(err));
     factory_report_set(FACTORY_TEST_SAFE_STATE,
                        err == ESP_OK ? FACTORY_STATUS_PASS : FACTORY_STATUS_FAIL,
                        detail);
@@ -593,14 +595,18 @@ static int command_i2c_scan(int argc, char **argv)
     }
 
     /* Main-bus expectations (hardware/bring-up.md): FUSB303B answers at
-     * exactly one of 0x21/0x31 — 0x31 means the address strap mismatches
-     * the schematic and must be recorded. Devices behind switched rails
-     * (CST820 0x15/ALDO2, ES8389 0x20/ALDO3, OV5640 0x3C/camera rails) may
-     * stay silent while their rail is off; silent while powered is a
-     * finding. This board has no VCM driver, so any other answer — including
-     * the 0x0C slot a VCM would use — is unexpected. */
+     * exactly one of 0x21/0x31 while BSP_POWER_TYPE_C_CONTROL is enabled;
+     * it is expected to be silent after power_all_off. 0x31 means the
+     * address strap mismatches the schematic and must be recorded. Devices
+     * behind switched rails (CST820 0x15/ALDO2, ES8389 0x20/ALDO3, OV5640
+     * 0x3C/camera rails) may stay silent while their rail is off; silent
+     * while powered is a finding. This board has no VCM driver, so any other
+     * answer — including the 0x0C slot a VCM would use — is unexpected. */
     const bool fusb_21 = addresses[0x21];
     const bool fusb_31 = addresses[0x31];
+    bool type_c_on = false;
+    const esp_err_t type_c_power_error =
+        bsp_power_domain_get(BSP_POWER_TYPE_C_CONTROL, &type_c_on);
     bool touch_on = false, audio_on = false;
     bool cam_dvdd = false, cam_avdd = false, cam_dovdd = false;
     /* A PMIC read failure means the rail power state is unknown, not "off":
@@ -650,13 +656,20 @@ static int command_i2c_scan(int argc, char **argv)
     }
 
     factory_status_t verdict = FACTORY_STATUS_PASS;
-    const char *note = "expected set present";
-    if (!fusb_21 && !fusb_31) {
-        verdict = FACTORY_STATUS_FAIL;
-        note = "FUSB303B missing";
+    const char *note = type_c_on ? "expected set present"
+                       : "FUSB303B off with control domain";
+    if (type_c_power_error != ESP_OK) {
+        verdict = FACTORY_STATUS_WARN;
+        note = "Type-C control power state unknown";
     } else if (fusb_21 && fusb_31) {
         verdict = FACTORY_STATUS_FAIL;
         note = "FUSB303B at both 0x21/0x31";
+    } else if (type_c_on && !fusb_21 && !fusb_31) {
+        verdict = FACTORY_STATUS_FAIL;
+        note = "powered FUSB303B missing";
+    } else if (!type_c_on && (fusb_21 || fusb_31)) {
+        verdict = FACTORY_STATUS_WARN;
+        note = "FUSB303B answered while control disabled";
     } else if (fusb_31) {
         verdict = FACTORY_STATUS_WARN;
         note = "FUSB303B at 0x31: strap mismatch, record it";
@@ -742,7 +755,7 @@ esp_err_t factory_console_start(void)
         },
         {
             .command = "safe_state",
-            .help = "Disable every directly controlled power domain.",
+            .help = "Stop activity and switch every peripheral rail off safely.",
             .func = command_safe_state,
         },
         {

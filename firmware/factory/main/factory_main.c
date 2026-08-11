@@ -51,11 +51,40 @@ static void console_failure_count_clear(void)
 
 void app_main(void)
 {
-    /* GPIO0 is both a boot strapping pin and the TF card-detect switch: a
-     * card fitted at power-on holds the strap low through the sampling
-     * window. Record the level so the EVT log can note "card inserted at
-     * boot"; this only reads the pin and never changes boot behavior. The
-     * read config matches bsp_sdcard_is_inserted(). */
+    /* Remove every direct GPIO-controlled supply before filesystem/NVS work
+     * or any optional peripheral initialization. Put the display enables in
+     * the only safe removal order even after a software reset: VCI, 2 ms,
+     * then VBAT. This does not touch the TG28 rail state needed by the
+     * incoming-lot OTP snapshot below. */
+    static const bsp_power_domain_t shutdown_order[] = {
+        BSP_POWER_DISPLAY_VCI,
+        BSP_POWER_DISPLAY_VBAT,
+        BSP_POWER_TYPE_C_CONTROL,
+        BSP_POWER_SDCARD,
+        BSP_POWER_AUDIO_PA,
+        BSP_POWER_USB_OTG,
+    };
+    _Static_assert(sizeof(shutdown_order) / sizeof(shutdown_order[0]) ==
+                   BSP_POWER_DOMAIN_COUNT,
+                   "shutdown order must cover every direct power domain");
+    esp_err_t boot_safe_err = ESP_OK;
+    for (size_t index = 0;
+            index < sizeof(shutdown_order) / sizeof(shutdown_order[0]);
+            ++index) {
+        if (index == 1) {
+            vTaskDelay(pdMS_TO_TICKS(2));
+        }
+        const esp_err_t error =
+            bsp_power_domain_set(shutdown_order[index], false);
+        if (boot_safe_err == ESP_OK && error != ESP_OK) {
+            boot_safe_err = error;
+        }
+    }
+    /* GPIO0 is the TF card-detect input (not a boot strap): a card fitted
+     * at power-on holds the pin low through the sampling window. Record the
+     * level so the EVT log can note "card inserted at boot"; this only
+     * reads the pin and never changes boot behavior. The read config
+     * matches bsp_sdcard_is_inserted(). */
     const gpio_config_t sd_detect = {
         .pin_bit_mask = 1ULL << BSP_SD_DET,
         .mode = GPIO_MODE_INPUT,
@@ -63,33 +92,26 @@ void app_main(void)
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
-    int gpio0_boot_level = -1;
+    int sd_detect_boot_level = -1;
     if (gpio_config(&sd_detect) == ESP_OK) {
-        gpio0_boot_level = gpio_get_level(BSP_SD_DET);
+        sd_detect_boot_level = gpio_get_level(BSP_SD_DET);
     }
-    factory_console_note_gpio0_boot_level(gpio0_boot_level);
-    if (gpio0_boot_level < 0) {
-        ESP_LOGW(TAG, "GPIO0 (TF card detect / boot strap) read failed");
+    factory_console_note_sd_detect_boot_level(sd_detect_boot_level);
+    if (sd_detect_boot_level < 0) {
+        ESP_LOGW(TAG, "GPIO0 (TF card detect) read failed");
     } else {
-        ESP_LOGI(TAG, "GPIO0 (TF card detect / boot strap) at boot: %s (%s)",
-                 gpio0_boot_level ? "high" : "low",
-                 gpio0_boot_level == BSP_SD_DET_ACTIVE_LEVEL ?
+        ESP_LOGI(TAG, "GPIO0 (TF card detect) at boot: %s (%s)",
+                 sd_detect_boot_level ? "high" : "low",
+                 sd_detect_boot_level == BSP_SD_DET_ACTIVE_LEVEL ?
                  "TF card fitted at power-on" : "no TF card at power-on");
     }
 
-    const esp_err_t nvs_err = factory_console_ensure_nvs();
-    if (nvs_err != ESP_OK) {
-        ESP_LOGE(TAG, "NVS init failed: %s; results will not persist",
-                 esp_err_to_name(nvs_err));
-    }
-    /* Restore results from before any power cycle; falls back to NOT_RUN. */
-    factory_report_load();
 
     /* Capture the TG28_SW rail state BEFORE the board init applies its safe
      * state: the safe state deliberately turns DCDC4 and the other optional
      * rails off, so any read taken afterwards can no longer show the
-     * power-on state. bsp_pmic_init() only opens the LP I2C device and
-     * services interrupt flags; it never writes regulator configuration.
+     * power-on state. bsp_pmic_init() opens the LP I2C device and clamps the
+     * Type-C1 input-current limit, but does not change any regulator state.
      *
      * This equals the OTP defaults only after a cold power-on. The TG28 runs
      * from its own supply and no SoC-only reset reaches it, while the safe
@@ -99,7 +121,7 @@ void app_main(void)
      * codes still hold whatever a test wrote (camera leaves ALDO4 at 2800mV
      * and DCDC2 at 1500mV). The snapshot is not a report verdict: the
      * operator compares it against the TG28 confirmation sheet per lot. */
-    char otp_boot_detail[FACTORY_DETAIL_LENGTH] = {0};
+    char otp_boot_detail[FACTORY_OTP_SNAPSHOT_LENGTH] = {0};
     esp_err_t otp_boot_err = factory_console_capture_otp_boot_snapshot(
                                  otp_boot_detail, sizeof(otp_boot_detail));
     if (otp_boot_err != ESP_OK) {
@@ -111,10 +133,23 @@ void app_main(void)
      * PMIC/RTC, GPIO43 Type-C) as pulled-up inputs, then applies the power
      * safe state. Direct bsp_power_safe_state() would leave those lines
      * floating until something else claimed them. */
-    const esp_err_t safe_state_err = bsp_board_init();
+    const esp_err_t board_init_err = bsp_board_init();
+    if (boot_safe_err == ESP_OK) {
+        boot_safe_err = board_init_err;
+    }
+    const esp_err_t nvs_err = factory_console_ensure_nvs();
+    if (nvs_err != ESP_OK) {
+        ESP_LOGE(TAG, "NVS init failed: %s; results will not persist",
+                 esp_err_to_name(nvs_err));
+    }
+    /* Restore results from before any power cycle; falls back to NOT_RUN. */
+    factory_report_load();
     factory_report_set(FACTORY_TEST_SAFE_STATE,
-                       safe_state_err == ESP_OK ? FACTORY_STATUS_PASS : FACTORY_STATUS_FAIL,
-                       safe_state_err == ESP_OK ? "direct power domains disabled" : esp_err_to_name(safe_state_err));
+                       boot_safe_err == ESP_OK ?
+                       FACTORY_STATUS_PASS : FACTORY_STATUS_FAIL,
+                       boot_safe_err == ESP_OK ?
+                       "direct power domains disabled" :
+                       esp_err_to_name(boot_safe_err));
 
     ESP_LOGI(TAG, "Candis-S31 Factory Bring-up");
     ESP_LOGW(TAG, "EVT1 hardware has not been tested; use commands one stage at a time");

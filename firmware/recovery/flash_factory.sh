@@ -3,7 +3,8 @@
 set -euo pipefail
 
 # Run this from the configured tmux `idf` session so the ESP-IDF esptool and
-# Python environment are active. Arguments: PORT [MERGED_IMAGE] [BAUD].
+# Python environment are active. Arguments:
+# PORT [MERGED_IMAGE] [BAUD] GPIO61_DOWNLOAD_LEVEL GPIO61_RUN_LEVEL.
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 port=${1:-PORT}
 image=${2:-"${script_dir}/../factory/release/candis_s31_factory_merged.bin"}
@@ -11,10 +12,16 @@ image=${2:-"${script_dir}/../factory/release/candis_s31_factory_merged.bin"}
 # 499 ohm RX) are unverified on EVT1. Raise to 460800 only after the download
 # path passes at the intended high baud.
 baud=${3:-115200}
+download_level=${4:-}
+run_level=${5:-}
 
 if [[ "${port}" == "PORT" ]]; then
-    echo "usage: $0 PORT [MERGED_IMAGE] [BAUD]" >&2
-    echo "example: $0 /dev/ttyACM0" >&2
+    echo "usage: $0 PORT [MERGED_IMAGE] [BAUD] GPIO61_DOWNLOAD_LEVEL GPIO61_RUN_LEVEL" >&2
+    echo "example: $0 /dev/ttyACM0 ./candis_s31_factory_merged.bin 115200 0 1" >&2
+    exit 2
+fi
+if [[ "${download_level}" != "0" || "${run_level}" != "1" ]]; then
+    echo "refusing to flash without explicit GPIO61 levels: 0 in ROM download, 1 for post-flash SPI boot" >&2
     exit 2
 fi
 if [[ ! -f "${image}" ]]; then
@@ -56,10 +63,22 @@ fi
 )
 
 echo "Preflight: ESP32-S31 ROM loader on ${port}"
-"${esptool[@]}" --chip esp32s31 --port "${port}" chip-id
+"${esptool[@]}" --chip esp32s31 --port "${port}" \
+    --after no-reset chip-id
 
 echo "Flashing merged factory image at offset 0x0"
 "${esptool[@]}" --chip esp32s31 --port "${port}" --baud "${baud}" \
-    --before default-reset --after hard-reset write-flash \
+    --before no-reset --after no-reset write-flash \
     --flash-mode dio --flash-freq 40m --flash-size 16MB \
     0x0 "${image}"
+
+echo "Verifying merged factory image against flash before reset"
+"${esptool[@]}" --chip esp32s31 --port "${port}" --baud "${baud}" \
+    --before no-reset --after no-reset verify-flash \
+    --flash-mode dio --flash-freq 40m --flash-size 16MB \
+    0x0 "${image}"
+
+echo "GPIO61 run level was explicitly confirmed as 1; releasing ROM download mode"
+"${esptool[@]}" --chip esp32s31 --port "${port}" \
+    --before no-reset --after hard-reset run
+echo "Capture UART0 output and require an SPI boot log plus Factory startup before accepting recovery"

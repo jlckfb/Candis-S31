@@ -18,12 +18,12 @@ Candis-S31 低功耗状态机原型。四档功耗状态 + LP core 管家，演�
 |---|---|---|---|---|---|---|
 | **S0** | `RUN` | 亮 | dynamic | 开 | light sleep 切片轮询 | 运行（值守共享 IRQ 线） |
 | **S1** | `SCREEN_OFF` | CO5300 sleep | monitor（~10µA，可被触摸唤醒） | 保持 | light sleep | **停止**（交还 GPIO2） |
-| **DEEP_SLEEP** | `DEEP_SLEEP` | CO5300 sleep（保持） | monitor（保持） | **保持**（尤其 TOUCH 轨，见下） | deep sleep（唤醒即重启） | 停止 |
+| **DEEP_SLEEP** | `DEEP_SLEEP` | 关协议后断显示轨（EVT1 的 VBAT 硬接 TG28_VSYS，无法由软件断开） | 断电 | 外设/控制轨全关 | deep sleep（唤醒即重启） | 停止 |
 | **S2** | `SHUTDOWN` | 断电 | 断电 | 全关 | 断电（主轨切断后） | 断电 |
 
 S0 的关键点是**委派**：HP 不自己轮询 RTC/PMIC，而是进 light sleep，由 LP core 通过 mailbox 中断把事件推上来。
 
-DEEP_SLEEP 是 S1 与 S2 之间的深睡档：S1 超时后不直接深关机，先进深睡。唤醒源是 SoC RTC 定时（20s）+ GPIO2 EXT1 任意低电平（RX8130CE 闹钟 /IRQ、TG28 IRQ 都能经它唤醒）。外设轨在深睡期间保持供电，只为让面板/触摸的低功耗状态跨唤醒重启保持、省掉重新初始化；共享线上的 RX8130CE/TG28 由各自常供电源轨供电，不依赖任何外设轨。**深睡期间触摸不能唤醒**：CST820 INT 接 GPIO3，不在共享 GPIO2 线上，本档只武装了 GPIO2，因此唤醒路径只有 RTC 定时或 PMIC/RTC 事件。若产品要求深睡触摸唤醒，必须把 GPIO3 也加入 EXT1 ANY_LOW mask 后再实测验证。深睡唤醒是重启（app_main 重跑），靠 RTC 慢速内存里 `RTC_NOINIT_ATTR` 的跨深睡计数器决定回 S0 还是升级 S2。
+DEEP_SLEEP 是 S1 与 S2 之间的深睡档：S1 超时后不直接深关机，先关闭面板/触摸协议所有者，再执行 `bsp_power_safe_state()`，把全部可控外设/控制轨和防倒灌 GPIO 收到安全态后进入深睡。EVT1 的面板 VBAT 硬接 TG28_VSYS，软件只能关闭 VCI/IOVCC 并将 QSPI/控制脚置高阻，不能声称面板完全断电；唤醒会重跑 `app_main`，`bsp_board_init()` 再次执行安全态，随后 S0 重新上电初始化面板/触摸，因此当前实现**不具备跨唤醒免初始化能力**。唤醒源是 SoC RTC 定时（20s）+ GPIO2 EXT1 任意低电平（RX8130CE 闹钟 /IRQ、TG28 IRQ 都能经它唤醒）。共享线上的 RX8130CE/TG28 由常供电源轨供电，不依赖外设轨。**深睡期间触摸不能唤醒**：CST820 INT 接 GPIO3，不在共享 GPIO2 线上，本档只武装 GPIO2，因此唤醒路径只有 RTC 定时或 PMIC/RTC 事件。若产品要求深睡触摸唤醒，必须把 GPIO3 也加入 EXT1 ANY_LOW mask 后再实测验证。深睡唤醒靠 RTC 慢速内存里 `RTC_NOINIT_ATTR` 的跨深睡计数器决定回 S0 还是升级 S2。
 
 ## 迁移表
 
@@ -33,7 +33,7 @@ DEEP_SLEEP 是 S1 与 S2 之间的深睡档：S1 超时后不直接深关机，�
 | S0 | S1 | 停留满 `S0_DWELL_SECONDS`(15s) | 屏 sleep → 触摸 monitor → 停 LP core → 交还 GPIO2 → 武装 light sleep 唤醒源 |
 | S1 | S0 | **触摸** INT 拉低 | 撤唤醒源 → 触摸退 monitor → 屏 sleep-out → 重启 LP core |
 | S1 | S1 | 共享 IRQ 拉低（PMIC/RTC 事件） | 服务共享线（清标志至线释放），**不离开 S1** |
-| S1 | DEEP_SLEEP | 连续 `S1_SLICES_BEFORE_S2`(3) 个 10s 切片无触摸 | 撤 light sleep 唤醒源 → GPIO2 配 RTC 输入 + 内部上拉 → 武装深睡唤醒源（RTC 定时 + EXT1）→ 计数 +1 → `esp_deep_sleep_start()` |
+| S1 | DEEP_SLEEP | 连续 `S1_SLICES_BEFORE_S2`(3) 个 10s 切片无触摸 | 撤 light sleep 唤醒源 → 关闭面板/触摸所有者 → `bsp_power_safe_state()` 断全部可控外设/控制轨并置高阻 → GPIO2 配 RTC 输入 + 内部上拉 → 武装深睡唤醒源（RTC 定时 + EXT1）→ 计数 +1 → `esp_deep_sleep_start()` |
 | DEEP_SLEEP | S0 | 定时/GPIO2 唤醒且计数 < `DEEP_SLEEP_MAX_CYCLES`(2) | 重启式唤醒：cause≠UNDEFINED → 回 S0，再走 S0→S1→深睡循环 |
 | DEEP_SLEEP | S2 | 定时/GPIO2 唤醒且计数 ≥ `DEEP_SLEEP_MAX_CYCLES`(2) | 重启式唤醒 → 直接走下方 S2 顺序 |
 | S2 | 冷启动 | TG28 重新上电（RTC 闹钟到点 / 插 USB / 按电源键） | 走"冷启动"行（cause=UNDEFINED，计数归零） |
@@ -56,7 +56,7 @@ DEEP_SLEEP 是 S1 与 S2 之间的深睡档：S1 超时后不直接深关机，�
 - 因此 `esp_sleep_get_wakeup_causes()` 在这条路径上必然报 `UNDEFINED`。判定"是否闹钟叫醒"要靠 **PMIC 上电源寄存器**（`bsp_pmic_get_power_on_source`）+ **RX8130CE 的 AF 标志**，`report_boot_reason()` 就是这么做的；
 - 跨 S2 需要保留的状态必须落 NVS 或 RTC 寄存器域之外的存储，本原型没有演示这一点。
 
-**与 DEEP_SLEEP 唤醒的区分（启动分流依据）**：深睡唤醒同样是"app_main 重跑"，但 RTC 域全程未断电，`esp_sleep_get_wakeup_cause()` 报真实唤醒源（TIMER/EXT1…）；S2 再上电是真正掉电后的冷启动，cause 必为 `UNDEFINED`。`app_main` 据此分流：`UNDEFINED` → 深睡计数归零、回 S0；非 `UNDEFINED` → 按计数决定回 S0 还是进 S2。两者不会混淆。
+**与 DEEP_SLEEP 唤醒的区分（启动分流依据）**：深睡唤醒同样是“app_main 重跑”，但 RTC 域全程未断电，`esp_sleep_get_wakeup_causes()` 的位图包含真实唤醒源（TIMER/EXT1…）；S2 再上电是真正掉电后的冷启动，位图包含 `BIT(ESP_SLEEP_WAKEUP_UNDEFINED)`。`app_main` 据此分流：包含 `UNDEFINED` → 深睡计数归零、回 S0；否则按计数决定回 S0 还是进 S2。两者不会混淆。
 
 ## 唤醒源表
 
@@ -123,8 +123,9 @@ GPIO2 同一时刻只能属于一方：LP core（RTC 功能，LP IO matrix）或
 | | 外设轨静态 | **未知** | S1 不关外设轨，ALDO/BLDO 静态功耗未计 |
 | | **S1 合计** | **无法给出** | 缺面板与轨静态两项，凑不出可信总数 |
 | **DEEP_SLEEP** | ESP32-S31 deep sleep | ~10µA 级 | S31 datasheet deep-sleep 量级（估算，未实测） |
-| | 外设轨静态（TOUCH 等保持） | **未知** | 比 S1 多省的是 HP/内存保持功耗，轨静态依旧 |
-| | **DEEP_SLEEP 合计** | **无法给出** | 缺轨静态项 |
+| | 可控外设/控制轨 | 关断；残余**未知** | 进入 deep sleep 前执行 `bsp_power_safe_state()`；需实测各断电节点残压/漏电 |
+| | 面板硬接 VBAT + TG28/RX8130CE 常供域 | **未知** | EVT1 面板 VBAT 接 TG28_VSYS，PMIC/RTC 也必须留供电，均需实测 |
+| | **DEEP_SLEEP 合计** | **无法给出** | 缺硬接 VBAT、PMIC/RTC 与关断残余实测 |
 | **S2** | ESP32-S31 | 0 | 主轨已断，芯片无供电 |
 | | RX8130CE（备份域） | 亚 µA 级 | 备份电池供电，`INIEN=1` 自动切换；具体值查 ETM50E-05 |
 | | TG28 待机 | **未知** | 取决于 TG28 Soft PWROFF 后进入哪一档（未实测） |
@@ -155,10 +156,10 @@ S2 的最后一步现在调用 `bsp_pmic_power_off()`：它封装 TG28 的软件
 
 调用序列：打印日志 → `vTaskDelay(50ms)` 让日志冲出 → `bsp_pmic_power_off()`。若调用意外返回（PMIC 拒绝、仍带电），打印错误并落入空转等复位。
 
-### 3. BSP 侧的两个小缺口（不阻塞本原型）
+### 3. BSP RTC 边界
 
-- **RTC 标志选择性清除不可达**：驱动有 `rx8130ce_get_and_clear_alarm_flag()`（只清 AF），但 BSP 只转发了全清版 `bsp_rtc_clear_interrupt_flags()`（UF/TF/AF 一起清）。本原型 S2 用的是全清版，会误吞 UF/TF。若后续有消费者关心定时器标志，需在 BSP 补一层选择性清除；
-- **无 `bsp_rtc_arm_wakeup_at()` 封装**：F2 规格 §5-S3 建议把"读时→换算→设闹钟→使能→清 AF→排空→自检"七步固化进 BSP。本原型在 `arm_rtc_wakeup_alarm()` 里自己实现了这套顺序，含 VLF 兜底（`time_valid` 为假时**拒绝关机**，避免"关了但唤不醒"）。
+- **选择性清 AF 已闭环**：BSP 已提供 `bsp_rtc_get_and_clear_alarm_flag()`，只清 RX8130CE 的 AF，保留 UF/TF；本原型在武装 S2 闹钟后使用该接口。随后若 UF/TF 本身仍把共享 GPIO2 拉低，`service_shared_irq()` 会报告并清除对应标志，以保证关机前线路释放；
+- **无 `bsp_rtc_arm_wakeup_at()` 封装**：F2 规格 §5-S3 建议把“读时→换算→设闹钟→使能→清 AF→排空→自检”七步固化进 BSP。本原型在 `arm_rtc_wakeup_alarm()` 里自己实现了这套顺序，含 VLF 兜底（`time_valid` 为假时**拒绝关机**，避免“关了但唤不醒”）。
 
 ### 4. 其他
 
@@ -199,7 +200,7 @@ idf.py --preview build
 
 - **未烧录、未上板**（compile-tested only）。所有 API 调用已对照本地头文件核对并通过 `tools/build-all.sh` 编译回归（BSP 三个头、`tg28_sw.h`、`rx8130ce.h`、`esp_lcd_touch_cst820.h`、`lp_core_mailbox.h`、`ulp_lp_core_mailbox.h`、`esp_sleep.h`、`rtc_io.h`），但**硬件行为从未在 EVT 板验证**；
 - **DEEP_SLEEP 档 NOT RUN**：深睡本身已实测可唤醒，但本档的完整闭环（20s 定时唤醒回 S0 → 第二轮升级 S2 → `bsp_pmic_power_off()` 掉电）尚未上板。重点实测项：`RTC_NOINIT_ATTR` 计数器在 S31 深睡后是否可靠保留（见"已知约束 §1"）；
-- **LP I2C 直读未启用**：`I2C_SAMPLE` / `I2C_ERROR` 两个事件码已定义但 LP 固件不产生。启用需在 HP 侧 `lp_core_i2c_master_init()`、LP 侧用 `lp_core_i2c_master_write_read_device()`。这里有一处**待核实的矛盾**：IDF `lp_core_i2c.h` 对 esp32s31 定义 `LP_I2C_SCL_IO = GPIO_NUM_7` / `LP_I2C_SDA_IO = GPIO_NUM_6`，而 BSP `candis_s31.h` 定义 `BSP_LP_I2C_SCL = GPIO_NUM_6` / `BSP_LP_I2C_SDA = GPIO_NUM_7`——**两者 SCL/SDA 正好相反**。启用 LP I2C 前必须先查原理图裁决谁对，否则总线不通；
+- **LP I2C 直读未启用**：`I2C_SAMPLE` / `I2C_ERROR` 两个事件码已定义但 LP 固件不产生。原理图 v0.5（2026-07-28 与 2026-08-10 两版导出）已裁决本板映射为 `LP_I2C_SCL=GPIO6`、`LP_I2C_SDA=GPIO7`，BSP、Pin Map 与 Board Manager 一致；IDF `lp_core_i2c.h` 对 esp32s31 的默认宏恰好相反（SCL=GPIO7、SDA=GPIO6）。启用时必须显式传入本板引脚，**不得使用 `LP_I2C_DEFAULT_GPIO_CONFIG()`**，否则总线不通；
 - **LP core 与主 I2C 总线的互斥未设计**：TG28/RX8130 挂在 LP I2C 上，HP 侧 `bsp_pmic_*`/`bsp_rtc_*` 与 LP 侧直读会争总线。当前 LP 固件只读 GPIO 电平、不碰 I2C，所以无冲突；一旦启用 LP I2C 就必须加互斥（LP 共享内存自旋锁已在 Korvo 验证可用，16/16 PASS）；
 - **S2 之后不回 S0**：PMIC 关机被拒绝（意外返回）时，S2 只空转等复位。外设轨已断，回 S0 需要完整重新初始化，原型没做；
 - 电流预算多项空白，见 [电流预算](#电流预算)。

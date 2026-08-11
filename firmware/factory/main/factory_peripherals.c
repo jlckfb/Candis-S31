@@ -141,6 +141,34 @@ static int command_pmic(int argc, char **argv)
         }
         return ESP_OK;
     }
+    if (argc >= 2 && strcmp(argv[1], "input_limit") == 0) {
+        esp_err_t error = ESP_OK;
+        if (argc > 2) {
+            char *end = NULL;
+            const long milliamps = strtol(argv[2], &end, 10);
+            const bool safe_default = argc == 3 && milliamps == 100;
+            const bool verified_500 = argc == 4 && milliamps == 500 &&
+                                      strcmp(argv[3], "source_verified") == 0;
+            if (end == argv[2] || *end != '\0' ||
+                    (!safe_default && !verified_500)) {
+                printf("usage: pmic input_limit [100 | 500 source_verified]\n");
+                return ESP_ERR_INVALID_ARG;
+            }
+            if (verified_500) {
+                printf("WARNING: 500 mA requires a verified Type-C1 source, "
+                       "current probe, and weak-source voltage check\n");
+            }
+            error = bsp_pmic_set_input_current_limit((uint16_t)milliamps);
+        }
+        uint16_t actual = 0;
+        if (error == ESP_OK) {
+            error = bsp_pmic_get_input_current_limit(&actual);
+        }
+        if (error == ESP_OK) {
+            printf("input_limit=%u mA\n", actual);
+        }
+        return error;
+    }
     if ((argc == 2 || argc == 3) && strcmp(argv[1], "charge_current") == 0) {
         esp_err_t error = ESP_OK;
         if (argc == 3) {
@@ -167,14 +195,18 @@ static int command_pmic(int argc, char **argv)
         }
         return error;
     }
-    printf("usage: pmic power_on_source | pmic charge_current [MILLIAMPS] | pmic temperature\n");
+    printf("usage: pmic power_on_source | pmic input_limit [100 | 500 source_verified] | pmic charge_current [MILLIAMPS] | pmic temperature\n");
     return ESP_ERR_INVALID_ARG;
 }
 
 static int command_charge_test(int argc, char **argv)
 {
-    (void)argc;
-    (void)argv;
+    const bool verified_500 = argc == 2 &&
+                              strcmp(argv[1], "source_verified") == 0;
+    if (argc > 2 || (argc == 2 && !verified_500)) {
+        printf("usage: charge_test [source_verified]\n");
+        return ESP_ERR_INVALID_ARG;
+    }
     bsp_pmic_status_t status;
     uint16_t input_limit = 0;
     uint16_t charge_voltage = 0;
@@ -198,7 +230,14 @@ static int command_charge_test(int argc, char **argv)
 
     factory_status_t result;
     char detail[96];
-    if (status.vbus_present && (status.charging || status.charge_done)) {
+    if (input_limit != BSP_PMIC_SAFE_INPUT_CURRENT_LIMIT_MA &&
+            !(verified_500 && input_limit == 500)) {
+        result = FACTORY_STATUS_FAIL;
+        snprintf(detail, sizeof(detail),
+                 "unverified input limit=%u mA (expected %u mA)",
+                 input_limit, BSP_PMIC_SAFE_INPUT_CURRENT_LIMIT_MA);
+    } else if (status.vbus_present &&
+               (status.charging || status.charge_done)) {
         result = FACTORY_STATUS_PASS;
         snprintf(detail, sizeof(detail), "%s, limit=%u mA target=%u mV",
                  status.charging ? "charging" : "charge done",
@@ -233,6 +272,17 @@ static int command_rail(int argc, char **argv)
     if (regulator == BSP_PMIC_REGULATOR_COUNT) {
         printf("unknown rail: %s\n", argv[1]);
         return ESP_ERR_INVALID_ARG;
+    }
+    const bool changes_state = strcmp(argv[2], "status") != 0;
+    const bool display_owned = s_display != NULL &&
+                               (regulator == BSP_PMIC_ALDO1 ||
+                                regulator == BSP_PMIC_ALDO2);
+    const bool audio_owned = (s_speaker != NULL || s_microphone != NULL) &&
+                             regulator == BSP_PMIC_ALDO3;
+    if (changes_state && (display_owned || audio_owned)) {
+        printf("rail is owned by an active peripheral; stop the peripheral "
+               "before raw rail control\n");
+        return ESP_ERR_INVALID_STATE;
     }
     esp_err_t error = ESP_OK;
     if (strcmp(argv[2], "status") == 0 && argc == 3) {
@@ -269,8 +319,9 @@ static int command_rail(int argc, char **argv)
 
 static int command_peripheral_power(int argc, char **argv)
 {
-    if (argc != 3 || (strcmp(argv[2], "on") != 0 && strcmp(argv[2], "off") != 0)) {
-        printf("usage: peripheral_power NAME on|off\n");
+    if (argc < 3 || argc > 4 ||
+            (strcmp(argv[2], "on") != 0 && strcmp(argv[2], "off") != 0)) {
+        printf("usage: peripheral_power NAME on|off [output_only]\n");
         return ESP_ERR_INVALID_ARG;
     }
     bsp_peripheral_t peripheral = BSP_PERIPHERAL_COUNT;
@@ -284,7 +335,38 @@ static int command_peripheral_power(int argc, char **argv)
         printf("unknown peripheral: %s\n", argv[1]);
         return ESP_ERR_INVALID_ARG;
     }
-    return bsp_peripheral_power_set(peripheral, strcmp(argv[2], "on") == 0);
+    const bool enable = strcmp(argv[2], "on") == 0;
+    if (peripheral == BSP_PERIPHERAL_EXTERNAL_3V3 && enable) {
+        if (argc != 4 || strcmp(argv[3], "output_only") != 0) {
+            printf("external_3v3 is output-only: disconnect self-powered "
+                   "loads and append output_only\n");
+            return ESP_ERR_INVALID_ARG;
+        }
+        printf("WARNING: EXT pin 2 has no reverse-current blocker; do not "
+               "parallel it with an externally powered 3.3 V rail\n");
+    } else if (argc != 3) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_display != NULL &&
+            (peripheral == BSP_PERIPHERAL_DISPLAY ||
+             peripheral == BSP_PERIPHERAL_TOUCH)) {
+        if (peripheral == BSP_PERIPHERAL_DISPLAY && !enable) {
+            const esp_err_t error = bsp_display_stop();
+            if (error == ESP_OK) {
+                s_display = NULL;
+            }
+            return error;
+        }
+        printf("display/touch power is owned by the active display; run "
+               "peripheral_power display off first\n");
+        return ESP_ERR_INVALID_STATE;
+    }
+    if ((s_speaker != NULL || s_microphone != NULL) &&
+            peripheral == BSP_PERIPHERAL_AUDIO) {
+        printf("audio power is owned by an active codec; run power_all_off\n");
+        return ESP_ERR_INVALID_STATE;
+    }
+    return bsp_peripheral_power_set(peripheral, enable);
 }
 
 /* power_all_off cleanup: log each failed item, keep only the first error. */
@@ -298,10 +380,8 @@ static esp_err_t power_off_note(const char *item, esp_err_t error,
     return first_error == ESP_OK ? error : first_error;
 }
 
-static int command_power_all_off(int argc, char **argv)
+esp_err_t factory_peripherals_power_all_off(void)
 {
-    (void)argc;
-    (void)argv;
     esp_err_t first_error = ESP_OK;
 
     /* 1. Stop activity and release business-level handles first, so nothing
@@ -370,6 +450,13 @@ static int command_power_all_off(int argc, char **argv)
     printf("power_all_off is software state only: verify off-state residual "
            "voltages with a meter before the next stage\n");
     return first_error;
+}
+
+static int command_power_all_off(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    return factory_peripherals_power_all_off();
 }
 
 static int command_rtc_test(int argc, char **argv)
@@ -690,36 +777,45 @@ static int command_type_c_test(int argc, char **argv)
         report_error(FACTORY_TEST_TYPE_C, error, "FUSB303B read failed");
         return error;
     }
-    printf("addr=0x%02x id=0x%02x type=0x%02x attached=%s vbus=%s orientation=%u\n",
+    printf("addr=0x%02x id=0x%02x type=0x%02x attached=%s vbus=%s "
+           "safe0v=%s fault=%s remedy=%s orientation=%u role=%u "
+           "peer_current=%u\n",
            status.i2c_address, status.device_id, status.device_type,
            status.attached ? "yes" : "no", status.vbus_ok ? "yes" : "no",
-           status.orientation);
+           status.vbus_safe_0v ? "yes" : "no",
+           status.fault ? "yes" : "no",
+           status.remedy_active ? "yes" : "no", status.orientation,
+           (unsigned)status.role, (unsigned)status.advertised_current);
 
     factory_status_t result = FACTORY_STATUS_PASS;
     const char *verdict;
     if (status.device_type != FUSB303B_DEVICE_TYPE_VALUE) {
-        /* The controller answered but is not in the DRP role EVT1 expects:
-         * a real configuration fault, not a cable-state quirk. The expected
-         * device_type is the identity constant from the driver's public
-         * header (the driver itself stays a private BSP dependency). */
         result = FACTORY_STATUS_FAIL;
-        verdict = "FUSB303B not in DRP mode";
-    } else if (status.attached && (status.orientation == 1 || status.orientation == 2)) {
-        verdict = status.vbus_ok ? "cable attached, vbus ok" : "cable attached, no vbus";
+        verdict = "FUSB303B identity mismatch";
+    } else if (status.role != BSP_TYPE_C_ROLE_DRP) {
+        result = FACTORY_STATUS_FAIL;
+        verdict = "FUSB303B is not in DRP role";
+    } else if (status.fault || status.remedy_active) {
+        result = FACTORY_STATUS_FAIL;
+        verdict = status.fault ? "CC fault active" : "remedy state active";
+    } else if (status.attached &&
+               (status.orientation == 1 || status.orientation == 2)) {
+        verdict = status.vbus_ok ? "cable attached, vbus ok"
+                  : "cable attached, no vbus";
     } else if (!status.attached && status.orientation == 0) {
         verdict = "no cable attached";
     } else {
-        /* Attached without a valid CC orientation, or a stale orientation
-         * with nothing attached: the CC detection path is suspect. */
         result = FACTORY_STATUS_WARN;
         verdict = status.attached ? "attached but orientation unknown"
-                                  : "detached but orientation not cleared";
+                  : "detached but orientation not cleared";
     }
 
-    char detail[96];
-    snprintf(detail, sizeof(detail), "%s (type=0x%02x attached=%s vbus=%s orientation=%u)",
-             verdict, status.device_type, status.attached ? "yes" : "no",
-             status.vbus_ok ? "yes" : "no", status.orientation);
+    char detail[FACTORY_DETAIL_LENGTH];
+    snprintf(detail, sizeof(detail),
+             "%s (type=0x%02x role=%u peer_current=%u fault=%u remedy=%u)",
+             verdict, status.device_type, (unsigned)status.role,
+             (unsigned)status.advertised_current, (unsigned)status.fault,
+             (unsigned)status.remedy_active);
     factory_report_set(FACTORY_TEST_TYPE_C, result, detail);
     factory_report_print_one(FACTORY_TEST_TYPE_C);
     return result == FACTORY_STATUS_FAIL ? ESP_FAIL : ESP_OK;
@@ -730,22 +826,14 @@ static int command_otg(int argc, char **argv)
     if (argc == 2 && strcmp(argv[1], "off") == 0) {
         return bsp_usb_otg_power_set(false, BSP_TYPE_C_CURRENT_DEFAULT);
     }
-    if (argc != 3 || strcmp(argv[1], "on") != 0) {
-        printf("usage: otg off | otg on default|1.5|3.0\n");
+    if (argc != 2 || strcmp(argv[1], "on") != 0) {
+        printf("usage: otg on | otg off\n");
         return ESP_ERR_INVALID_ARG;
     }
-    if (strcmp(argv[2], "default") != 0 && strcmp(argv[2], "1.5") != 0 &&
-            strcmp(argv[2], "3.0") != 0) {
-        printf("usage: otg off | otg on default|1.5|3.0\n");
-        return ESP_ERR_INVALID_ARG;
-    }
-    const bsp_type_c_current_t current = strcmp(argv[2], "3.0") == 0 ?
-                                         BSP_TYPE_C_CURRENT_3_0_A :
-                                         strcmp(argv[2], "1.5") == 0 ?
-                                         BSP_TYPE_C_CURRENT_1_5_A :
-                                         BSP_TYPE_C_CURRENT_DEFAULT;
     printf("WARNING: enabling the USB OTG boost rail; verify VBUS before connecting a load\n");
-    return bsp_usb_otg_power_set(true, current);
+    /* Type-C2 only advertises the USB 500 mA default; high-current source
+     * requests are rejected by the BSP. */
+    return bsp_usb_otg_power_set(true, BSP_TYPE_C_CURRENT_DEFAULT);
 }
 
 #define USB_HOST_ENUM_TIMEOUT_S 20
@@ -762,14 +850,16 @@ static void usb_host_test_event_cb(const usb_host_client_event_msg_t *message,
 static void usb_string_to_ascii(const usb_str_desc_t *descriptor, char *out,
                                 size_t out_size)
 {
-    size_t used = 0;
-    if (out_size > 0) {
-        out[0] = '\0';
-    }
-    if (descriptor == NULL) {
+    if (out_size == 0) {
         return;
     }
-    const size_t chars = (descriptor->bLength - 2) / 2;
+    out[0] = '\0';
+    if (descriptor == NULL || descriptor->bLength < 2 ||
+            (descriptor->bLength & 1U) != 0) {
+        return;
+    }
+    const size_t chars = (descriptor->bLength - 2U) / 2U;
+    size_t used = 0;
     for (size_t index = 0; index < chars && used + 1 < out_size; ++index) {
         const uint16_t code = descriptor->wData[index];
         out[used++] = code >= 0x20 && code < 0x7f ? (char)code : '?';
@@ -833,15 +923,22 @@ static int command_usb_host_test(int argc, char **argv)
 
     char manufacturer[24] = {0};
     char product[24] = {0};
+    uint16_t vendor_id = 0;
+    uint16_t product_id = 0;
+    unsigned device_speed = 0;
+    bool enumerated = false;
     if (error == ESP_OK && descriptor != NULL) {
         usb_string_to_ascii(info.str_desc_manufacturer, manufacturer,
                             sizeof(manufacturer));
         usb_string_to_ascii(info.str_desc_product, product, sizeof(product));
+        vendor_id = descriptor->idVendor;
+        product_id = descriptor->idProduct;
+        device_speed = (unsigned)info.speed;
+        enumerated = true;
         printf("addr=%u vid=0x%04x pid=0x%04x speed=%u config=%u "
                "manufacturer=\"%s\" product=\"%s\"\n",
-               info.dev_addr, descriptor->idVendor, descriptor->idProduct,
-               (unsigned)info.speed, (unsigned)info.bConfigurationValue,
-               manufacturer, product);
+               info.dev_addr, vendor_id, product_id, device_speed,
+               (unsigned)info.bConfigurationValue, manufacturer, product);
     }
 
     /* Full teardown on every path: close the device, deregister the client,
@@ -867,7 +964,7 @@ static int command_usb_host_test(int argc, char **argv)
         report_error(FACTORY_TEST_USB_HOST, error, "USB Host enumeration failed");
         return error;
     }
-    if (descriptor == NULL) {
+    if (!enumerated) {
         factory_report_set(FACTORY_TEST_USB_HOST, FACTORY_STATUS_WARN,
                            "no device attached within timeout");
         factory_report_print_one(FACTORY_TEST_USB_HOST);
@@ -875,8 +972,7 @@ static int command_usb_host_test(int argc, char **argv)
     }
     char detail[FACTORY_DETAIL_LENGTH];
     snprintf(detail, sizeof(detail), "vid=0x%04x pid=0x%04x speed=%u",
-             descriptor->idVendor, descriptor->idProduct,
-             (unsigned)info.speed);
+             vendor_id, product_id, device_speed);
     factory_report_set(FACTORY_TEST_USB_HOST, FACTORY_STATUS_PASS, detail);
     factory_report_print_one(FACTORY_TEST_USB_HOST);
     return ESP_OK;
@@ -1583,10 +1679,10 @@ esp_err_t factory_peripherals_register(void)
 {
     const esp_console_cmd_t commands[] = {
         {.command = "pmic_test", .help = "Read TG28_SW identity, battery, VBUS, and charge state.", .func = command_pmic_test},
-        {.command = "pmic", .help = "Read boot source, ADC channels (temperature), or inspect/set the charge current.", .func = command_pmic},
-        {.command = "charge_test", .help = "Check VBUS presence and charger activity on the TG28_SW.", .func = command_charge_test},
-        {.command = "rail", .help = "Inspect or explicitly control one TG28_SW rail.", .func = command_rail},
-        {.command = "peripheral_power", .help = "Apply a complete peripheral power sequence.", .func = command_peripheral_power},
+        {.command = "pmic", .help = "Read PMIC state or set charge/input limits with explicit safety gates.", .func = command_pmic},
+        {.command = "charge_test", .help = "Check charger state: charge_test [source_verified].", .func = command_charge_test},
+        {.command = "rail", .help = "Inspect/control an unowned TG28_SW rail.", .func = command_rail},
+        {.command = "peripheral_power", .help = "Apply a complete, owner-aware peripheral power sequence.", .func = command_peripheral_power},
         {.command = "power_all_off", .help = "Stop activity and switch every peripheral rail off (best effort, idempotent).", .func = command_power_all_off},
         {.command = "rtc_test", .help = "Read RX8130CE time and retained status flags.", .func = command_rtc_test},
         {.command = "rtc_set", .help = "Set and verify RX8130CE time: rtc_set YYYY-MM-DD HH:MM:SS WEEKDAY.", .func = command_rtc_set},

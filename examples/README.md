@@ -7,6 +7,7 @@ Every directory listed here is a standalone project. Open the project directory 
 | Environment | Project | Validation |
 |---|---|---|
 | ESP-IDF | [`esp-idf/getting-started`](esp-idf/getting-started) | Compiles with ESP-IDF `v6.1-beta1`; hardware not tested |
+| ESP-IDF | [`esp-idf/low-power`](esp-idf/low-power) | Compiles with ESP-IDF `v6.1-beta1`; hardware not tested |
 
 Arduino and PlatformIO examples are intentionally absent. Arduino first needs a released ESP32-S31 core; PlatformIO first needs ESP32-S31 platform, tool, and framework support. Their Candis-S31 board metadata and examples will be added only after the normal public installation path works in CI.
 

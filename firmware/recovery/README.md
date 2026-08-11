@@ -2,7 +2,7 @@
 
 Candis-S31 recovery starts with the ESP32-S31 ROM download mode. It does not depend on a working application, display, touch controller, or filesystem.
 
-> EVT1 has not been fabricated. The physical button sequence, USB connector, serial device, and recovery image have not been validated.
+> EVT1 revision 0.5 (`v0.5_260803_1544`) went to fabrication on 2026-08-03, but the boards have not arrived. The physical button sequence, USB connector, serial device, and recovery image remain unvalidated.
 
 ## Recovery order
 
@@ -40,23 +40,38 @@ For a local release artifact:
 cd firmware/factory/release
 sha256sum -c candis_s31_factory_merged.bin.sha256
 cd ../../recovery
-./flash_factory.sh PORT
+./flash_factory.sh PORT ../factory/release/candis_s31_factory_merged.bin 115200 0 1
 ```
 
-The script performs the checksum and `chip-id` preflight again, then writes the
-merged image at offset `0x0` with DIO/40 MHz/16 MB settings. See
-[`enter_download_mode.md`](enter_download_mode.md) for automatic DTR/RTS and
-manual BOOT-key entry.
+The final two arguments explicitly attest the sampled GPIO61 levels: `0` for
+the ROM-download reset and `1` for the post-write SPI-boot reset. The script
+refuses to write without both values. It performs the checksum and `chip-id`
+preflight again, writes the merged image at offset `0x0` with DIO/40 MHz/
+16 MB settings while keeping the ROM session alive, verifies that entire
+image against flash, then hard-resets only after the run-level assertion.
+See [`enter_download_mode.md`](enter_download_mode.md) for automatic DTR/RTS
+and manual BOOT-key entry.
 
-For browser flashing, self-host this directory and the Factory release files,
-then pass the public `launchpad.toml` URL to ESP Launchpad. The TOML uses an
-explicit `0x0` address for the merged image. The self-hosted Launchpad build
-and its bundled esptool-js must recognize `esp32s31`; verify both device
-detection and the configuration in the browser before publishing the link.
-Verify the published checksum first because Launchpad TOML v1.0 does not
-itself define a portable SHA-256 enforcement field.
+The raw merged image spans the `nvs` and `phy_init` partition ranges; writing
+it at `0x0` resets those partitions to the packaged `0xFF` state. This clears
+all Factory results persisted in NVS, including any partially completed EVT
+history and console-failure counter. Before reflashing a board already under
+test, save the latest `host_tools/run_evt.py` JSON and complete console log;
+after reflashing, treat every result as `NOT_RUN` and start a new run.
 
-The final write command will be published with the factory image. Do not run `erase-flash` unless the recovery instructions explicitly require it; an erase can destroy calibration, provisioning, or user data.
+For browser flashing, use the generated `launchpad.toml` packaged beside the
+matching Factory image; never publish `launchpad.template.toml` directly.
+`tools/release/pack_factory_release.sh` substitutes the exact release tag and
+image SHA-256 and refuses to leave those placeholders unresolved. The TOML
+uses an explicit `0x0` address for the merged image. The self-hosted ESP
+Launchpad build and its bundled esptool-js must recognize `esp32s31`; verify
+both device detection and the configuration in the browser before publishing
+the link. Verify the packaged checksum first because Launchpad TOML v1.0 does
+not itself define a portable SHA-256 enforcement field.
+
+`erase-flash` is not part of the normal recovery flow: it erases storage beyond
+the ranges already reset by the merged image and can destroy provisioning or
+user data. Run it only when the recovery instructions explicitly require it.
 
 ## Information to include in a recovery report
 

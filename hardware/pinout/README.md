@@ -53,7 +53,8 @@ This table is derived from schematic revision 0.5 and cross-checked against the 
 
 ## Reserved and special pins
 
-- GPIO26-32 are reserved for flash and VDD_SPI.
+- GPIO26, GPIO27, GPIO28, GPIO30, GPIO31, and GPIO32 are reserved for flash
+  and VDD_SPI; ESP32-S31 has no GPIO29.
 - GPIO36, GPIO37, GPIO60, and GPIO61 are strapping pins. In particular,
   GPIO36 drives the active-low TF-card power enable, so its external pull-up
   and level during the sampling window must be checked against the VDD_SPI
@@ -62,10 +63,11 @@ This table is derived from schematic revision 0.5 and cross-checked against the 
 - ESP32-S31 physical package pins 44 and 45 are the native USB D+ (USB_DP)
   and D- (USB_DM) pads; they are not GPIO44 and GPIO45. Each passes through a
   33 ohm series resistor (R25/R23) on the way to Type-C2. The separate USB
-  Serial/JTAG interface (USB1P1_P0/N0 on GPIO26/27) is not wired out, so the
-  console and flashing path is UART0 through the CH343P bridge, not USB. The
-  GPIO-numbered signals remain audio data-in on GPIO44 and USB-OTG enable on
-  GPIO45 as listed above.
+  Serial/JTAG interface is fixed to GPIO33/GPIO34. Those GPIOs are already
+  the Candis-S31 main-I2C SCL/SDA pair, so enabling USB Serial/JTAG would
+  collide with the board bus; it is not wired to a connector. Console and
+  flashing therefore use UART0 through CH343P. The GPIO-numbered signals
+  remain audio data-in on GPIO44 and USB-OTG enable on GPIO45 as listed above.
 - GPIO54-57 are the JTAG signals MTDO, MTCK, MTDI, and MTMS. On this board
   they drive the camera PCLK, XCLK, VSYNC, and HSYNC lines, so external JTAG
   use conflicts with camera capture.

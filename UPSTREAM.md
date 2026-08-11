@@ -8,7 +8,7 @@ Candis-S31 support is maintained where users already install their tools. This r
 |---|---|---|
 | Generic ESP32-S31 target, HAL, driver, build, flash, or debug fix | [ESP-IDF](https://github.com/espressif/esp-idf) or the affected Espressif tool | No |
 | Reusable Candis-S31 BSP API and implementation | A dedicated Candis-S31 branch in [ESP-BSP](https://github.com/espressif/esp-bsp); propose upstream after EVT validation and maintainer agreement | No |
-| Complete Candis-S31 board description for ESP-IDF | [`espressif/esp_friends_boards`](https://components.espressif.com/components/espressif/esp_friends_boards) in [ESP Board Manager](https://github.com/espressif/esp-board-manager) | No |
+| Candis-S31 board description expressible with safe Board Manager semantics | [`espressif/esp_friends_boards`](https://components.espressif.com/components/espressif/esp_friends_boards) in [ESP Board Manager](https://github.com/espressif/esp-board-manager); Type-C2/OTG remains BSP-only until Board Manager can enforce the board policy atomically | No |
 | CO5300 LCD controller fix | [`espressif/esp_lcd_co5300`](https://components.espressif.com/components/espressif/esp_lcd_co5300) source in [ESP-IoT-Solution](https://github.com/espressif/esp-iot-solution) | No |
 | Reusable CST820 touch driver | `components/lcd_touch/esp_lcd_touch_cst820` in the ESP-BSP contribution, published independently from the board component | No |
 | ES8389 audio codec fix | [`espressif/esp_codec_dev`](https://components.espressif.com/components/espressif/esp_codec_dev) | No |
@@ -38,7 +38,7 @@ esp_friends_boards/candis_s31/
 
 The three YAML files describe board metadata, peripheral buses, and devices. `sdkconfig.defaults.board` contains only settings required by the hardware. `setup_device.c` handles logic that cannot be expressed in YAML, such as the CO5300 panel factory and the board power sequence.
 
-The display uses the Board Manager SPI data lines and `quad_mode`. TG28-controlled rails use a custom `power_ctrl`; the PMIC, RTC, and Type-C controller are custom devices backed by independent reusable drivers. Board-local `packages/` must not hide drivers that should be usable by another board or framework.
+The display uses the Board Manager SPI data lines and `quad_mode`. TG28-controlled rails use a custom `power_ctrl`; the PMIC and RTC are custom devices backed by independent reusable drivers. FUSB303B and the OTG-enable GPIO are intentionally omitted because independent raw handles would bypass the Source-before-boost and 500 mA-only policy; applications use the BSP USB Host API instead. Board-local `packages/` must not hide drivers that should be usable by another board or framework.
 
 ## Framework gates
 

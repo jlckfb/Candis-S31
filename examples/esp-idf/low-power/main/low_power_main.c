@@ -205,13 +205,16 @@ static esp_err_t service_shared_irq(bsp_shared_irq_status_t *status)
         (void)rtc_gpio_deinit(BSP_PMIC_RTC_INT);
     }
 
-    const esp_err_t error = bsp_shared_irq_service(status);
+    esp_err_t error = bsp_shared_irq_service(status);
 
     if (hand_back) {
         const esp_err_t restore = claim_shared_irq_pad_for_lp();
         if (restore != ESP_OK) {
-            ESP_LOGW(TAG, "shared IRQ pad handback to LP core failed: %s",
+            ESP_LOGE(TAG, "shared IRQ pad handback to LP core failed: %s",
                      esp_err_to_name(restore));
+            if (error == ESP_OK) {
+                error = restore;
+            }
         }
     }
     return error;
@@ -248,36 +251,64 @@ static esp_err_t start_lp_housekeeper(void)
         return ESP_OK;
     }
 
-    ESP_RETURN_ON_ERROR(claim_shared_irq_pad_for_lp(), TAG,
-                        "shared IRQ pad handover to LP core failed");
+    esp_err_t error = claim_shared_irq_pad_for_lp();
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "shared IRQ pad handover to LP core failed: %s",
+                 esp_err_to_name(error));
+        return error;
+    }
 
-    ESP_RETURN_ON_ERROR(ulp_lp_core_load_binary(lp_core_main_bin_start,
-                        (size_t)(lp_core_main_bin_end -
-                                 lp_core_main_bin_start)),
-                        TAG, "LP core binary load failed");
+    error = ulp_lp_core_load_binary(lp_core_main_bin_start,
+                                    (size_t)(lp_core_main_bin_end -
+                                             lp_core_main_bin_start));
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "LP core binary load failed: %s",
+                 esp_err_to_name(error));
+        goto fail_pad;
+    }
 
     /* HP_CPU starts the core once; the LP firmware then loops on its own. */
     ulp_lp_core_cfg_t cfg = {
         .wakeup_source = ULP_LP_CORE_WAKEUP_SOURCE_HP_CPU,
     };
-    ESP_RETURN_ON_ERROR(ulp_lp_core_run(&cfg), TAG, "LP core start failed");
+    error = ulp_lp_core_run(&cfg);
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "LP core start failed: %s", esp_err_to_name(error));
+        goto fail_pad;
+    }
     s_lp_running = true;
 
     /* The software mailbox requires the LP core to call lp_core_mailbox_init()
      * before the HP core does; give its boot path time to get there. */
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    ESP_RETURN_ON_ERROR(lp_core_mailbox_init(&s_mailbox, NULL), TAG,
-                        "LP mailbox init failed");
+    error = lp_core_mailbox_init(&s_mailbox, NULL);
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "LP mailbox init failed: %s", esp_err_to_name(error));
+        goto fail_core;
+    }
 
     /* Receive continuously. UINT32_MAX stands in for "until cancelled": the
      * count is decremented per message and cancel() ends it in S1/S2. */
-    ESP_RETURN_ON_ERROR(lp_core_mailbox_receive_async(s_mailbox, UINT32_MAX,
-                        lp_report_callback),
-                        TAG, "LP mailbox async receive failed");
+    error = lp_core_mailbox_receive_async(s_mailbox, UINT32_MAX,
+                                          lp_report_callback);
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "LP mailbox async receive failed: %s",
+                 esp_err_to_name(error));
+        lp_core_mailbox_deinit(s_mailbox);
+        s_mailbox = NULL;
+        goto fail_core;
+    }
     ESP_LOGI(TAG, "LP housekeeper running, GPIO%d owned by LP core",
              BSP_PMIC_RTC_INT);
     return ESP_OK;
+
+fail_core:
+    ulp_lp_core_stop();
+    s_lp_running = false;
+fail_pad:
+    (void)rtc_gpio_deinit(BSP_PMIC_RTC_INT);
+    return error;
 }
 
 /** Stop the LP housekeeper and return GPIO2 ownership to the HP core. */
@@ -287,9 +318,11 @@ static void stop_lp_housekeeper(void)
         return;
     }
     uint32_t remaining = 0;
-    (void)lp_core_mailbox_receive_async_cancel(s_mailbox, &remaining);
-    lp_core_mailbox_deinit(s_mailbox);
-    s_mailbox = NULL;
+    if (s_mailbox != NULL) {
+        (void)lp_core_mailbox_receive_async_cancel(s_mailbox, &remaining);
+        lp_core_mailbox_deinit(s_mailbox);
+        s_mailbox = NULL;
+    }
     ulp_lp_core_stop();
     s_lp_running = false;
 
@@ -371,13 +404,16 @@ static void log_wakeup_causes(void)
  * Arm light-sleep wake sources for S1.
  *
  * gpio_wakeup_enable() plus esp_sleep_enable_gpio_wakeup() is the light-sleep
- * path that works on any pad. Both lines are active low and externally pulled
- * up, so both are armed on level low.
+ * path that works on any pad. The shared line and the optional touch line are
+ * active low and externally pulled up, so present sources use level low.
  */
 static esp_err_t arm_light_sleep_sources(bool include_shared_irq)
 {
-    ESP_RETURN_ON_ERROR(gpio_wakeup_enable(BSP_TOUCH_INT, GPIO_INTR_LOW_LEVEL),
-                        TAG, "touch INT wake-up arm failed");
+    if (s_touch != NULL) {
+        ESP_RETURN_ON_ERROR(gpio_wakeup_enable(BSP_TOUCH_INT,
+                            GPIO_INTR_LOW_LEVEL), TAG,
+                            "touch INT wake-up arm failed");
+    }
     if (include_shared_irq) {
         /* Only valid while the LP core is stopped: otherwise the pad belongs
          * to the LP core and this HP-side configuration fights it.
@@ -405,7 +441,9 @@ static esp_err_t arm_light_sleep_sources(bool include_shared_irq)
 /** Release the wake sources armed by arm_light_sleep_sources(). */
 static void disarm_light_sleep_sources(bool include_shared_irq)
 {
-    (void)gpio_wakeup_disable(BSP_TOUCH_INT);
+    if (s_touch != NULL) {
+        (void)gpio_wakeup_disable(BSP_TOUCH_INT);
+    }
     if (include_shared_irq) {
         (void)gpio_wakeup_disable(BSP_PMIC_RTC_INT);
     }
@@ -587,20 +625,17 @@ static esp_err_t arm_rtc_wakeup_alarm(void)
     ESP_RETURN_ON_ERROR(bsp_rtc_alarm_irq_enable(true), TAG,
                         "alarm IRQ enable failed");
 
-    /* Clear residue and make sure the wire-ANDed line is high again, else the
-     * PMIC would see an asserted IRQ the moment power returns.
-     * Note: bsp_rtc_clear_interrupt_flags() clears UF/TF/AF together; the
-     * selective rx8130ce_get_and_clear_alarm_flag() is not reachable through
-     * the BSP (see the API-gap section of the README). */
-    uint8_t flags = 0;
-    ESP_RETURN_ON_ERROR(bsp_rtc_clear_interrupt_flags(&flags), TAG,
+    /* Clear only AF before draining the wire-ANDed line. UF/TF remain
+     * available to their consumers unless they are themselves holding the
+     * shared line low, in which case service_shared_irq() reports and clears
+     * them while making the shutdown wake path safe. */
+    ESP_RETURN_ON_ERROR(bsp_rtc_get_and_clear_alarm_flag(NULL), TAG,
                         "alarm flag clear failed");
     bsp_shared_irq_status_t irq_status = {0};
-    const esp_err_t service_error = service_shared_irq(&irq_status);
-    if (service_error != ESP_OK || !irq_status.line_released) {
-        ESP_LOGW(TAG, "shared IRQ line not released before shutdown (%s)",
-                 esp_err_to_name(service_error));
-    }
+    ESP_RETURN_ON_ERROR(service_shared_irq(&irq_status), TAG,
+                        "shared IRQ line drain before shutdown failed");
+    ESP_RETURN_ON_FALSE(irq_status.line_released, ESP_ERR_TIMEOUT, TAG,
+                        "shared IRQ line remained asserted before shutdown");
 
     ESP_LOGI(TAG, "RTC alarm armed for %04u-%02u-%02u %02u:%02u "
              "(now %02u:%02u:%02u, +%d min)",
@@ -708,7 +743,8 @@ static bool run_state_screen_off(void)
              * both lines are active low. */
             const bool shared_low =
                 gpio_get_level(BSP_PMIC_RTC_INT) == BSP_PMIC_RTC_INT_ACTIVE_LEVEL;
-            const bool touch_low = gpio_get_level(BSP_TOUCH_INT) == 0;
+            const bool touch_low = s_touch != NULL &&
+                                   gpio_get_level(BSP_TOUCH_INT) == 0;
             ESP_LOGI(TAG, "S1 GPIO wake: shared_irq=%d touch=%d",
                      (int)shared_low, (int)touch_low);
             if (shared_low) {
@@ -737,14 +773,43 @@ static void exit_screen_off(void)
     disarm_light_sleep_sources(true);
 }
 
+/** Release protocol owners while their supplies are still present.
+ *
+ * Boot failure, deep sleep, and S2 all use this idempotent helper before the
+ * BSP parks pins or removes rails.
+ */
+static esp_err_t stop_active_peripheral_owners(void)
+{
+    esp_err_t first_error = ESP_OK;
+    if (s_touch != NULL) {
+        first_error = bsp_touch_delete();
+    }
+    if (s_display_ready) {
+        bsp_display_delete();
+    }
+    s_display_ready = false;
+    s_display_asleep = false;
+    s_touch = NULL;
+    s_panel = NULL;
+    s_panel_io = NULL;
+    return first_error;
+}
+
+static esp_err_t low_power_safe_state(void)
+{
+    const esp_err_t owner_error = stop_active_peripheral_owners();
+    const esp_err_t rail_error = bsp_power_safe_state();
+    return owner_error != ESP_OK ? owner_error : rail_error;
+}
+
 /**
  * Enter deep sleep, the step between S1 and S2.
  *
- * Panel and touch are already in their S1 low-power modes and stay that way.
- * The peripheral rails are kept powered on purpose so the panel/touch low-
- * power state survives the wake reboot without a full re-initialization;
- * the always-on RX8130CE/TG28 behind the shared IRQ line do not depend on
- * any peripheral rail.
+ * The panel/touch protocol owners and every optional rail are shut down before
+ * entry. On wake the ESP reboots and bsp_board_init() applies the same safe
+ * state again, so S0 reinitializes peripherals rather than relying on their
+ * state to survive. The always-on RX8130CE/TG28 behind the shared IRQ line do
+ * not depend on an optional peripheral rail.
  *
  * Wake sources are the SoC RTC timer and EXT1 (any low) on the shared IRQ
  * line. Only PMIC/RTC events can assert that line: the CST820 touch INT is
@@ -763,6 +828,15 @@ static esp_err_t enter_deep_sleep(void)
     /* The S1 light-sleep sources use the digital pad function; EXT1 needs the
      * RTC function instead, so they must go before the pad is re-muxed. */
     disarm_light_sleep_sources(true);
+
+    /* Deep sleep must not preserve optional rails. Release active protocol
+     * owners, then park pins and remove every peripheral/control supply. */
+    const esp_err_t safe_error = low_power_safe_state();
+    if (safe_error != ESP_OK) {
+        ESP_LOGE(TAG, "pre-deep-sleep safe-state failed: %s",
+                 esp_err_to_name(safe_error));
+        return safe_error;
+    }
 
     const esp_err_t timer_error =
         esp_sleep_enable_timer_wakeup(DEEP_SLEEP_WAKE_US);
@@ -828,65 +902,26 @@ static esp_err_t enter_shutdown(void)
     stop_lp_housekeeper();
     disarm_light_sleep_sources(true);
 
-    /* Peripheral rails, coarsest first. bsp_peripheral_power_set() applies the
-     * board power-down order for each block; bsp_power_safe_state() would also
-     * do the directly controlled domains and the optional TG28 rails. */
-    const bsp_peripheral_t peripherals[] = {
-        BSP_PERIPHERAL_CAMERA,
-        BSP_PERIPHERAL_AUDIO,
-        BSP_PERIPHERAL_SDCARD,
-        BSP_PERIPHERAL_EXTERNAL_3V3,
-        BSP_PERIPHERAL_TOUCH,
-        BSP_PERIPHERAL_DISPLAY,
-    };
-    for (size_t index = 0; index < sizeof(peripherals) / sizeof(peripherals[0]);
-            ++index) {
-        const esp_err_t error = bsp_peripheral_power_set(peripherals[index],
-                                false);
-        if (error != ESP_OK) {
-            ESP_LOGW(TAG, "%s power-down failed: %s",
-                     bsp_peripheral_name(peripherals[index]),
-                     esp_err_to_name(error));
-        }
-    }
-    s_display_ready = false;
-    s_display_asleep = false;
-    s_touch = NULL;
-    s_panel = NULL;
-    s_panel_io = NULL;
-
-    /* The WS2812B rail is the DC1SW load switch: the TG28 OTP straps the
-     * DLDO1 pin in SWITCH mode (input = DCDC1), so the DLDO1 voltage
-     * register is inert. The enable bit is shared (REG90 bit7 is both
-     * "DLDO1 on" and "DC1SW closed"), so the switch API is the accurate
-     * expression of what this rail is. It is off after a cold power-on
-     * (OTP default); close it explicitly so a re-run cannot leave it open. */
-    const esp_err_t rgb_error = bsp_pmic_switch_enable(BSP_PMIC_SWITCH_DC1SW, false);
-    if (rgb_error != ESP_OK) {
-        ESP_LOGW(TAG, "RGB rail (DC1SW load switch) open failed: %s",
-                 esp_err_to_name(rgb_error));
+    const esp_err_t safe_error = low_power_safe_state();
+    if (safe_error != ESP_OK) {
+        ESP_LOGE(TAG, "board safe-state failed: %s",
+                 esp_err_to_name(safe_error));
+        /* Do not cut the main rail after incomplete owner/rail teardown:
+         * remain powered with the failure visible for diagnosis. */
+        return safe_error;
     }
 
     ESP_RETURN_ON_ERROR(arm_rtc_wakeup_alarm(), TAG,
                         "RTC wake-up alarm failed");
 
-    /* Let the shared line double as the PMIC's wake path. GPIO2 configuration
-     * is pointless once the ESP is unpowered; it only matters if the power-off
-     * call below unexpectedly returns. */
-    const esp_err_t gpio_error = arm_light_sleep_sources(true);
-    if (gpio_error != ESP_OK) {
-        ESP_LOGW(TAG, "shutdown wake-source arm failed: %s",
-                 esp_err_to_name(gpio_error));
-    }
-
     ESP_LOGW(TAG, "requesting PMIC power-off: the board loses power now");
     vTaskDelay(pdMS_TO_TICKS(50));   /* let the log drain */
     const esp_err_t power_off = bsp_pmic_power_off();
     /* Reached only when the PMIC refused: a successful software power-off
-     * drops DCDC1 and the ESP dies with it. */
+     * drops DCDC1 and the ESP dies before this statement executes. */
     ESP_LOGE(TAG, "bsp_pmic_power_off() returned %s - still powered",
              esp_err_to_name(power_off));
-    return ESP_OK;
+    return power_off == ESP_OK ? ESP_ERR_INVALID_STATE : power_off;
 }
 
 /* ---------------------------------------------------------------------------
@@ -901,7 +936,7 @@ static esp_err_t enter_shutdown(void)
  * flag are what actually identify an alarm-driven restart, which is why the
  * shared line is drained here before anything else touches it.
  */
-static void report_boot_reason(void)
+static esp_err_t report_boot_reason(void)
 {
     log_wakeup_causes();
 
@@ -927,6 +962,7 @@ static void report_boot_reason(void)
              irq_status.pmic[0], irq_status.pmic[1], irq_status.pmic[2],
              irq_status.rtc, irq_status.service_passes,
              (int)irq_status.line_released);
+    return error;
 }
 
 static esp_err_t board_bring_up(void)
@@ -958,10 +994,15 @@ void app_main(void)
     }
 
     if (board_bring_up() != ESP_OK) {
-        ESP_LOGE(TAG, "board bring-up failed, stopping");
+        ESP_LOGE(TAG, "board bring-up failed; re-applying safe state");
+        (void)low_power_safe_state();
         return;
     }
-    report_boot_reason();
+    if (report_boot_reason() != ESP_OK) {
+        ESP_LOGE(TAG, "start-up shared IRQ could not be drained; stopping");
+        (void)low_power_safe_state();
+        return;
+    }
 
     /* Route the boot. Waking from deep sleep reboots the chip with a real
      * wake cause (timer, EXT1, ...); every other boot - power-on, reset, or
@@ -971,7 +1012,7 @@ void app_main(void)
      * This does not disturb report_boot_reason(): an S2 restart still shows
      * up as UNDEFINED there, because the ESP was unpowered, not deep-sleeping. */
     candis_state_t state;
-    if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
+    if (esp_sleep_get_wakeup_causes() & BIT(ESP_SLEEP_WAKEUP_UNDEFINED)) {
         deep_sleep_counter_reset();
         state = CANDIS_STATE_RUN;
     } else if (deep_sleep_cycles_done() >= DEEP_SLEEP_MAX_CYCLES) {
