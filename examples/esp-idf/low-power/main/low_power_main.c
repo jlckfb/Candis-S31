@@ -752,9 +752,21 @@ static bool run_state_screen_off(void)
                  * forwards to the BSP here; it is used for consistency. */
                 bsp_shared_irq_status_t status = {0};
                 const esp_err_t error = service_shared_irq(&status);
-                ESP_LOGI(TAG, "shared IRQ service: %s, rtc %02x, released %d",
-                         esp_err_to_name(error), status.rtc,
-                         (int)status.line_released);
+                ESP_LOGI(TAG, "shared IRQ service: %s, pmic %02x %02x %02x, "
+                         "rtc %02x, released %d",
+                         esp_err_to_name(error),
+                         status.pmic[0], status.pmic[1], status.pmic[2],
+                         status.rtc, (int)status.line_released);
+                /* TG28 power-key IRQs live in bank 1 bits 0-3
+                 * (PONPE/PONNE/PONLP/PONSP, see tg28_sw.h). Treat a
+                 * short or long press as a user request to wake — the
+                 * power key is the natural wake gesture while the screen
+                 * is off. */
+                if (error == ESP_OK && (status.pmic[1] & 0x0F) != 0) {
+                    ESP_LOGI(TAG, "power key detected on shared IRQ, waking to S0");
+                    user_requested_wake = true;
+                    break;
+                }
             }
             if (touch_low) {
                 /* A touch is a user request to come back: leave S1. */
@@ -911,6 +923,21 @@ static esp_err_t enter_shutdown(void)
         return safe_error;
     }
 
+    /* VBUS guard: when USB power is present the TG28 REG10 bit0 soft-power-off
+     * may reboot the board instead of cutting power (bring-up.md documents this
+     * against the Linux reference implementation). Without this guard the
+     * machine would loop: S2 → reboot → cold boot (counter reset) → S0 → S1 →
+     * deep sleep → S2 → reboot … never actually turning off. Refuse the
+     * power-off so the caller can idle with the rails safely down. The alarm
+     * is still armed so the board wakes on schedule once USB is removed. */
+    bsp_pmic_status_t pmic_status = {0};
+    if (bsp_pmic_get_status(&pmic_status) == ESP_OK && pmic_status.vbus_present) {
+        ESP_LOGW(TAG, "VBUS present: deferring PMIC power-off to avoid reboot "
+                 "loop; the board stays powered with all peripheral rails off. "
+                 "Remove USB to complete shutdown or reset to restart.");
+        return ESP_ERR_INVALID_STATE;
+    }
+
     ESP_RETURN_ON_ERROR(arm_rtc_wakeup_alarm(), TAG,
                         "RTC wake-up alarm failed");
 
@@ -1011,8 +1038,27 @@ void app_main(void)
      * in RTC memory decides between another S0 pass and the escalation to S2.
      * This does not disturb report_boot_reason(): an S2 restart still shows
      * up as UNDEFINED there, because the ESP was unpowered, not deep-sleeping. */
+    /* Route the boot. Waking from deep sleep reboots the chip with a real
+     * wake cause (timer, EXT1, ...); every other boot - power-on, reset, or
+     * the cold start after S2 cut the power - reports UNDEFINED and starts a
+     * fresh cycle with the counter zeroed.
+     *
+     * Within a deep-sleep wake, the source matters:
+     * - EXT1 on GPIO2 means an external event (power key, RTC alarm) — the
+     *   user or an alarm explicitly wants the board, so reset the counter
+     *   and return to S0 regardless of how many idle cycles elapsed.
+     * - TIMER means idle timeout — honour the escalation budget: another S0
+     *   pass if the counter is within budget, S2 otherwise.
+     * Both sources can fire simultaneously; EXT1 takes precedence so a
+     * coincident timer expiry never sends a user wake to S2. */
     candis_state_t state;
-    if (esp_sleep_get_wakeup_causes() & BIT(ESP_SLEEP_WAKEUP_UNDEFINED)) {
+    const uint32_t wake_causes = esp_sleep_get_wakeup_causes();
+    if (wake_causes & BIT(ESP_SLEEP_WAKEUP_UNDEFINED)) {
+        deep_sleep_counter_reset();
+        state = CANDIS_STATE_RUN;
+    } else if (wake_causes & BIT(ESP_SLEEP_WAKEUP_EXT1)) {
+        ESP_LOGI(TAG, "woke from deep sleep by EXT1 (external event: "
+                 "power key or RTC alarm), resetting counter and returning to S0");
         deep_sleep_counter_reset();
         state = CANDIS_STATE_RUN;
     } else if (deep_sleep_cycles_done() >= DEEP_SLEEP_MAX_CYCLES) {
@@ -1020,7 +1066,7 @@ void app_main(void)
                  (unsigned)deep_sleep_cycles_done());
         state = CANDIS_STATE_SHUTDOWN;
     } else {
-        ESP_LOGI(TAG, "woke from deep sleep, cycle %u/%u, returning to S0",
+        ESP_LOGI(TAG, "woke from deep sleep by timer, cycle %u/%u, returning to S0",
                  (unsigned)deep_sleep_cycles_done(),
                  (unsigned)DEEP_SLEEP_MAX_CYCLES);
         state = CANDIS_STATE_RUN;

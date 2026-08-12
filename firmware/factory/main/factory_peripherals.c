@@ -744,7 +744,7 @@ static int command_buttons_test(int argc, char **argv)
     const int64_t deadline = esp_timer_get_time() + (int64_t)BUTTON_TEST_TIMEOUT_S * 1000000;
     while (error == ESP_OK && !power_seen && esp_timer_get_time() < deadline) {
         error = bsp_pmic_get_and_clear_interrupts(pmic_irq);
-        if (error == ESP_OK && (pmic_irq[0] & TG28_POWER_KEY_IRQ_MASK) != 0) {
+        if (error == ESP_OK && (pmic_irq[1] & TG28_POWER_KEY_IRQ_MASK) != 0) {
             power_seen = true;
             break;
         }
