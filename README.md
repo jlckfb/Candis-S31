@@ -6,10 +6,12 @@ Candis-S31 is a compact ESP32-S31 development board built around a square 2.0-in
 
 > **Hardware status:** EVT1 (schematic v0.5) went to fabrication on 2026-08-03 as `v0.5_260803_1544`; the boards have not arrived yet. The ESP-IDF starter, Factory Bring-up, and low-power projects are compile-tested, but no board function has been verified on Candis-S31 hardware.
 
-> **Fabrication blocker:** the reviewed `Schematic_3` has R6 (4.7 kΩ, populated)
-> pulling GPIO36/TF power enable to 3.3 V, while this 1.8 V VDD_SPI design
-> requires the GPIO36 strap low. Do not replicate or respin EVT1 until the
-> pull-up/power-gate circuit is corrected; firmware cannot repair a ROM strap.
+> **VDD_SPI strap:** GPIO36 is the VDD_SPI voltage strap (datasheet
+> Table 3-4) and also the active-low TF-card power enable. The board uses
+> a 3.3 V off-package W25Q128 flash, so VDD_SPI = 3.3 V; R6 (10 kΩ pull-up
+> to 3.3 V) correctly holds GPIO36 high at reset, matching ESP32-S31 v0.0
+> erratum SPI-855 (1.8 V VDD_SPI cannot boot). No R6 rework is needed; do
+> not remove R6.
 
 ## Getting started
 

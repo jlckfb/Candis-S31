@@ -55,10 +55,15 @@ This table is derived from schematic revision 0.5 and cross-checked against the 
 
 - GPIO26, GPIO27, GPIO28, GPIO30, GPIO31, and GPIO32 are reserved for flash
   and VDD_SPI; ESP32-S31 has no GPIO29.
-- GPIO36, GPIO37, GPIO60, and GPIO61 are strapping pins. In particular,
-  GPIO36 drives the active-low TF-card power enable, so its external pull-up
-  and level during the sampling window must be checked against the VDD_SPI
-  strap requirements before EVT1 firmware drives it.
+- GPIO36, GPIO37, GPIO60, and GPIO61 are strapping pins. GPIO36 is the
+  VDD_SPI voltage strap (ESP32-S31 datasheet Table 3-4: high = 3.3 V flash,
+  low = 1.8 V flash) and also the active-low TF-card power enable. This
+  board uses a 3.3 V off-package W25Q128 flash, so VDD_SPI = 3.3 V and
+  GPIO36 must sample high at reset; ESP32-S31 v0.0 erratum SPI-855 also
+  forbids 1.8 V VDD_SPI flash boot. R6 (10 kOhm pull-up to 3.3 V) correctly
+  holds GPIO36 high and must not be removed. Firmware keeps GPIO36 high
+  (TF off) until an explicit post-boot sdcard power-on, so the strap sample
+  is never disturbed.
 - GPIO41 is not available for normal application use.
 - ESP32-S31 physical package pins 44 and 45 are the native USB D+ (USB_DP)
   and D- (USB_DM) pads; they are not GPIO44 and GPIO45. Each passes through a
