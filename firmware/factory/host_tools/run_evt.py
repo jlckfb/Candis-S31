@@ -104,6 +104,13 @@ SUMMARY_PREFIX = "FACTORY_SUMMARY "
 INFO_PREFIX = "FACTORY_INFO "
 PROMPT_PREFIX = "FACTORY_PROMPT "
 
+# Graded fault policy (hardware/bring-up.md): a FAIL or TIMEOUT in one of
+# these stages means the board is not safe to keep exercising — PMIC state,
+# rail bring-up, or the battery/charge path. The runner aborts the remaining
+# stages, sends one power_all_off as the safe teardown, and goes straight to
+# the final report; aborted stages are recorded BLOCKED, never run.
+GLOBAL_STOP_STAGES = ("safe_state", "pmic", "charge")
+
 # scan_i2c_bus() in the firmware prints one of these per answering address.
 FOUND_DEVICE_RE = re.compile(r"found I2C device at 0x([0-9a-fA-F]{2})$")
 
@@ -172,11 +179,30 @@ class EvtRunner:
         self.results = {}
         self.summary = None
         self.prompts_answered = []
+        self.protocol_errors = []
 
     def _log(self, line):
         self.log_lines.append(line)
         if self.verbose:
             print(line)
+
+    def _note_protocol_error(self, line):
+        """Count machine-readable lines that fail JSON parsing.
+
+        A half-written or garbled FACTORY_* line must not crash the run, but
+        it is a protocol fault between firmware and host and is persisted in
+        the report instead of being silently dropped.
+        """
+        for prefix in (RESULT_PREFIX, SUMMARY_PREFIX, INFO_PREFIX,
+                       PROMPT_PREFIX):
+            if line.startswith(prefix):
+                try:
+                    json.loads(line[len(prefix):])
+                except json.JSONDecodeError:
+                    self.protocol_errors.append(line)
+                    self._log("!!! protocol error, malformed %s line: %r"
+                              % (prefix.strip(), line))
+                return
 
     def _read_line(self, deadline):
         """Read one CR/LF-terminated line; returns None on timeout."""
@@ -188,7 +214,9 @@ class EvtRunner:
             if chunk == b"\r":
                 continue
             if chunk == b"\n":
-                return data.decode("utf-8", errors="replace")
+                line = data.decode("utf-8", errors="replace")
+                self._note_protocol_error(line)
+                return line
             data += chunk
         return None
 
@@ -399,7 +427,7 @@ class EvtRunner:
             }
             self._log("!!! aborting EVT run: " + detail)
             return self._write_report()
-        for command, timeout_s, expect in stages:
+        for index, (command, timeout_s, expect) in enumerate(stages):
             if command == POWER_RAIL_SCAN:
                 # Host-side composite stage; the board has no such command.
                 self._run_power_rail_scan(timeout_s)
@@ -419,6 +447,23 @@ class EvtRunner:
                     "detail": "no FACTORY_RESULT within %ds" % timeout_s,
                 })
                 self._log("!!! timeout waiting for %s" % expect)
+            status = self.results.get(expect, {}).get("status")
+            if expect in GLOBAL_STOP_STAGES and status in ("FAIL", "TIMEOUT"):
+                self._log("!!! global-stop fault in %s (%s): aborting the "
+                          "remaining stages" % (expect, status))
+                for _command, _timeout, later in stages[index + 1:]:
+                    if later != "INFO":
+                        self.results.setdefault(later, {
+                            "test": later,
+                            "status": "BLOCKED",
+                            "detail": "aborted after global-stop fault in %s"
+                                      % expect,
+                        })
+                # Safe teardown: switch every peripheral rail off, then fall
+                # through to the final report. No further test commands are
+                # sent, so high-risk stages never start after the fault.
+                self._send_and_drain(POWER_ALL_OFF, 2.0)
+                break
 
         self._log(">>> report")
         self.ser.write(b"report\r\n")
@@ -431,9 +476,10 @@ class EvtRunner:
             payload = parse_payload(line, RESULT_PREFIX)
             if payload is not None:
                 test = payload.get("test", "?")
-                # Keep TIMEOUT markers: those stages never actually ran, and
-                # the board-side report only knows its own NOT_RUN state.
-                if self.results.get(test, {}).get("status") != "TIMEOUT":
+                # Keep TIMEOUT/BLOCKED markers: those stages never actually
+                # ran, and the board-side report only knows its own NOT_RUN
+                # state.
+                if self.results.get(test, {}).get("status") not in ("TIMEOUT", "BLOCKED"):
                     self.results[test] = payload
                 continue
             payload = parse_payload(line, SUMMARY_PREFIX)
@@ -458,6 +504,7 @@ class EvtRunner:
             "results": self.results,
             "summary": self.summary,
             "prompts_answered": self.prompts_answered,
+            "protocol_errors": self.protocol_errors,
         }
         with open(base + ".json", "w", encoding="utf-8") as handle:
             json.dump(report, handle, indent=2, sort_keys=True)
@@ -507,126 +554,152 @@ def _self_test():
     import pty
     import tempfile
 
-    master_fd, slave_fd = pty.openpty()
-    slave_name = os.ttyname(slave_fd)
-    os.set_blocking(master_fd, False)
-    received_answers = []
-    received_commands = []
-    i2c_scan_type_c_states = []
-    stop = threading.Event()
+    def start_fake(responses):
+        """Launch a scripted fake firmware on a pty pair.
 
-    def fake_firmware():
-        buffer = b""
-        stale_results = True  # results persisted in NVS by an earlier run
-        # Boot safe state leaves every optional/control rail off.
-        rail_on = {name: False for name, _address in POWER_RAIL_DEVICES}
-        type_c_on = False
-        while not stop.is_set():
-            try:
-                chunk = os.read(master_fd, 256)
-            except (BlockingIOError, InterruptedError):
-                time.sleep(0.01)
-                continue
-            except OSError:
-                break
-            if not chunk:
-                continue
-            buffer += chunk
-            while b"\n" in buffer:
-                line, buffer = buffer.split(b"\n", 1)
-                command = line.strip().decode("ascii", errors="replace")
-                if len(command) == 1 and command in "yns":
-                    received_answers.append(command)
-                    status = {"y": "PASS", "n": "FAIL"}.get(command, "NOT_RUN")
-                    os.write(master_fd,
-                             ('FACTORY_RESULT {"test":"display","status":"%s",'
-                              '"detail":"operator answered"}\n' % status).encode())
-                    continue
-                if command.startswith("rtc_set "):
-                    os.write(master_fd,
-                             b'FACTORY_RESULT {"test":"rtc","status":"PASS",'
-                             b'"detail":"set ok"}\n')
-                    continue
-                received_commands.append(command)
-                if command == "report_reset":
-                    stale_results = False
-                    os.write(master_fd,
-                             b"Factory results reset to NOT_RUN"
-                             b" (latest safe_state kept)\n")
-                    continue
-                if command == "typec_test":
-                    type_c_on = True
-                if command == POWER_ALL_OFF:
-                    type_c_on = False
-                    for name in rail_on:
-                        rail_on[name] = False
-                    continue
-                if command.startswith("peripheral_power "):
-                    fields = command.split()
-                    if len(fields) == 3 and fields[1] in rail_on:
-                        rail_on[fields[1]] = fields[2] == "on"
-                    continue
-                if command == "i2c_scan main":
-                    # Match the board contract: FUSB303B answers only while
-                    # its direct control domain is enabled; switched-rail
-                    # devices answer only while their own rail is on.
-                    i2c_scan_type_c_states.append(type_c_on)
-                    found = ([0x21] if type_c_on else []) + [
-                        address for name, address in POWER_RAIL_DEVICES
-                        if rail_on[name]
-                    ]
-                    for address in sorted(found):
-                        os.write(master_fd, ("found I2C device at 0x%02x\n"
-                                             % address).encode())
-                    note = ("expected set present" if type_c_on else
-                            "FUSB303B off with control domain")
-                    os.write(master_fd,
-                             ('FACTORY_RESULT {"test":"i2c_main","status":"PASS",'
-                              '"detail":"%s (devices=%d missing=0x0 extra=0)"}\n'
-                              % (note, len(found))).encode())
-                    continue
-                response = FAKE_RESPONSES.get(command)
-                if response == "PROMPT":
-                    os.write(master_fd,
-                             b'FACTORY_PROMPT {"test":"display",'
-                             b'"question":"Pattern ok?","timeout_s":5}\n')
-                elif response == "SILENT" or response is None:
-                    if command == "report":
-                        if stale_results:
-                            # The runner must have reset first; a stale
-                            # board-side result would flip the summary into
-                            # a false PASS.
-                            os.write(master_fd,
-                                     b'FACTORY_RESULT {"test":"camera",'
-                                     b'"status":"PASS","detail":"stale from NVS"}\n'
-                                     b'FACTORY_SUMMARY {"overall":"PASS","pass":14,'
-                                     b'"fail":1,"warn":2,"skip":0,"not_run":3}\n')
-                        else:
-                            os.write(master_fd,
-                                     b'FACTORY_RESULT {"test":"camera",'
-                                     b'"status":"NOT_RUN","detail":"not executed"}\n'
-                                     b'FACTORY_SUMMARY {"overall":"FAIL","pass":13,'
-                                     b'"fail":2,"warn":2,"skip":0,"not_run":4}\n')
-                else:
-                    for out_line in response:
-                        os.write(master_fd, (out_line + "\n").encode())
+        responses maps a received command to a list of raw output lines, the
+        "PROMPT" sentinel (display prompt flow), or the "SILENT" sentinel (no
+        reply at all, exercising the runner timeout path). Returns the shared
+        observation state for assertions.
+        """
+        master_fd, slave_fd = pty.openpty()
+        slave_name = os.ttyname(slave_fd)
+        os.set_blocking(master_fd, False)
+        state = {
+            "received_answers": [],
+            "received_commands": [],
+            "i2c_scan_type_c_states": [],
+            "stop": threading.Event(),
+            "fds": (master_fd, slave_fd),
+        }
 
-    thread = threading.Thread(target=fake_firmware, daemon=True)
-    thread.start()
+        def fake_firmware():
+            buffer = b""
+            stale_results = True  # results persisted in NVS by an earlier run
+            # Boot safe state leaves every optional/control rail off.
+            rail_on = {name: False for name, _address in POWER_RAIL_DEVICES}
+            type_c_on = False
+            while not state["stop"].is_set():
+                try:
+                    chunk = os.read(master_fd, 256)
+                except (BlockingIOError, InterruptedError):
+                    time.sleep(0.01)
+                    continue
+                except OSError:
+                    break
+                if not chunk:
+                    continue
+                buffer += chunk
+                while b"\n" in buffer:
+                    line, buffer = buffer.split(b"\n", 1)
+                    command = line.strip().decode("ascii", errors="replace")
+                    if len(command) == 1 and command in "yns":
+                        state["received_answers"].append(command)
+                        status = {"y": "PASS", "n": "FAIL"}.get(command, "NOT_RUN")
+                        os.write(master_fd,
+                                 ('FACTORY_RESULT {"test":"display","status":"%s",'
+                                  '"detail":"operator answered"}\n' % status).encode())
+                        continue
+                    if command.startswith("rtc_set "):
+                        os.write(master_fd,
+                                 b'FACTORY_RESULT {"test":"rtc","status":"PASS",'
+                                 b'"detail":"set ok"}\n')
+                        continue
+                    state["received_commands"].append(command)
+                    if command == "report_reset":
+                        stale_results = False
+                        os.write(master_fd,
+                                 b"Factory results reset to NOT_RUN"
+                                 b" (latest safe_state kept)\n")
+                        continue
+                    if command == "typec_test":
+                        type_c_on = True
+                    if command == POWER_ALL_OFF:
+                        type_c_on = False
+                        for name in rail_on:
+                            rail_on[name] = False
+                        continue
+                    if command.startswith("peripheral_power "):
+                        fields = command.split()
+                        if len(fields) == 3 and fields[1] in rail_on:
+                            rail_on[fields[1]] = fields[2] == "on"
+                        continue
+                    if command == "i2c_scan main":
+                        # Match the board contract: FUSB303B answers only while
+                        # its direct control domain is enabled; switched-rail
+                        # devices answer only while their own rail is on.
+                        state["i2c_scan_type_c_states"].append(type_c_on)
+                        found = ([0x21] if type_c_on else []) + [
+                            address for name, address in POWER_RAIL_DEVICES
+                            if rail_on[name]
+                        ]
+                        for address in sorted(found):
+                            os.write(master_fd, ("found I2C device at 0x%02x\n"
+                                                 % address).encode())
+                        note = ("expected set present" if type_c_on else
+                                "FUSB303B off with control domain")
+                        os.write(master_fd,
+                                 ('FACTORY_RESULT {"test":"i2c_main","status":"PASS",'
+                                  '"detail":"%s (devices=%d missing=0x0 extra=0)"}\n'
+                                  % (note, len(found))).encode())
+                        continue
+                    response = responses.get(command)
+                    if response == "PROMPT":
+                        os.write(master_fd,
+                                 b'FACTORY_PROMPT {"test":"display",'
+                                 b'"question":"Pattern ok?","timeout_s":5}\n')
+                    elif response == "SILENT" or response is None:
+                        if command == "report":
+                            if stale_results:
+                                # The runner must have reset first; a stale
+                                # board-side result would flip the summary into
+                                # a false PASS.
+                                os.write(master_fd,
+                                         b'FACTORY_RESULT {"test":"camera",'
+                                         b'"status":"PASS","detail":"stale from NVS"}\n'
+                                         b'FACTORY_SUMMARY {"overall":"PASS","pass":14,'
+                                         b'"fail":1,"warn":2,"skip":0,"not_run":3}\n')
+                            else:
+                                os.write(master_fd,
+                                         b'FACTORY_RESULT {"test":"camera",'
+                                         b'"status":"NOT_RUN","detail":"not executed"}\n'
+                                         b'FACTORY_SUMMARY {"overall":"FAIL","pass":13,'
+                                         b'"fail":2,"warn":2,"skip":0,"not_run":4}\n')
+                    else:
+                        for out_line in response:
+                            os.write(master_fd, (out_line + "\n").encode())
 
-    ser = serial.Serial(slave_name, 115200, timeout=0.05)
+        thread = threading.Thread(target=fake_firmware, daemon=True)
+        thread.start()
+        state["thread"] = thread
+        state["ser"] = serial.Serial(slave_name, 115200, timeout=0.05)
+        return state
+
+    def stop_fake(state):
+        state["stop"].set()
+        state["ser"].close()
+        for fd in state["fds"]:
+            os.close(fd)
+        state["thread"].join(timeout=2)
+
+    failures = []
+
+    def check(condition, message):
+        if not condition:
+            failures.append(message)
+
     with tempfile.TemporaryDirectory() as out_dir:
-        runner = EvtRunner(ser, out_dir, answer_fn=lambda q, t: "y",
+        # Scenario 1: full happy-path flow with a silent camera stage.
+        state = start_fake(FAKE_RESPONSES)
+        runner = EvtRunner(state["ser"], out_dir, answer_fn=lambda q, t: "y",
                            timeout_cap=2, verbose=False)
         report = runner.run(build_stages())
         base = report.pop("_base")
 
         results = report["results"]
-        failures = []
-
-        def check(condition, message):
-            if not condition:
-                failures.append(message)
+        received_commands = state["received_commands"]
+        received_answers = state["received_answers"]
+        i2c_scan_type_c_states = state["i2c_scan_type_c_states"]
 
         check(report["board"] == "aabbccddeeff",
               "board id should come from the FACTORY_INFO MAC, got %r"
@@ -691,6 +764,9 @@ def _self_test():
         check(results["type_c_power_scan"]["status"] == "PASS",
               "FUSB303B powered scan should pass, got %r"
               % results.get("type_c_power_scan"))
+        check(report["protocol_errors"] == [],
+              "clean scenario must not record protocol errors, got %r"
+              % report["protocol_errors"])
         for name, _address in POWER_RAIL_DEVICES:
             off_command = "peripheral_power %s off" % name
             on_command = "peripheral_power %s on" % name
@@ -719,6 +795,94 @@ def _self_test():
               "report files were not written")
         check(len(results) == len(set(s[2] for s in build_stages() if s[2] != "INFO")),
               "expected one result per unique stage name, got %d" % len(results))
+        stop_fake(state)
+
+        # Scenario 2: a command that never returns must score TIMEOUT at the
+        # stage deadline, not hang the run; later stages still execute.
+        hang_responses = dict(FAKE_RESPONSES)
+        hang_responses["wifi_scan"] = "SILENT"
+        hang_responses["camera_test"] = "SILENT"
+        state = start_fake(hang_responses)
+        hang_report = EvtRunner(state["ser"], out_dir, board_id="hang",
+                                answer_fn=lambda q, t: "y", timeout_cap=2,
+                                verbose=False).run(build_stages())
+        hang_report.pop("_base")
+        hang_results = hang_report["results"]
+        check(hang_results["wifi"]["status"] == "TIMEOUT",
+              "silent wifi_scan must record TIMEOUT, got %r"
+              % hang_results.get("wifi"))
+        check(hang_results["camera"]["status"] == "TIMEOUT",
+              "silent camera_test must record TIMEOUT, got %r"
+              % hang_results.get("camera"))
+        check(hang_results.get("ble", {}).get("status") == "PASS" and
+              hang_results.get("display", {}).get("status") == "PASS" and
+              hang_results.get("power_rail_scan", {}).get("status") == "PASS",
+              "stages after a hanging command must still run: %r"
+              % {k: v.get("status") for k, v in hang_results.items()})
+        check(hang_report["summary"] is not None,
+              "run with hanging stages must still reach the final report")
+        stop_fake(state)
+
+        # Scenario 3: half-written and garbled JSON lines must not crash the
+        # parser and are counted as protocol errors; the valid result line
+        # that follows still scores the stage.
+        garbled_responses = dict(FAKE_RESPONSES)
+        garbled_responses["flash_test"] = [
+            'FACTORY_RESULT {broken json',
+            'FACTORY_RESULT {"test":"flash","status":"PASS"',
+        ] + FAKE_RESPONSES["flash_test"]
+        state = start_fake(garbled_responses)
+        garbled_report = EvtRunner(state["ser"], out_dir, board_id="garbled",
+                                   answer_fn=lambda q, t: "y", timeout_cap=2,
+                                   verbose=False).run(build_stages())
+        garbled_report.pop("_base")
+        check(garbled_report["results"]["flash"]["status"] == "PASS",
+              "a valid result after garbled lines must still score, got %r"
+              % garbled_report["results"].get("flash"))
+        check(len(garbled_report["protocol_errors"]) == 2 and
+              any("{broken json" in line
+                  for line in garbled_report["protocol_errors"]),
+              "malformed FACTORY_* lines must be counted as protocol errors, "
+              "got %r" % garbled_report["protocol_errors"])
+        stop_fake(state)
+
+        # Scenario 4: a global-stop FAIL (pmic) aborts the remaining stages,
+        # sends exactly one power_all_off as the safe teardown, and never
+        # issues the high-risk follow-up commands.
+        stop_responses = dict(FAKE_RESPONSES)
+        stop_responses["pmic_test"] = [
+            'FACTORY_RESULT {"test":"pmic","status":"FAIL",'
+            '"detail":"dcdc1=2.10v out of tolerance"}']
+        state = start_fake(stop_responses)
+        stop_report = EvtRunner(state["ser"], out_dir, board_id="global-stop",
+                                answer_fn=lambda q, t: "y", timeout_cap=2,
+                                verbose=False).run(build_stages())
+        stop_base = stop_report.pop("_base")
+        stop_results = stop_report["results"]
+        stop_commands = state["received_commands"]
+        check(stop_results["pmic"]["status"] == "FAIL",
+              "pmic FAIL must be recorded, got %r" % stop_results.get("pmic"))
+        check("charge_test" not in stop_commands and
+              "display_test" not in stop_commands and
+              "camera_test" not in stop_commands,
+              "no high-risk follow-up commands after a global-stop fault, "
+              "commands: %r" % stop_commands)
+        check(stop_commands.count(POWER_ALL_OFF) == 1 and
+              stop_commands.index(POWER_ALL_OFF) >
+              stop_commands.index("pmic_test"),
+              "safe teardown must send exactly one power_all_off after the "
+              "fault, commands: %r" % stop_commands)
+        check(stop_results.get("charge", {}).get("status") == "BLOCKED" and
+              stop_results.get("camera", {}).get("status") == "BLOCKED" and
+              stop_results.get(POWER_RAIL_SCAN, {}).get("status") == "BLOCKED",
+              "stages skipped by the abort must be recorded BLOCKED: %r"
+              % {k: v.get("status") for k, v in stop_results.items()})
+        check(stop_commands[-1] == "report" and
+              stop_report["summary"] is not None,
+              "the abort path must still close with the final report")
+        check(os.path.exists(stop_base + ".json"),
+              "aborted run must still write its report files")
+        stop_fake(state)
 
         class SilentSerial:
             def __init__(self):
@@ -742,12 +906,6 @@ def _self_test():
               "report_reset failure must produce a failed host report: %r"
               % reset_report)
 
-    stop.set()
-    ser.close()
-    os.close(master_fd)
-    os.close(slave_fd)
-    thread.join(timeout=2)
-
     if failures:
         for failure in failures:
             print("SELF-TEST FAIL:", failure)
@@ -756,7 +914,10 @@ def _self_test():
           "main-bus scans prove FUSB303B off then 0x21-on before USB Host and "
           "off again at teardown, PASS/FAIL/WARN/NOT_RUN/TIMEOUT paths, "
           "prompt forwarding, rail OFF->scan->ON->scan->OFF with a closing "
-          "all-off scan, summary parse, and report files all verified")
+          "all-off scan, hanging commands bounded by stage deadlines, "
+          "malformed JSON counted as protocol errors, global-stop abort with "
+          "power_all_off teardown and BLOCKED markers, summary parse, and "
+          "report files all verified")
     return 0
 
 
