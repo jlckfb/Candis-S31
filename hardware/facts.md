@@ -1,0 +1,89 @@
+# Candis-S31 EVT1 as-fabricated hardware facts
+
+Extracted 2026-08-14 from the running EasyEDA project 【ESP32-S31】Candis-S31, board `v0.5_260803_1544打样` / PCB_3 full pad netlist (291 components, 939 pads); cross-checked against BSP `candis_s31.h` and `pinout/README.md` (all consistent). Schematic drafting hazard noted for next revision: display-page LCD_VCI_EN_H wire self-overlaps and passes within 1e-13 of the LCD_QSPI_SIO2 stub endpoint near (275,735)/(330,720) — not a net join, confirmed separate nets in the PCB netlist; clean up in the next schematic revision.
+
+## U4 ESP32-S31 (QFN80) pad → net → function
+
+Functional rows only; power/ground pads summarized below the table.
+
+| pad | Signal | PCB net | Function / link |
+|---|---|---|---|
+| 1 | ANT | $3N276 | C5/L2 → RF matching; R1/R2 0Ω select one of RF1 IPEX / U3 ceramic antenna |
+| 2,3 | VDDA3/VDDA4 | $3N259 | Analog supply, C10/L3 decoupling |
+| 4 | CHIP_PU | ESP32S31_CHIP_PU | ←R28←D1←KEY_RST_N (TG28.29 PWROK); Q1.3 auto-download |
+| 5 | GPIO0 | GPIO0 | TF card detect (CARD1.CD) |
+| 6 | GPIO1 | FUSB303_EN_N | Type-C controller enable, active low |
+| 7 | GPIO2 | GPIO2 | U2 (SN74LVC1G07) open-drain output = merged RTC/TG28 interrupt, active low |
+| 8 | GPIO3 | GPIO3 | LCD_CTP_INT_N (R52 10kΩ pull-up to CTP rail) |
+| 9 | GPIO4 | GPIO4 | WS2812B_DATAIN, via R102 33Ω → U25 buffer |
+| 10 | GPIO5 | GPIO5 | LCD_VBAT_EN_H → U18 TPS22917 ON (R54 10kΩ pull-down) |
+| 12,13 | GPIO6/7 | GPIO6/7 | LP_I2C_SCL/SDA (via R26/R27 to TG28.40/39 and U1 RTC) |
+| 14 | GPIO8 | ES8389_DSDIN | I2S playback data |
+| 15 | GPIO9 | GPIO9 | U14.2 = LCD_QSPI_SIO3 |
+| 16 | GPIO10 | GPIO10 | U14.7 = LCD_CS_N (R50 10kΩ pull-up LCD_3V3_SW) |
+| 17 | GPIO11 | GPIO11 | U14.5 = LCD_QSPI_SIO0 |
+| 19 | GPIO12 | GPIO12 | U14.6 = LCD_QSPI_CLK |
+| 20 | GPIO13 | GPIO13 | U14.4 = LCD_QSPI_SIO1 |
+| 21 | GPIO14 | GPIO14 | U14.3 = LCD_QSPI_SIO2 |
+| 22 | GPIO15 | GPIO15 | U14.8 = LCD_RST_N (R51 10kΩ pull-down) |
+| 23 | GPIO16 | GPIO16 | via R55 (0Ω) → U14.9 = LCD_TE |
+| 24 | GPIO17 | GPIO17 | U14.18 = LCD_CTP_RST_N |
+| 25,26 | GPIO18/19 | ES8389_SCLK/LRCK | I2S BCLK/LRCK |
+| 27-29,31-33 | GPIO20-25 | GPIO20-25 | TF DAT0/DAT1/DAT2/DAT3/CLK/CMD |
+| 36-38,40-42 | SPI_* | QSPI_CS/DO/WP/HOLD/CLK/DI | via 0Ω array to U5 W25Q128 FLASH_* |
+| 39 | VDD_SPI | ESP32S31_VDD_SPI | ←R24 (0Ω) ←VCC_3V3_MAIN; U5.8 same net; R22 100kΩ pull-up FLASH_CS |
+| 44,45 | USB_DP/DM | $3N245/$3N247 | via R23/R25 33Ω → ESP32S31_USB_DP/DM → USB2 A6/A7/B6/B7 (D5 ESD); physical pads, not GPIO44/45 |
+| 46,47 | GPIO33/34 | FUSB303_SCL/SDA | Main I2C SYSTEM_I2C |
+| 48 | GPIO35 | GPIO35 | via R59 (33Ω) → ES8389_MCLK |
+| 49 | GPIO36 | GPIO36 | TF_PWR_EN_N active low; R6 10kΩ pull-up = VDD_SPI strap high (3.3V) |
+| 50 | GPIO37 | GPIO37 | JTAG_SEL strap, 10kΩ pull-up, no application load |
+| 51 | GPIO38 | GPIO38 | via R48 → LCD_VCI_EN_H → U14.1 (R49 pull-down) |
+| 52,53 | GPIO39/40 | CAM_RST_N/CAM_PWDN | Camera reset / power-down |
+| 55 | GPIO42 | AUDIO_PA_EN_H | PA CTRL (100kΩ pull-down) |
+| 56 | GPIO43 | FUSB303_INT_N | Type-C interrupt, active low (100kΩ pull-up) |
+| 57 | GPIO44 | ES8389_ASDOUT | I2S record data; via R61 (0Ω) doubles as AD1 power-up config |
+| 58 | GPIO45 | GPIO45 | U15.3 OTG boost permission logic input (100kΩ pull-down) |
+| 59-62,65-68 | GPIO46-53 | GPIO46-53 | CAM_D0-D7 |
+| 69-72 | GPIO54-57 | GPIO54-57 | CAM_PCLK/XCLK/VSYNC/HSYNC (JTAG mux conflict) |
+| 73 | GPIO58 | $3N97 | via R17+R37 (499Ω each) → CH343P_RXD (UART0 TX, 998Ω total) |
+| 74 | GPIO59 | ESP32S31_UART0_RXD | via R36 (499Ω) ← CH343P_TXD |
+| 75,76 | GPIO60/61 | ESP32S31_STRAP/BOOT | 10kΩ pull-up each; GPIO61 = BOOT key / auto-download |
+| 78,79 | XTAL_N/P | XTAL_N/P | X1 passive 40MHz (YSX321SL 15pF; L4 24nH in series with XTAL_P branch, 22pF on both sides) |
+
+Power/ground pads: 11/43/54/64/77/80 = VCC_3V3_MAIN; 30/34/35 = ESP_LDO_1V8 (in-package PSRAM); 18 = VREF_TOUCH (470nF); 63 = VREF_ADC (100nF); 81 (EP) = GND.
+
+## TG28 (U6, QFN-40) rail → load
+
+| pin | Net | Load / note |
+|---|---|---|
+| 21/35 | VCC_3V3_MAIN (DCDC1 3.3V/2A, LX1 via U8 1µH) | Main rail, always on (49 pads) |
+| 22/26 | CAM_DVDD_1V5_SW (DCDC2 1.5V, LX2 via U7) | FPC1.10 |
+| 18 | LCD_3V3_SW (ALDO1 3.3V) | U14.13+14 (panel maker confirmed pin13 = NC, no load branch) |
+| 19 | LCD_CTP_3V3_SW (ALDO2 3.3V) | U14.22/23, touch pull-ups, Q2 isolation gate |
+| 16 | AUDIO_3V3_SW (ALDO3 3.3V) | ES8389/MIC/audio pull-ups; also U20.3 self-enable PA switch |
+| 15 | TG28_ALDO4 via L6 → CAM_AVDD_2V8_SW | FPC1.4; R95 (0Ω) → CAM_AF_VCC (FPC1.23) |
+| 12 | CAM_DOVDD_2V8_SW (BLDO1 2.8V) | FPC1.11, camera I2C pull-ups |
+| 14 | 3V3_EXT_SW (BLDO2 3.3V/300mA) | U26.2, R103/R104, Q6 |
+| 20 | TG28_DC1SW | U24.1 (WS2812E VDD), U25.5 (buffer VCC); OTP default OFF pending first-board measurement |
+| 28 | TG28_VRTC (3.0V always on) | U1.10 (RTC VBAT), R31/R32 pull-ups |
+| 27 | TG28_VBACKUP | Backup input |
+| 33 | TG28_VBAT+ | CN1.1 two-wire battery; TS = R29 10kΩ fixed to GND (no real NTC) |
+| 37 | TG28_VBUS | ←U12 TPS22917←U11 resettable fuse←USB1_VBUS_RAW |
+| 6/7/13/17/23/24/34 | TG28_VSYS | System bus → U18 (LCD_VBAT) / U20 (PA) / U16 (ISL9113) |
+| 4/5/8/9/10/11/32 | NC | DCDC3, DCDC4 (LX4/FB4 floating), CPUSLDO unused |
+| 29 | KEY_RST_N (PWROK) | →D1.1; R101 (510Ω) → SW3 RESET; C119 |
+| 30 | KEY_PWRON_N (PWRON) | SW1 PWRON key; R32 10kΩ pull-up VRTC |
+| 38 | TG28_IRQ_N | U2.2 input, wired-AND with U1.6 (RTC /IRQ), R31 10kΩ pull-up VRTC |
+| 39/40 | TG28_SCL/SDA | via R26/R27 → GPIO6/7 (LP I2C, 7-bit 0x34) |
+| 1 | TG28_CHGL_LED | Charge indicator LED |
+
+## Connectors as-fabricated
+
+- U14 display 24P BTB: 1=LCD_VCI_EN_H 2=SIO3(GPIO9) 3=SIO2(GPIO14) 4=SIO1(GPIO13) 5=SIO0(GPIO11) 6=CLK(GPIO12) 7=CS(GPIO10) 8=RST(GPIO15) 9=TE(GPIO16) 10=GND 11/12=NC 13/14=LCD_3V3_SW 15=LCD_VBAT 16=GND 17=CTP_INT(GPIO3) 18=CTP_RST(GPIO17) 19=CTP_SCL 20=CTP_SDA 21=GND 22/23=LCD_CTP_3V3_SW 24=NC 25-28=shell GND
+- FPC1 camera 24P (FH12-24S): 1=NC 2=GND 3=CAM_I2C_SDA 4=CAM_AVDD_2V8 5=CAM_I2C_SCL 6=CAM_RST_N 7=CAM_VSYNC 8=CAM_PWDN 9=CAM_HSYNC 10=CAM_DVDD_1V5 11=CAM_DOVDD_2V8 12=CAM_D7 13=CAM_MCLK 14=CAM_D6 15=GND 16=CAM_D5 17=CAM_PCLK 18=CAM_D4 19=CAM_D0 20=CAM_D3 21=CAM_D1 22=CAM_D2 23=CAM_AF_VCC 24=GND (AF_VCC tied to CAM_AVDD via R95 0Ω; fixed-focus, no VCM control hardware)
+- CARD1 TF: 1=DAT2 2=DAT3 3=CMD 4=TF_VDD_3V3_SW 5=CLK 6=GND 7=DAT0 8=DAT1 CD=GPIO0 (GPIO20-25 mapping in U4 table)
+- USB1 (debug port): VBUS→U11 fuse→U12 TPS22917→TG28_VBUS; CC1/CC2 via R33/R34 5.1kΩ pull-down (D2/D4 ESD); D+/D-→CH343P UD+/UD-
+- USB2 (OTG): CC1/2→U17 FUSB303B; D+/D-→R23/R25→U4.44/45; VBUS=OTG_VBUS_5V (U16 ISL9113 boost; EN=U15 SN74LVC1G58 logic: GPIO45 AND FUSB303_SOURCE_OK_N)
+- U26 EXT GH1.25-4: 1=GND 2=3V3_EXT_SW 3=EXT_I2C_SDA 4=EXT_I2C_SCL (U27 = M2 mounting hole)
+- CN1 battery: 1=TG28_VBAT+ 2=GND; CN2 speaker: 1/2=U22.8/U22.5 (NS4150B differential output, neither side may be grounded)
+- Keys: SW1=KEY_PWRON_N (TG28.30); SW2=ESP32S31_BOOT (GPIO61); SW3 RESET→R101 (510Ω)→KEY_RST_N (TG28.29 PWROK)
