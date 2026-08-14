@@ -41,7 +41,7 @@ Functional rows only; power/ground pads summarized below the table.
 | 52,53 | GPIO39/40 | CAM_RST_N/CAM_PWDN | Camera reset / power-down |
 | 55 | GPIO42 | AUDIO_PA_EN_H | PA CTRL (100kΩ pull-down) |
 | 56 | GPIO43 | FUSB303_INT_N | Type-C interrupt, active low (100kΩ pull-up) |
-| 57 | GPIO44 | ES8389_ASDOUT | I2S record data; via R61 (0Ω) doubles as AD1 power-up config — must be Hi-Z/low while ALDO3 rises (BSP order: rail on after I2S channel creation, reverse on teardown) |
+| 57 | GPIO44 | ES8389_ASDOUT | I2S record data; via R61 (0Ω) doubles as AD1 power-up config — must be Hi-Z/low while ALDO3 rises (BSP order: ALDO3 on first, then the I2S channel is created, so the pad is still in its reset Hi-Z state at rail rise; teardown deletes the I2S channel before dropping the rail) |
 | 58 | GPIO45 | GPIO45 | U15.3 OTG boost permission logic input (100kΩ pull-down) |
 | 59-62,65-68 | GPIO46-53 | GPIO46-53 | CAM_D0-D7 |
 | 69-72 | GPIO54-57 | GPIO54-57 | CAM_PCLK/XCLK/VSYNC/HSYNC (JTAG mux conflict) |
