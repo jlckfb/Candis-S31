@@ -133,7 +133,8 @@ While `BSP_POWER_TYPE_C_CONTROL` is on, FUSB303B must answer at exactly one of
 `WARN` because the address strap then mismatches the schematic. Its silence
 after `power_all_off` is expected, while any answer with the control domain
 off records a `WARN`. Devices behind switched rails (CST820 `0x15`, ES8389
-`0x20`, OV5640 `0x3C`) may likewise stay silent while their rail is off; a
+`0x10` — 7-bit on the wire; `0x20` is its 8-bit write address —, OV5640
+`0x3C`) may likewise stay silent while their rail is off; a
 powered device that does not answer, an unexpected address, or an answer at
 the unconfirmed VCM address `0x0C` records a `WARN`. The low-power bus passes
 only when both the RX8130CE at `0x32` and TG28_SW at `0x34` respond.

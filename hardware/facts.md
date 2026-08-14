@@ -33,7 +33,7 @@ Functional rows only; power/ground pads summarized below the table.
 | 36-38,40-42 | SPI_* | QSPI_CS/DO/WP/HOLD/CLK/DI | via 0Ω array to U5 W25Q128 FLASH_* |
 | 39 | VDD_SPI | ESP32S31_VDD_SPI | ←R24 (0Ω) ←VCC_3V3_MAIN; U5.8 same net; R22 100kΩ pull-up FLASH_CS |
 | 44,45 | USB_DP/DM | $3N245/$3N247 | via R23/R25 33Ω → ESP32S31_USB_DP/DM → USB2 A6/A7/B6/B7 (D5 ESD); physical pads, not GPIO44/45 |
-| 46,47 | GPIO33/34 | FUSB303_SCL/SDA | Main I2C SYSTEM_I2C |
+| 46,47 | GPIO33/34 | FUSB303_SCL/SDA | Main I2C SYSTEM_I2C; bus pull-ups R4/R5 2.2kΩ → VCC_3V3_MAIN |
 | 48 | GPIO35 | GPIO35 | via R59 (33Ω) → ES8389_MCLK |
 | 49 | GPIO36 | GPIO36 | TF_PWR_EN_N active low; R6 10kΩ pull-up = VDD_SPI strap high (3.3V) |
 | 50 | GPIO37 | GPIO37 | JTAG_SEL strap, 10kΩ pull-up, no application load |
@@ -41,7 +41,7 @@ Functional rows only; power/ground pads summarized below the table.
 | 52,53 | GPIO39/40 | CAM_RST_N/CAM_PWDN | Camera reset / power-down |
 | 55 | GPIO42 | AUDIO_PA_EN_H | PA CTRL (100kΩ pull-down) |
 | 56 | GPIO43 | FUSB303_INT_N | Type-C interrupt, active low (100kΩ pull-up) |
-| 57 | GPIO44 | ES8389_ASDOUT | I2S record data; via R61 (0Ω) doubles as AD1 power-up config |
+| 57 | GPIO44 | ES8389_ASDOUT | I2S record data; via R61 (0Ω) doubles as AD1 power-up config — must be Hi-Z/low while ALDO3 rises (BSP order: rail on after I2S channel creation, reverse on teardown) |
 | 58 | GPIO45 | GPIO45 | U15.3 OTG boost permission logic input (100kΩ pull-down) |
 | 59-62,65-68 | GPIO46-53 | GPIO46-53 | CAM_D0-D7 |
 | 69-72 | GPIO54-57 | GPIO54-57 | CAM_PCLK/XCLK/VSYNC/HSYNC (JTAG mux conflict) |
@@ -83,7 +83,22 @@ Power/ground pads: 11/43/54/64/77/80 = VCC_3V3_MAIN; 30/34/35 = ESP_LDO_1V8 (in-
 - FPC1 camera 24P (FH12-24S): 1=NC 2=GND 3=CAM_I2C_SDA 4=CAM_AVDD_2V8 5=CAM_I2C_SCL 6=CAM_RST_N 7=CAM_VSYNC 8=CAM_PWDN 9=CAM_HSYNC 10=CAM_DVDD_1V5 11=CAM_DOVDD_2V8 12=CAM_D7 13=CAM_MCLK 14=CAM_D6 15=GND 16=CAM_D5 17=CAM_PCLK 18=CAM_D4 19=CAM_D0 20=CAM_D3 21=CAM_D1 22=CAM_D2 23=CAM_AF_VCC 24=GND (AF_VCC tied to CAM_AVDD via R95 0Ω; fixed-focus, no VCM control hardware)
 - CARD1 TF: 1=DAT2 2=DAT3 3=CMD 4=TF_VDD_3V3_SW 5=CLK 6=GND 7=DAT0 8=DAT1 CD=GPIO0 (GPIO20-25 mapping in U4 table)
 - USB1 (debug port): VBUS→U11 fuse→U12 TPS22917→TG28_VBUS; CC1/CC2 via R33/R34 5.1kΩ pull-down (D2/D4 ESD); D+/D-→CH343P UD+/UD-
-- USB2 (OTG): CC1/2→U17 FUSB303B; D+/D-→R23/R25→U4.44/45; VBUS=OTG_VBUS_5V (U16 ISL9113 boost; EN=U15 SN74LVC1G58 logic: GPIO45 AND FUSB303_SOURCE_OK_N)
+- USB2 (OTG): CC1/2→U17 FUSB303B; D+/D-→R23/R25→U4.44/45; VBUS=OTG_VBUS_5V (U16 ISL9113 boost; EN=OTG_BOOST_EN_SAFE from U15 SN74LVC1G58 wired as 2-input AND with one inverted input — U15.1 tied to VCC_3V3_MAIN selects the config, U15.3=GPIO45 (R40 100kΩ pull-down), U15.6=FUSB303_SOURCE_OK_N (R44 100kΩ pull-up), Y=U15.4 → Y = GPIO45 AND NOT(FUSB303_SOURCE_OK_N), R45 100kΩ pull-down on Y)
 - U26 EXT GH1.25-4: 1=GND 2=3V3_EXT_SW 3=EXT_I2C_SDA 4=EXT_I2C_SCL (U27 = M2 mounting hole)
 - CN1 battery: 1=TG28_VBAT+ 2=GND; CN2 speaker: 1/2=U22.8/U22.5 (NS4150B differential output, neither side may be grounded)
 - Keys: SW1=KEY_PWRON_N (TG28.30); SW2=ESP32S31_BOOT (GPIO61); SW3 RESET→R101 (510Ω)→KEY_RST_N (TG28.29 PWROK)
+
+## Expected I2C addresses
+
+All 7-bit. Final adjudication at EVT is the `i2c_scan` measurement.
+
+| Bus | Address | Device | Strap / wiring evidence |
+|---|---|---|---|
+| Main (FUSB303_SDA/SCL, pull-ups R4/R5 2.2kΩ → VCC_3V3_MAIN) | 0x21 | FUSB303B (U17) | ADDR pin low via R46 909kΩ → GND (datasheet: LOW = address 42h 8-bit = 0x21; ~900kΩ recommended to cut standby current). A 0x31 answer means an assembly/strap anomaly |
+| Main, via Q3 (2N7002DW, gates → AUDIO_3V3_SW) | 0x10 | ES8389 (U19) | AD0: R63 100kΩ pull-down fitted, R62 100kΩ pull-up DNP; AD1: R68 100kΩ pull-down fitted, R65 100kΩ pull-up DNP (R61 0Ω ties AD1 to GPIO44, sampled while ALDO3 rises). 0x20 is the 8-bit write address that esp_codec_dev/BSP use — on the wire it is 0x10. Segment pull-ups R73/R74 4.7kΩ → AUDIO_3V3_SW |
+| Main, via Q2 (gates → LCD_CTP_3V3_SW) | 0x15 | CST820 touch (U14) | Segment pull-ups R56/R57 4.7kΩ → LCD_CTP_3V3_SW; visible on main bus only while ALDO2 is on |
+| Main, via Q4 (gates → CAM_DOVDD_2V8_SW) | 0x3C | OV5640 SCCB | Segment pull-ups R96/R97 4.7kΩ → CAM_DOVDD_2V8_SW |
+| LP (TG28_SDA/SCL via R26/R27 0Ω → GPIO6/7) | 0x32 | RX8130CE RTC (U1) | Fixed device address |
+| LP | 0x34 | TG28 PMIC (U6) | Fixed device address |
+
+EXT segment (U26) is isolated by Q6 (gates → 3V3_EXT_SW) with pull-ups R103/R104 4.7kΩ → 3V3_EXT_SW; address depends on the attached peripheral.

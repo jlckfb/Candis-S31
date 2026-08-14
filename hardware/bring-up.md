@@ -25,7 +25,7 @@ Perform on at least two boards from the lot before any power is applied:
 | TG28 OTP | Read back or measure VRTC=3.0 V, REG62 default=50 mA, and the agreed BATFET/VBUS/BAT power-on bits on incoming parts; confirm over the LP I2C bus (0x34) that DCDC1 and DCDC4 are the OTP step1 rails (DCDC1 3.3 V, DCDC4 1.8 V per confirmation sheet V1.3) and that DCDC2/DCDC3, ALDO1-4, BLDO1/2, CPUSLDO, and DLDO2 (DC4SW) read back disabled. DCDC4 has no external load and no measurable node, so its OTP state is proven only by the pre-safe-state register snapshot in the Factory boot log; the Factory safe state then disables DCDC4 at runtime, which is the intended safety action | Keep charging and optional rails disabled; quarantine or reprogram the lot |
 | GPIO36 strap | **已核实为正确配置**：GPIO36 是 VDD_SPI 电压绑带（数据手册 Table 3-4：高=3.3V Flash，低=1.8V Flash）。本板 Flash 为外置 W25Q128（3.3V 器件，2.7–3.6V），故 VDD_SPI=3.3V；ESP32-S31 v0.0 勘误 SPI-855 亦禁止 1.8V VDD_SPI 启动。R6（10kΩ 上拉至 VCC_3V3_MAIN）是乐鑫硬件设计指南要求的绑带上拉，必需且正确。GPIO36 兼作 TF 低有效电源使能，固件仅在启动后显式 `peripheral_power sdcard on` 时拉低，复位采样窗口不受扰动。回板仅须实测 VDD_SPI=3.3V（SoC pin39 / W25Q128 VCC pin8）即可放行 | 无需拆 R6；若实测 VDD_SPI 异常（如设计误接 1.8V）则停止上电，先修电源树 |
 | UART0 series resistors | Repeat ROM sync and verified flashing through the series resistors — TX chain R17+R37 (499 ohm each, 998 ohm total), RX chain R36 (499 ohm) — at 115200, 460800, and the intended high baud without framing errors | Use the highest repeatable lower baud or rework the series resistors |
-| Main-bus I2C addresses | In boot safe state FUSB303B must be silent; after `typec_test` it must answer at the assembled EVT1 strap address 0x21 with valid identity. Treat any 0x31 response or dual response as an assembly/design failure. With their own rails on, ES8389 must answer at 0x20, CST820 at 0x15, and OV5640 at 0x3C | Do not initialize a conflicting device; quarantine the board and rework its address strap |
+| Main-bus I2C addresses | In boot safe state FUSB303B must be silent; after `typec_test` it must answer at the assembled EVT1 strap address 0x21 with valid identity. Treat any 0x31 response or dual response as an assembly/design failure. With their own rails on, ES8389 must answer at 0x10 (7-bit on the wire; 0x20 is its 8-bit write address), CST820 at 0x15, and OV5640 at 0x3C | Do not initialize a conflicting device; quarantine the board and rework its address strap |
 | Camera / JTAG mux | Confirm GPIO54-57 are released from JTAG before DVP use and that camera capture is stable; document the alternative debug route | Disable camera while JTAG is active, or disable JTAG before powering the camera |
 | Type-C2 source mode | Test DRP, short circuit, dual-plug, backfeed, and temperature behavior | Keep source mode disabled or DNP |
 | Reset key | Confirm the TG28_SW `TG28_PWROK` output type, sink current, and timing | Isolate or rework the key input |
@@ -106,13 +106,14 @@ With the matching rails on, the buses should show exactly these devices:
 | Bus | Address | Device | Prerequisite |
 |---|---|---|---|
 | Main (GPIO33/34) | 0x15 | CST820 touch | LCD_CTP_3V3_SW (ALDO2) on |
-| Main | 0x20 | ES8389 audio codec | AUDIO_3V3_SW (ALDO3) on |
+| Main | 0x10 | ES8389 audio codec (7-bit on the wire; 0x20 = 8-bit write address used by esp_codec_dev) | AUDIO_3V3_SW (ALDO3) on |
 | Main | 0x21 | FUSB303B Type-C controller | `bsp_type_c_init()` / `typec_test` has driven active-low `TYPEC_EN_N` low |
 | Main | 0x3C | OV5640 SCCB | Camera rails on |
 | Low power (GPIO6/7) | 0x32 | RX8130CE RTC | Always present |
 | Low power | 0x34 | TG28_SW PMIC | Always present |
 
-FUSB303B is strapped to 0x21 by the R46 pull-down; a response at 0x31
+FUSB303B is strapped to 0x21 by the R46 pull-down (909kΩ, the datasheet's
+recommended value to cut standby current); a response at 0x31
 instead means the address strap does not match the schematic and must be
 recorded. A main-bus device that does not answer while its switched rail is
 off is expected, not a failure. The Factory `i2c_scan lp`
