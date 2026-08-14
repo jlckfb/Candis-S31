@@ -63,6 +63,7 @@ Baseline: ESP-IDF `v6.1-beta1`, target `esp32s31` (preview). `tools/build-all.sh
 ```text
 .
 ├── hardware/                  # Schematic, pinout, and EVT notes
+├── docs/                      # System overview and board usage
 ├── examples/
 │   └── esp-idf/
 │       ├── getting-started/   # Standalone ESP-IDF project
@@ -77,6 +78,7 @@ There is intentionally no top-level `CMakeLists.txt`, `components/`, or framewor
 
 ## Hardware resources
 
+- [System overview and board usage](docs/system-overview.md)
 - [Hardware overview](hardware/README.md)
 - [Schematic](hardware/schematic/SCH_Schematic_3_2026-08-10.pdf)
 - [Preliminary pinout](hardware/pinout/README.md)
