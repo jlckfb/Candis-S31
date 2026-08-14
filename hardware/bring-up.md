@@ -2,6 +2,18 @@
 
 EVT1 schematic revision 0.5 went to fabrication on 2026-08-03 as `v0.5_260803_1544`; the boards have not arrived yet. Hardware-dependent results remain `NOT_RUN`.
 
+## Incoming inspection (before any power)
+
+Perform on at least two boards from the lot before any power is applied:
+
+- Confirm board revision, silkscreen, BOM substitutions, and DNP placements against the fabrication package (notably the ES8389 AD0/AD1 pull-ups R62/R65, which are DNP).
+- Inspect QFN soldering (U4, U6) visually or by AOI for bridges, voids, and orientation.
+- Measure every power rail's resistance to GND and check for rail-to-rail shorts before energizing.
+- Confirm the battery connector (CN1) polarity marking against the cable.
+- Diode-check D1 direction with a meter: KEY_RST_N (TG28 pin 29) must conduct toward CHIP_PU.
+- Confirm U14 BTB and FPC1 contact-face orientation before mating the display and camera.
+- Check for unintended continuity between CC1/CC2 and VBUS on both Type-C connectors.
+
 ## Checks before fabrication
 
 | Item | Question to close | Safe fallback |
@@ -18,9 +30,15 @@ EVT1 schematic revision 0.5 went to fabrication on 2026-08-03 as `v0.5_260803_15
 | Type-C2 source mode | Test DRP, short circuit, dual-plug, backfeed, and temperature behavior | Keep source mode disabled or DNP |
 | Reset key | Confirm the TG28_SW `TG28_PWROK` output type, sink current, and timing | Isolate or rework the key input |
 | Deep-sleep counter retention | Run the low-power example through S0→S1→deep-sleep→wake and confirm the `RTC_NOINIT_ATTR` cycle counter survives the wake and escalates to shutdown at the configured count | If the counter is lost across deep sleep the machine loops in deep sleep instead of escalating; the RTC-timer wake still recovers the board, so treat shutdown escalation as best-effort until this passes |
+| Deep-sleep wake accuracy and current | Record "can wake" and "wake accuracy / current in spec" as two separate acceptance results. There is no 32.768 kHz crystal, so the slow clock is the internal RC oscillator; measure and record its drift and the wake-time error against the RTC alarm target | Accept wider alarm margins as best-effort timing; do not claim sleep-current acceptance until measured |
 | Soft power-off with VBUS | Trigger `bsp_pmic_power_off` (TG28 REG10 bit0) with VBUS attached and confirm whether the board powers off, reboots, or needs a guard — the Linux reference reboots instead of powering off in this case | If it reboots or misbehaves with VBUS present, add a VBUS-present guard (deliberate reboot, or only allow power-off when VBUS is absent) |
 
 ## First power-on order
+
+Two Go/No-Go gates apply before the numbered sequence:
+
+1. **First power-up runs without a lithium cell and with charging kept off.** The NTC behavior (TS pin = R29 10 kΩ fixed to GND) is not yet confirmed in writing by the vendor; until that confirmation exists, do not connect a real cell and do not run `charge_test`. After confirmation, use only cells with a protection board.
+2. **DCDC4 starts at 1.8 V from OTP with LX4/FB4 floating.** The Factory safe-state runtime shutdown is the earliest safety action, but during ROM download mode, bootloader failure, or crash windows DCDC4 remains in its OTP state. First boards must confirm this rail's behavior with an oscilloscope and be accepted against the vendor's written conclusion. The TG28 written confirmations (DCDC4 floating connection, PWROK output structure and sink current, VBUS wake, NTC judgment) are power-on Go/No-Go items.
 
 1. Use a current-limited supply. Validate the charger, PMIC, and off-state rails before fitting or enabling large loads.
 2. Measure 3.3 V, VRTC, VDD_SPI, the PSRAM rail, and `CHIP_PU`.
@@ -31,8 +49,15 @@ EVT1 schematic revision 0.5 went to fabrication on 2026-08-03 as `v0.5_260803_15
 
 ## Suggested Factory order
 
-Use the serial commands one at a time. Stop at the first unexpected voltage,
-current, temperature, reset, or console error. If the console does not come
+Use the serial commands one at a time. Faults are graded, not all fatal:
+**global stop** for overcurrent, wrong voltage, abnormal heating, VBUS
+shoot-through or backfeed, abnormal PMIC state, unreliable strap or reset
+behavior, unexpected DCDC4 switching, or any battery/charge-path anomaly —
+halt the whole session and investigate. **Isolatable** for a single I2C
+device not acknowledging, a peripheral ID mismatch, display initialization
+failure with rails in spec, TF card compatibility issues, or a single
+software timeout — power that domain off, mark the item BLOCKED, log it,
+and continue with independent modules. If the console does not come
 up, or flashing fails, stop and follow
 [`firmware/recovery/`](../firmware/recovery/README.md) for download-mode
 recovery instead of re-running stages blindly.
@@ -60,11 +85,15 @@ recovery instead of re-running stages blindly.
 6. Run `speaker_test` at the supplied low level, record the audible result, then run `microphone_test`.
 7. Run `camera_test` and keep the ESP Video sensor log.
 8. Run `irq_test` once with the shared line idle and again after a known RTC or PMIC event. The command must release GPIO2 after clearing both devices.
-9. Run one main-bus `i2c_scan` in the boot safe state and confirm FUSB303B and every switched-rail device are silent. Then run `typec_test` with no cable and with known sink/source fixtures, followed immediately by another main-bus scan; FUSB303B must answer at 0x21 while its control domain is on (the host runner records this as `type_c_power_scan`). Test `otg` only after the CC and boost path measurements are ready, and remember `otg on` proves only the 5 V boost path. For host data-path evidence run `usb_host_test` with a device attached (500 mA budget; this hardware never advertises 1.5 A/3 A); for device-mode enumeration use the dedicated TinyUSB diagnostic image. Between peripheral blocks, `power_all_off` returns every switched rail to off; verify off-state residual voltages with a meter.
-10. Run `wifi_scan` (PASS requires at least one AP in range) and `ble_smoke`
-    to confirm both radio stacks initialize and release cleanly; keep the
-    scan output with the board evidence.
-11. Run `report` and save the complete console log with the board serial number and rework state.
+9. Run `wifi_scan` (PASS requires at least one AP in range) and `ble_smoke`
+   to confirm both radio stacks initialize and release cleanly. Capture the
+   3V3_MAIN and VDD_SPI droop waveforms during scan, association, and
+   transmit, and during BLE advertising; keep the scan output and waveforms
+   with the board evidence.
+10. Run one main-bus `i2c_scan` in the boot safe state and confirm FUSB303B and every switched-rail device are silent. Then run `typec_test` with no cable and with known sink/source fixtures, followed immediately by another main-bus scan; FUSB303B must answer at 0x21 while its control domain is on (the host runner records this as `type_c_power_scan`). Test `otg` only after the CC and boost path measurements are ready, and remember `otg on` proves only the 5 V boost path. For host data-path evidence run `usb_host_test` with a device attached (500 mA budget; this hardware never advertises 1.5 A/3 A); for device-mode enumeration use the dedicated TinyUSB diagnostic image. Between peripheral blocks, `power_all_off` returns every switched rail to off; verify off-state residual voltages with a meter.
+11. Concurrency and thermal: run display + camera + PSRAM together, then TF
+    write + Wi-Fi together, and record the full-load temperature rise.
+12. Run `report` and save the complete console log with the board serial number and rework state.
 
 Visual and audible commands do not mark themselves as passed. A display
 transfer, LED update, or audio write can succeed while the external device is
@@ -115,6 +144,10 @@ loaded to its limit. Unconnected rails have no node to measure.
 | BLDO1 | CAM_DOVDD_2V8_SW | 2.8 V, 300 mA | ±5 % (2.66–2.94 V) | Camera I/O |
 | BLDO2 | 3V3_EXT_SW | 3.3 V, 300 mA | ±5 % (3.14–3.47 V) | EXT connector pin 2 |
 | RTCLDO | TG28_VRTC | 3.0 V | ±5 % (2.85–3.15 V); keep within the RX8130CE VBAT input range | Always on; also feeds the RX8130CE VBAT input |
+
+EXT connector limits: 3V3_EXT_SW (BLDO2) supplies at most 300 mA; externally
+attached devices must not backfeed SDA/SCL from their own supply, and the
+connector is not hot-plug capable (Q6 has no ESD protection).
 
 ## Shared interrupt
 
@@ -175,8 +208,20 @@ completed — one checklist per physical board.
 - [ ] Factory firmware commit and ESP-IDF version recorded: __________
 - [ ] Supply current limit / input voltage recorded: __________
 
+### Incoming inspection (at least two boards)
+
+- [ ] Board revision, silkscreen, BOM substitutions, and DNP placements confirmed against the fabrication package
+- [ ] QFN soldering (U4, U6) inspected for bridges, voids, and orientation
+- [ ] Rail-to-GND resistances and rail-to-rail short checks recorded
+- [ ] Battery connector (CN1) polarity confirmed
+- [ ] D1 direction diode-checked: KEY_RST_N conducts toward CHIP_PU
+- [ ] U14 BTB and FPC1 contact-face orientation confirmed before mating
+- [ ] No unintended continuity between CC1/CC2 and VBUS on either Type-C connector
+
 ### First power-on
 
+- [ ] Gate 1: first power-up without a lithium cell, charging kept off; TG28 vendor written confirmations received (DCDC4 floating, NTC, PWROK, VBUS wake)
+- [ ] Gate 2: DCDC4 rail behavior scoped across ROM download / bootloader failure / crash windows; accepted against vendor written conclusion
 - [ ] Current-limited supply set; charger, PMIC, and off-state rails validated before enabling large loads
 - [ ] 3.3 V, VRTC, VDD_SPI, PSRAM rail, and `CHIP_PU` measured and recorded
 - [ ] Flash access and the 40 MHz clock confirmed
@@ -196,8 +241,10 @@ completed — one checklist per physical board.
 - [ ] `speaker_test` at the supplied low level (audible result recorded) and `microphone_test`
 - [ ] `camera_test` with the ESP Video sensor log kept
 - [ ] `irq_test` once with the shared line idle and once after a known RTC/PMIC event; GPIO2 released
+- [ ] `wifi_scan` and `ble_smoke`; 3V3_MAIN/VDD_SPI droop waveforms captured during scan/associate/transmit and BLE advertising; scan output kept with the board evidence
 - [ ] `otg` and `usb_host_test` only after CC and boost-path measurements; VBUS confirmed off after teardown
 - [ ] `power_all_off` run at each stage boundary; closing `i2c_scan main` records FUSB303B silent with its control domain off
-- [ ] `wifi_scan` and `ble_smoke`; scan output kept with the board evidence
+- [ ] Concurrency and thermal: display + camera + PSRAM together, then TF write + Wi-Fi together; full-load temperature rise recorded
+- [ ] Deep-sleep acceptance recorded separately: wake capability vs wake accuracy / sleep current (internal RC slow clock, no 32.768 kHz crystal)
 - [ ] Final `report` and complete console log saved with the board serial number and rework state
 - [ ] Report filled in from the template above, with the per-command table and attached evidence
