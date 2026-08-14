@@ -27,8 +27,9 @@
  * pulled pin wake the chip reliably. Earlier revisions of this file claimed
  * otherwise because the EXT1 pin under test was left floating. The one hard
  * requirement is a defined level on every EXT1 wake pin: a floating pad keeps
- * the chip in deep sleep forever. GPIO2 is pulled up through R10 on this
- * board, so it is safe to use as the EXT1 source here. See the README.
+ * the chip in deep sleep forever. GPIO2 is pulled up through R31 on this
+ * board (10kOhm to TG28_VRTC 3.0V, always-on), so it is safe to use as the
+ * EXT1 source here. See the README.
  */
 
 #include <stdbool.h>
@@ -857,10 +858,11 @@ static esp_err_t enter_deep_sleep(void)
                  esp_err_to_name(timer_error));
     }
 
-    /* EXT1 on the shared IRQ line. GPIO2 is pulled up through R10; enable the
-     * internal pull-up as well so the pad keeps a defined level even without
-     * the external resistor. A floating EXT1 pin is exactly what keeps the
-     * chip in deep sleep forever. Only TG28/RX8130CE events assert this line;
+    /* EXT1 on the shared IRQ line. GPIO2 is pulled up through R31 (10kOhm to
+     * TG28_VRTC, the always-on 3.0V rail); enable the internal pull-up as
+     * well so the pad keeps a defined level even without the external
+     * resistor. A floating EXT1 pin is exactly what keeps the chip in deep
+     * sleep forever. Only TG28/RX8130CE events assert this line;
      * touch (GPIO3) is deliberately not armed - see the function comment. */
     esp_err_t ext1_error = rtc_gpio_init(BSP_PMIC_RTC_INT);
     if (ext1_error == ESP_OK) {

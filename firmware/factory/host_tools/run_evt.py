@@ -29,10 +29,13 @@ import serial
 
 # Host-side composite stage marker, not a console command: for each peripheral
 # behind a switched rail, run OFF -> scan -> ON -> scan -> OFF against the main
-# I2C bus, proving that CST820 (0x15), ES8389 (0x20), and OV5640 (0x3c) answer
+# I2C bus, proving that CST820 (0x15), ES8389 (0x10), and OV5640 (0x3c) answer
 # only while their rail is on. A final scan with every rail off confirms none
-# of them answers. EvtRunner.run() expands the marker into the real command
-# sequence; --no-power-rail-scan drops it.
+# of them answers. ES8389 answers at 7-bit 0x10 on the wire (AD0 and AD1 both
+# strapped low: R63/R68 100kOhm pull-downs fitted, R62/R65 DNP); 0x20 is its
+# 8-bit write address, which is what esp_codec_dev and the BSP take.
+# EvtRunner.run() expands the marker into the real command sequence;
+# --no-power-rail-scan drops it.
 POWER_RAIL_SCAN = "power_rail_scan"
 
 # Host-side proof that typec_test actually raised the FUSB303B control domain.
@@ -50,7 +53,7 @@ POWER_ALL_OFF = "power_all_off"
 # rails that the POWER_RAIL_SCAN stage checks.
 POWER_RAIL_DEVICES = (
     ("touch", 0x15),    # CST820 touch, ALDO2
-    ("audio", 0x20),    # ES8389 codec, ALDO3
+    ("audio", 0x10),    # ES8389 codec, ALDO3 (7-bit; 0x20 is the 8-bit write address)
     ("camera", 0x3c),   # OV5640 SCCB, camera rails
 )
 

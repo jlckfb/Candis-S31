@@ -598,10 +598,14 @@ static int command_i2c_scan(int argc, char **argv)
      * exactly one of 0x21/0x31 while BSP_POWER_TYPE_C_CONTROL is enabled;
      * it is expected to be silent after power_all_off. 0x31 means the
      * address strap mismatches the schematic and must be recorded. Devices
-     * behind switched rails (CST820 0x15/ALDO2, ES8389 0x20/ALDO3, OV5640
+     * behind switched rails (CST820 0x15/ALDO2, ES8389 0x10/ALDO3, OV5640
      * 0x3C/camera rails) may stay silent while their rail is off; silent
-     * while powered is a finding. This board has no VCM driver, so any other
-     * answer — including the 0x0C slot a VCM would use — is unexpected. */
+     * while powered is a finding. ES8389 answers at 7-bit 0x10 on the wire
+     * (AD0 and AD1 both strapped low: R63/R68 100kOhm pull-downs fitted,
+     * R62/R65 DNP); 0x20 is its 8-bit write address and is what
+     * esp_codec_dev and the BSP take (es8389_codec.h). This board has no
+     * VCM driver, so any other answer — including the 0x0C slot a VCM
+     * would use — is unexpected. */
     const bool fusb_21 = addresses[0x21];
     const bool fusb_31 = addresses[0x31];
     bool type_c_on = false;
@@ -641,7 +645,7 @@ static int command_i2c_scan(int argc, char **argv)
     if (power_known && touch_on && !addresses[0x15]) {
         missing |= 0x01;
     }
-    if (power_known && audio_on && !addresses[0x20]) {
+    if (power_known && audio_on && !addresses[0x10]) {
         missing |= 0x02;
     }
     if (power_known && camera_on && !addresses[0x3c]) {
@@ -649,7 +653,7 @@ static int command_i2c_scan(int argc, char **argv)
     }
     unsigned unexpected = 0;
     for (uint16_t address = 0x08; address <= 0x77; ++address) {
-        if (addresses[address] && address != 0x15 && address != 0x20 &&
+        if (addresses[address] && address != 0x15 && address != 0x10 &&
                 address != 0x21 && address != 0x31 && address != 0x3c) {
             ++unexpected;
         }
