@@ -1,1 +1,6 @@
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+# Match the Factory image's conservative bus settings. EVT1 is preview silicon
+# whose flash timing has not been measured, so the first runtime smoke target
+# must not be flashed faster than the diagnostic image it follows.
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_40M=y

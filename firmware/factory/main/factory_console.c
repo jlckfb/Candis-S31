@@ -313,17 +313,27 @@ static int command_ble_smoke(int argc, char **argv)
 
 #if CONFIG_BT_ENABLED
     esp_err_t error = factory_console_ensure_nvs();
+    printf("ble: nvs=%s, controller init\n", esp_err_to_name(error));
+    fflush(stdout);
+    esp_bt_controller_config_t config = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     if (error == ESP_OK) {
-        esp_bt_controller_config_t config = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
         error = esp_bt_controller_init(&config);
     }
+    printf("ble: init=%s, enable(BLE mode)\n", esp_err_to_name(error));
+    fflush(stdout);
     if (error == ESP_OK) {
         error = esp_bt_controller_enable(ESP_BT_MODE_BLE);
     }
+    printf("ble: enable=%s, disable\n", esp_err_to_name(error));
+    fflush(stdout);
     if (error == ESP_OK) {
         esp_bt_controller_disable();
+        printf("ble: disabled, deinit\n");
+        fflush(stdout);
     }
     esp_bt_controller_deinit();
+    printf("ble: deinit done\n");
+    fflush(stdout);
 
     if (error != ESP_OK) {
         char detail[96];

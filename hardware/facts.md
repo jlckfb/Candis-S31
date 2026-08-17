@@ -9,7 +9,7 @@ Functional rows only; power/ground pads summarized below the table.
 | pad | Signal | PCB net | Function / link |
 |---|---|---|---|
 | 1 | ANT | $3N276 | C5/L2 → RF matching; R1/R2 0Ω select one of RF1 IPEX / U3 ceramic antenna |
-| 2,3 | VDDA3/VDDA4 | $3N259 | Analog supply, C10/L3 decoupling |
+| 2,3 | VDDA3/VDDA4 | $3N259 | Analog supply, C11(1uF)+C1(100nF) decoupling via L1/L2(2nH/600mA); Espressif strongly recommends an added 10uF — missing on EVT |
 | 4 | CHIP_PU | ESP32S31_CHIP_PU | ←R28←D1←KEY_RST_N (TG28.29 PWROK); Q1.3 auto-download |
 | 5 | GPIO0 | GPIO0 | TF card detect (CARD1.CD) |
 | 6 | GPIO1 | FUSB303_EN_N | Type-C controller enable, active low |
@@ -31,14 +31,14 @@ Functional rows only; power/ground pads summarized below the table.
 | 25,26 | GPIO18/19 | ES8389_SCLK/LRCK | I2S BCLK/LRCK |
 | 27-29,31-33 | GPIO20-25 | GPIO20-25 | TF DAT0/DAT1/DAT2/DAT3/CLK/CMD |
 | 36-38,40-42 | SPI_* | QSPI_CS/DO/WP/HOLD/CLK/DI | via 0Ω array to U5 W25Q128 FLASH_* |
-| 39 | VDD_SPI | ESP32S31_VDD_SPI | ←R24 (0Ω) ←VCC_3V3_MAIN; U5.8 same net; R22 100kΩ pull-up FLASH_CS |
+| 39 | VDD_SPI | ESP32S31_VDD_SPI | Internally supplied **output**: VDD3P3 → internal POWER_SWITCH → RSPI ≈ 3Ω → pad 39 (datasheet Table 5-3). U5.8 (W25Q128 VCC) shares the net; decoupling C21/C26 100nF + C22/C27 1µF matches the design guide's required 0.1µF + 1µF. `R24` (0Ω from VCC_3V3_MAIN) and `R22` (100kΩ to FLASH_CS) are both **DNP, and correctly so** — see the DNP section |
 | 44,45 | USB_DP/DM | $3N245/$3N247 | via R23/R25 33Ω → ESP32S31_USB_DP/DM → USB2 A6/A7/B6/B7 (D5 ESD); physical pads, not GPIO44/45 |
 | 46,47 | GPIO33/34 | FUSB303_SCL/SDA | Main I2C SYSTEM_I2C; bus pull-ups R4/R5 2.2kΩ → VCC_3V3_MAIN |
 | 48 | GPIO35 | GPIO35 | via R59 (33Ω) → ES8389_MCLK |
-| 49 | GPIO36 | GPIO36 | TF_PWR_EN_N active low; R6 10kΩ pull-up = VDD_SPI strap high (3.3V) |
+| 49 | GPIO36 | GPIO36 | VDD_SPI voltage strap: R6 10kΩ pull-up = high = 3.3V. `R9` 10kΩ to GND is **DNP and must stay empty** (footprint is present). Also TF_PWR_EN_N active low, via R100 0Ω → Q5 gate |
 | 50 | GPIO37 | GPIO37 | JTAG_SEL strap, 10kΩ pull-up, no application load |
-| 51 | GPIO38 | GPIO38 | via R48 → LCD_VCI_EN_H → U14.1 (R49 pull-down) |
-| 52,53 | GPIO39/40 | CAM_RST_N/CAM_PWDN | Camera reset / power-down |
+| 51 | GPIO38 | GPIO38 | via R48 → LCD_VCI_EN_H → U14.1 (R49 pull-down). **Also Boot Mode select 0** (IDF `soc/esp32s31/register/soc/io_mux_reg.h`): held low by R49 through the reset sampling window, driven high only after the display rail is up |
+| 52,53 | GPIO39/40 | CAM_RST_N/CAM_PWDN | Camera reset / power-down. **Also Boot Mode select 1/2** (same IDF header): GPIO39 has R94 to GND, and GPIO40's R93 pulls to CAM_DOVDD_2V8_SW which is off at reset, so both sample low. Cold boot is therefore unaffected — GPIO60/61 supply the high MSB that selects SPI Boot (`boot_mode.h` `IS_1XXX`). Warm-reset behaviour while these pins are driven high must be measured |
 | 55 | GPIO42 | AUDIO_PA_EN_H | PA CTRL (100kΩ pull-down) |
 | 56 | GPIO43 | FUSB303_INT_N | Type-C interrupt, active low (100kΩ pull-up) |
 | 57 | GPIO44 | ES8389_ASDOUT | I2S record data; via R61 (0Ω) doubles as AD1 power-up config — must be Hi-Z/low while ALDO3 rises (BSP order: ALDO3 on first, then the I2S channel is created, so the pad is still in its reset Hi-Z state at rail rise; teardown deletes the I2S channel before dropping the rail) |
@@ -84,9 +84,36 @@ Power/ground pads: 11/43/54/64/77/80 = VCC_3V3_MAIN; 30/34/35 = ESP_LDO_1V8 (in-
 - CARD1 TF: 1=DAT2 2=DAT3 3=CMD 4=TF_VDD_3V3_SW 5=CLK 6=GND 7=DAT0 8=DAT1 CD=GPIO0 (GPIO20-25 mapping in U4 table)
 - USB1 (debug port): VBUS→U11 fuse→U12 TPS22917→TG28_VBUS; CC1/CC2 via R33/R34 5.1kΩ pull-down (D2/D4 ESD); D+/D-→CH343P UD+/UD-
 - USB2 (OTG): CC1/2→U17 FUSB303B; D+/D-→R23/R25→U4.44/45; VBUS=OTG_VBUS_5V (U16 ISL9113 boost; EN=OTG_BOOST_EN_SAFE from U15 SN74LVC1G58 wired as 2-input AND with one inverted input — U15.1 tied to VCC_3V3_MAIN selects the config, U15.3=GPIO45 (R40 100kΩ pull-down), U15.6=FUSB303_SOURCE_OK_N (R44 100kΩ pull-up), Y=U15.4 → Y = GPIO45 AND NOT(FUSB303_SOURCE_OK_N), R45 100kΩ pull-down on Y)
+- USB2 role strap as fabricated: U17.3 (`PORT/DEBUG_N`) is **floating**, because R41 and R42 are both DNP. FUSB303B Table 1: "Float = FUSB303B as a Dual Role Port (DRP)". So Type-C2 comes up as DRP, not Sink — reconcile this against the Source-before-boost and 500 mA-only policy during `typec_test`. R46 909kΩ → GND sets the address strap and matches the datasheet's ~900kΩ standby-current recommendation. `EN_N` (U17.11) rests at 3.3 V through R43 100kΩ in parallel with the device's internal ~6MΩ pull-up to VDD; onsemi FUSB303B **Rev.3** Table 4 rates these pins −0.5…6.0 V, superseding the erroneous 2.0 V `EN_N` row printed in Rev.2 (the copy kept in `其他IC资料/FUSB303B.pdf`)
 - U26 EXT GH1.25-4: 1=GND 2=3V3_EXT_SW 3=EXT_I2C_SDA 4=EXT_I2C_SCL (U27 = M2 mounting hole)
 - CN1 battery: 1=TG28_VBAT+ 2=GND; CN2 speaker: 1/2=U22.8/U22.5 (NS4150B differential output, neither side may be grounded)
 - Keys: SW1=KEY_PWRON_N (TG28.30); SW2=ESP32S31_BOOT (GPIO61); SW3 RESET→R101 (510Ω)→KEY_RST_N (TG28.29 PWROK)
+
+## DNP positions as fabricated (footprint present, part not fitted)
+
+The PCB_3 pad netlist above contains **every footprint, including unfitted
+ones**, so on its own it expresses design intent rather than the fitted
+circuit. Assembly state comes from the schematic BOM flag (`addIntoBom`); the
+calibration pair is `R63`/`R68` fitted against `R62`/`R65` unfitted. Eleven
+positions are unfitted on `v0.5_260803_1544`:
+
+| Ref | Page | Footprint | Value | Net path | Consequence when unfitted |
+|---|---|---|---|---|---|
+| R9 | esp32-s31 | R0201 | 10kΩ | GPIO36 → GND | **Required empty.** Leaves R6 as the only strap resistor, so GPIO36 = 3.3 V. Fitted, the strap would divide to ~1.65 V and be indeterminate |
+| R24 | esp32-s31 | R0201 | 0Ω | VCC_3V3_MAIN → ESP32S31_VDD_SPI | **Correct by design.** VDD_SPI is an output fed internally from VDD3P3 through RSPI ≈ 3Ω; an external link bypasses the internal power switch |
+| R22 | esp32-s31 | R0201 | 100kΩ | ESP32S31_VDD_SPI → FLASH_CS | **Correct.** Pad 36 SPICS is WPU at reset and WPU,IE after reset; R22 pulls to VDD_SPI itself, so it adds nothing |
+| R1 | esp32-s31 | R0201 | 0Ω | IPEX RF1 branch | Antenna select: the ceramic U3 branch (R2) is fitted, the IPEX branch is isolated |
+| L1 | esp32-s31 | L0201-RD | 2nH | RF shunt → GND | Shunt leg open. The series path still conducts, so the antenna radiates but the match is **untuned** — verify by VNA against S11 ≈ 40+j0, S21 < −35 dB @ 4.8/7.2 GHz |
+| C74 | display | C0603 | 22µF | LCD_VBAT → GND | LCD_VBAT bulk falls from 32.1µF to 10.1µF (−69%). Less inrush margin on first panel light-up; keep the `display_brightness 30` first step |
+| R62 | audio | R0201 | 100kΩ | ES8389_AD0 → AUDIO_3V3_SW | Intended: R63 pull-down decides AD0 = 0 |
+| R65 | audio | R0201 | 100kΩ | ES8389_AD1 → AUDIO_3V3_SW | Intended: R68 pull-down decides AD1 = 0 |
+| R41 | usb-c2-otg | R0201 | 10kΩ | U17.3 → VCC_3V3_MAIN | See R42 |
+| R42 | usb-c2-otg | R0201 | 10kΩ | U17.3 → GND | Together with R41 unfitted, U17.3 floats → FUSB303B resolves as **DRP** (Table 1). Confirm during `typec_test` |
+| C36 | power | C0603 | 22µF | — | No footprint in PCB_3 (`addIntoPcb=false`): schematic-only residue, no electrical effect |
+
+Incoming inspection must confirm the ten PCB-present positions are genuinely
+empty. A wrongly fitted `R9` is the one that blocks boot: GPIO36 would sit near
+1.65 V, and erratum SPI-855 forbids booting a v0.0 die with 1.8 V VDD_SPI.
 
 ## Expected I2C addresses
 

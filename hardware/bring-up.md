@@ -10,7 +10,7 @@ Perform on at least two boards from the lot before any power is applied:
 - Inspect QFN soldering (U4, U6) visually or by AOI for bridges, voids, and orientation.
 - Measure every power rail's resistance to GND and check for rail-to-rail shorts before energizing.
 - Confirm the battery connector (CN1) polarity marking against the cable.
-- Diode-check D1 direction with a meter: KEY_RST_N (TG28 pin 29) must conduct toward CHIP_PU.
+- Diode-check D1 (BAS70WS) by **pin number, not by signal direction**: pin 1 is the cathode (K) on `KEY_RST_N`, pin 2 is the anode (A) that reaches `CHIP_PU` through R28 (0Ω). A forward drop appears with the red probe on pin 2 and the black probe on pin 1; the opposite probe order must read open. That open reading is the blocking direction, **not** a defect — do not rework D1 for it. The orientation is functionally correct: when TG28 PWROK (`KEY_RST_N`, pin 29) goes low the diode forward-biases and pulls `CHIP_PU` down, and when PWROK is high the diode blocks so R7 (10kΩ) holds `CHIP_PU` at 3.3 V.
 - Confirm U14 BTB and FPC1 contact-face orientation before mating the display and camera.
 - Check for unintended continuity between CC1/CC2 and VBUS on both Type-C connectors.
 
@@ -211,11 +211,15 @@ completed — one checklist per physical board.
 
 ### Incoming inspection (at least two boards)
 
-- [ ] Board revision, silkscreen, BOM substitutions, and DNP placements confirmed against the fabrication package
+- [ ] Board revision, silkscreen, and BOM substitutions confirmed against the fabrication package
+- [ ] All ten PCB-present DNP positions confirmed genuinely empty (table in [`facts.md`](facts.md), "DNP positions as fabricated"): `R9` `R22` `R24` `R1` `L1` (esp32-s31/RF), `C74` (display), `R62` `R65` (audio), `R41` `R42` (usb-c2-otg). All are 0201 except `C74` 0603
+- [ ] `R9` verified empty **visually** (0201 pad on the esp32-s31 side) — this is the one DNP that blocks boot. Do not try to prove it with an ohmmeter: with power off, GPIO36-to-GND reads ~10 kΩ through R9 if fitted, but also reads R6 10 kΩ in series with an unknown powered-down rail impedance if it is not, so the two cases are not separable. The decisive test is the powered VDD_SPI/GPIO36 voltage check in the first power-on section below
+- [ ] `R24` and `R22` verified empty visually, and understood as correct-by-design rather than defects: VDD_SPI is an internally supplied output. Do not "repair" them. An ohmmeter cannot confirm `R24` either — the SoC's internal VDD3P3-to-VDD_SPI path (RSPI ≈ 3Ω, datasheet Table 5-3) bridges the same two nodes
+- [ ] `R41`/`R42` verified empty. Here a meter does discriminate: with both unfitted, U17.3 to GND and to VCC_3V3_MAIN is only the 3-state pin's own leakage, so expect a high reading (MΩ or open), never ~10 kΩ. A 10 kΩ reading means one of the two got fitted and the Type-C2 role strap is no longer float. The datasheet's `Zfloat` row is the *detection threshold* — impedance to VDD or GND of roughly 1-4 MΩ is still read as FLOAT — which is exactly why neither divider leg may be present
 - [ ] QFN soldering (U4, U6) inspected for bridges, voids, and orientation
 - [ ] Rail-to-GND resistances and rail-to-rail short checks recorded
 - [ ] Battery connector (CN1) polarity confirmed
-- [ ] D1 direction diode-checked: KEY_RST_N conducts toward CHIP_PU
+- [ ] D1 (BAS70WS) diode-checked by pin number: forward drop with red probe on pin 2 (anode, `CHIP_PU` side via R28) and black on pin 1 (cathode, `KEY_RST_N`); reverse reads open. An open reading with red on `KEY_RST_N` is expected, not a defect
 - [ ] U14 BTB and FPC1 contact-face orientation confirmed before mating
 - [ ] No unintended continuity between CC1/CC2 and VBUS on either Type-C connector
 
@@ -224,11 +228,13 @@ completed — one checklist per physical board.
 - [ ] Gate 1: first power-up without a lithium cell, charging kept off; TG28 vendor written confirmations received (DCDC4 floating, NTC, PWROK, VBUS wake)
 - [ ] Gate 2: DCDC4 rail behavior scoped across ROM download / bootloader failure / crash windows; accepted against vendor written conclusion
 - [ ] Current-limited supply set; charger, PMIC, and off-state rails validated before enabling large loads
-- [ ] 3.3 V, VRTC, VDD_SPI, PSRAM rail, and `CHIP_PU` measured and recorded
+- [ ] 3.3 V, VRTC, PSRAM rail, and `CHIP_PU` measured and recorded
+- [ ] VDD_SPI measured at U4 pad 39 and U5 pin 8 (same net) after reset release: expect **~3.2-3.3 V**, supplied internally through RSPI ≈ 3Ω. A 1.8 V reading means GPIO36 sampled low (check `R9`/`R6`) and boot will fail; 0 V with the rest of the board powered means the internal switch never opened — stop and fix the power tree before trusting flash
 - [ ] Flash access and the 40 MHz clock confirmed
 - [ ] RTC, display, audio, camera, TF card, and RGB added one subsystem at a time
 - [ ] Voltage, ripple, inrush, steady current, temperature, and off-state voltage recorded for every controlled rail
 - [ ] Type-C2 source behavior tested last
+- [ ] Boot-mode strap interaction recorded: GPIO38/39/40 are Boot Mode select 0/1/2 and are also `LCD_VCI_EN` / `CAM_RST_N` / `CAM_PWDN`. Cold boot is safe (all three sample low, GPIO60/61 supply the high MSB), but confirm a **warm reset / `reboot` while the display and camera rails are on** still enters SPI Boot and that ROM download mode is still reachable in that state
 
 ### Factory tests (manual order)
 

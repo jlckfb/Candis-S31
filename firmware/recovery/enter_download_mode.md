@@ -11,14 +11,35 @@ OTG connector and is not the programming port.
 3. Run `esptool` with `--before default-reset`. The CH343P DTR/RTS download
    circuit should assert reset and the GPIO61 boot strap automatically.
 4. Confirm `esptool --chip esp32s31 --port PORT chip-id` identifies the ROM
-   loader; this is the evidence that the reset sampled GPIO61 low and GPIO60
-   high enough to enter the valid Joint Download mode.
+   loader. A successful `chip-id` is the evidence that download mode was
+   entered; do **not** record which strap levels produced it, because the
+   exact strap bit order is not yet settled. ESP-IDF `v6.1-beta1` labels
+   GPIO60/GPIO61 as "Boot Mode select 3/4" in
+   `soc/esp32s31/register/soc/io_mux_reg.h`, while `soc/boot_mode.h` `IS_00XX`
+   tests bits 2-3 for download and the `GPIO_STRAP_REG` field comment in
+   `soc/esp32s31/register/soc/gpio_reg.h` still carries another chip's pin
+   names plus a "need update the description" note. Capture the levels with a
+   scope if the mapping matters for a report.
 5. Pass explicit `0 1` GPIO61 assertions to `flash_factory.sh`: `0` is the
    observed download-reset level, while `1` is the required post-write run
    level. The script refuses to write without both assertions.
 
 Record whether automatic entry worked. DTR/RTS polarity and reset timing must
 still be confirmed on EVT1.
+
+## Boot-mode straps shared with board functions
+
+GPIO38/GPIO39/GPIO40 are labelled "Boot Mode select 0/1/2" by the same IDF
+header, and this board also uses them as `LCD_VCI_EN_H`, `CAM_RST_N`, and
+`CAM_PWDN`. From a cold start all three sit low (R49 and R94 to GND; R93 pulls
+to `CAM_DOVDD_2V8_SW`, which is off), so a power-on entry is unaffected.
+
+The hazard is a **warm** entry: if the firmware has already brought the display
+or camera rails up, it drives those pins high, and a reset taken in that state
+may sample a different boot mode. If automatic entry fails on a board that was
+running display or camera tests, remove power so every switched rail collapses
+and the pins return to their resistor-defined levels, then retry from a cold
+start before concluding the ROM path is broken.
 
 ## Manual BOOT-key sequence
 

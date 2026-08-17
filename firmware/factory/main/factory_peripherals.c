@@ -110,6 +110,28 @@ static int command_pmic(int argc, char **argv)
         }
         return error;
     }
+    if (argc == 2 && strcmp(argv[1], "power_off_source") == 0) {
+        /* REG21 survives while the TG28 stays supplied: after an unexpected
+         * power cut, revive with the PWRON key (never unplug VBUS) and read
+         * this before any power cycle to attribute the shutdown. */
+        uint8_t source = 0;
+        const esp_err_t error = bsp_pmic_get_power_off_source(&source);
+        if (error == ESP_OK) {
+            printf("power_off_source=0x%02x\n", source);
+        }
+        return error;
+    }
+    if (argc == 2 && strcmp(argv[1], "irq_snapshot") == 0) {
+        uint8_t status[3] = {0};
+        bool valid = false;
+        const esp_err_t error = bsp_pmic_get_boot_irq_snapshot(status, &valid);
+        if (error == ESP_OK) {
+            printf("boot_irq_snapshot=0x%02x 0x%02x 0x%02x (%s)\n",
+                   status[0], status[1], status[2],
+                   valid ? "captured at boot, pre-clear" : "no snapshot");
+        }
+        return error;
+    }
     if (argc == 2 && strcmp(argv[1], "temperature") == 0) {
         /* EVT1 has no battery NTC: the TS pin is a fixed input. TDIE is the
          * die-temperature sensor voltage (not degC); watch its trend during
@@ -147,16 +169,20 @@ static int command_pmic(int argc, char **argv)
             char *end = NULL;
             const long milliamps = strtol(argv[2], &end, 10);
             const bool safe_default = argc == 3 && milliamps == 100;
-            const bool verified_500 = argc == 4 && milliamps == 500 &&
-                                      strcmp(argv[3], "source_verified") == 0;
+            const bool known_level = milliamps == 500 || milliamps == 900 ||
+                                     milliamps == 1000 || milliamps == 1500 ||
+                                     milliamps == 2000;
+            const bool verified_high = argc == 4 && known_level &&
+                                       strcmp(argv[3], "source_verified") == 0;
             if (end == argv[2] || *end != '\0' ||
-                    (!safe_default && !verified_500)) {
-                printf("usage: pmic input_limit [100 | 500 source_verified]\n");
+                    (!safe_default && !verified_high)) {
+                printf("usage: pmic input_limit [100 | {500|900|1000|1500|2000} source_verified]\n");
                 return ESP_ERR_INVALID_ARG;
             }
-            if (verified_500) {
-                printf("WARNING: 500 mA requires a verified Type-C1 source, "
-                       "current probe, and weak-source voltage check\n");
+            if (verified_high) {
+                printf("WARNING: %ld mA requires a verified Type-C1 source, "
+                       "current probe, and weak-source voltage check\n",
+                       milliamps);
             }
             error = bsp_pmic_set_input_current_limit((uint16_t)milliamps);
         }
@@ -195,7 +221,7 @@ static int command_pmic(int argc, char **argv)
         }
         return error;
     }
-    printf("usage: pmic power_on_source | pmic input_limit [100 | 500 source_verified] | pmic charge_current [MILLIAMPS] | pmic temperature\n");
+    printf("usage: pmic power_on_source | pmic power_off_source | pmic irq_snapshot | pmic input_limit [100 | {500|900|1000|1500|2000} source_verified] | pmic charge_current [MILLIAMPS] | pmic temperature\n");
     return ESP_ERR_INVALID_ARG;
 }
 
@@ -230,8 +256,11 @@ static int command_charge_test(int argc, char **argv)
 
     factory_status_t result;
     char detail[96];
-    if (input_limit != BSP_PMIC_SAFE_INPUT_CURRENT_LIMIT_MA &&
-            !(verified_500 && input_limit == 500)) {
+    const bool limit_is_baseline = input_limit == BSP_PMIC_SAFE_INPUT_CURRENT_LIMIT_MA;
+    const bool limit_is_verified = verified_500 &&
+            (input_limit == 500 || input_limit == 900 || input_limit == 1000 ||
+             input_limit == 1500 || input_limit == 2000);
+    if (!limit_is_baseline && !limit_is_verified) {
         result = FACTORY_STATUS_FAIL;
         snprintf(detail, sizeof(detail),
                  "unverified input limit=%u mA (expected %u mA)",
