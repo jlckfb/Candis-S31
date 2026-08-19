@@ -234,12 +234,12 @@ completed — one checklist per physical board.
 - [ ] RTC, display, audio, camera, TF card, and RGB added one subsystem at a time
 - [ ] Voltage, ripple, inrush, steady current, temperature, and off-state voltage recorded for every controlled rail
 - [ ] Type-C2 source behavior tested last
-- [ ] Boot-mode strap interaction recorded: GPIO38/39/40 are Boot Mode select 0/1/2 and are also `LCD_VCI_EN` / `CAM_RST_N` / `CAM_PWDN`. Cold boot is safe (all three sample low, GPIO60/61 supply the high MSB), but confirm a **warm reset / `reboot` while the display and camera rails are on** still enters SPI Boot and that ROM download mode is still reachable in that state
+- [ ] Boot-mode straps checked using both official scopes: datasheet v0.5 exposes GPIO36/37/60/61, while ESP-IDF GPIO docs/io_mux additionally label GPIO38/39/40 as secondary Boot Mode select 0/1/2. Do not infer a normal warm-reset risk from GPIO38/39/40: they are don't-care for documented SPI Boot (GPIO61=1) and Joint Download (GPIO61=0, GPIO60=1). R18/R19 pull GPIO60/61 high for default SPI Boot. Scope GPIO61 through CHIP_PU release (hold at least 3 ms), confirm Joint Download with GPIO61 low/GPIO60 high, and record raw `boot:0xNN`/`GPIO_STRAP_REG` if an undocumented combination is suspected
 
 ### Factory tests (manual order)
 
 - [ ] `board_info`, `power_status`, `flash_test`, `psram_test` with no external load
-- [ ] `i2c_scan lp`, `pmic_test`, `pmic power_on_source`, plain `charge_test` at the 100 mA safe input baseline, and `rtc_test`; battery/VBUS cross-checked with a meter; `pmic charge_current` confirmed at 50 mA; RTC set + power-cycle retention check. For the instrumented high-current step only: verify source/cable and VBUS first, run `pmic input_limit 500 source_verified`, then `charge_test source_verified`, and restore `pmic input_limit 100`
+- [ ] `i2c_scan lp`, `pmic_test`, `pmic power_on_source`, `charge_test source_verified`, and `rtc_test`; verify the source/cable and VBUS before the load step, record the firmware-default `input_limit=500mA` (no manual raise/restore), cross-check battery/VBUS with a meter, confirm the charger current remains the agreed 50 mA, and check RTC set + power-cycle retention
 - [ ] `rtc_alarm` and `buttons` exercised; shared GPIO2 released after each event
 - [ ] `i2c_scan main` in the boot safe state records FUSB303B and switched devices silent; then `typec_test` without cable and with known sink/source fixtures, followed by `type_c_power_scan`/`i2c_scan main` proving only 0x21 while the Type-C control domain is on
 - [ ] Each optional rail measured on and off with `peripheral_power`; enable EXT pin 2 only as `peripheral_power external_3v3 on output_only`, with every self-powered load disconnected
