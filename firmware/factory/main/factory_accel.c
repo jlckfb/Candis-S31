@@ -619,6 +619,55 @@ static int command_asrc_test(int argc, char **argv)
 }
 #endif
 
+static int command_accel_test(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+
+    static const char *const commands[] = {
+        "jpeg_encode_test 10 80",
+        "cordic_test 256",
+        "ppa_srm_test 10",
+        "bitscrambler_test 10",
+        "asrc_test 10",
+    };
+    static const char *const names[] = {
+        "jpeg",
+        "cordic",
+        "ppa",
+        "bitscrambler",
+        "asrc",
+    };
+
+    uint32_t failure_mask = 0;
+    esp_err_t first_error = ESP_OK;
+    for (size_t index = 0; index < sizeof(commands) / sizeof(commands[0]);
+         ++index) {
+        printf("accel: running %s\n", names[index]);
+        int command_result = 0;
+        const esp_err_t run_result = esp_console_run(commands[index],
+                                                       &command_result);
+        if (run_result != ESP_OK || command_result != ESP_OK) {
+            failure_mask |= 1U << index;
+            if (first_error == ESP_OK) {
+                first_error = run_result != ESP_OK ? run_result :
+                                                     (esp_err_t)command_result;
+            }
+        }
+    }
+
+    char detail[FACTORY_DETAIL_LENGTH];
+    snprintf(detail, sizeof(detail),
+             "failures=%" PRIu32 " mask=0x%" PRIx32,
+             (uint32_t)__builtin_popcount(failure_mask), failure_mask);
+    factory_report_set(FACTORY_TEST_ACCEL,
+                       failure_mask == 0 ? FACTORY_STATUS_PASS :
+                                           FACTORY_STATUS_FAIL,
+                       detail);
+    factory_report_print_one(FACTORY_TEST_ACCEL);
+    return failure_mask == 0 ? ESP_OK : first_error;
+}
+
 esp_err_t factory_accel_register(void)
 {
     esp_err_t error = ESP_OK;
@@ -673,6 +722,15 @@ esp_err_t factory_accel_register(void)
         .func = command_asrc_test,
     };
     error = esp_console_cmd_register(&asrc_command);
+    if (error != ESP_OK) {
+        return error;
+    }
 #endif
+    const esp_console_cmd_t accel_command = {
+        .command = "accel_test",
+        .help = "Run JPEG, CORDIC, PPA, BitScrambler, and ASRC hardware diagnostics.",
+        .func = command_accel_test,
+    };
+    error = esp_console_cmd_register(&accel_command);
     return error;
 }

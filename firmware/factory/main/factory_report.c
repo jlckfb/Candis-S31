@@ -55,6 +55,7 @@ static factory_result_t s_results[FACTORY_TEST_COUNT] = {
     [FACTORY_TEST_PPA] = {.name = "ppa"},
     [FACTORY_TEST_BITSCRAMBLER] = {.name = "bitscrambler"},
     [FACTORY_TEST_ASRC] = {.name = "asrc"},
+    [FACTORY_TEST_ACCEL] = {.name = "accel"},
     [FACTORY_TEST_CHARGE] = {.name = "charge"},
     [FACTORY_TEST_RTC_ALARM] = {.name = "rtc_alarm"},
     [FACTORY_TEST_BUTTONS] = {.name = "buttons"},

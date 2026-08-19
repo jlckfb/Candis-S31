@@ -87,6 +87,7 @@ absolute path is stored in the repository.
 | `ppa_srm_test [COUNT]` | Benchmark a hardware PPA 90-degree RGB565 rotation and verify every output pixel | No, hardware PPA |
 | `bitscrambler_test [COUNT]` | Verify and benchmark a BitScrambler 64-bit transpose program | No, hardware BitScrambler |
 | `asrc_test [COUNT]` | Benchmark hardware ASRC conversion from 16 kHz mono to 48 kHz stereo | No, hardware ASRC |
+| `accel_test` | Run all hardware accelerator diagnostics: JPEG, CORDIC, PPA, BitScrambler, and ASRC | No, hardware accelerators |
 | `mark TEST pass\|fail\|skip [detail]` | Record an operator result; details may contain spaces | Report only |
 | `report` | Print every result and a JSON summary | No |
 | `report_reset` | Return every collected result to `NOT_RUN` while retaining the most recent safe-state result | Report only |
