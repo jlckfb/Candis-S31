@@ -6,6 +6,9 @@
 
 #include "esp_err.h"
 
+/** Default timeout for yes/no operator prompts issued by test commands. */
+#define OPERATOR_PROMPT_TIMEOUT_S 30
+
 /** Register Factory commands and start the standard I/O console. */
 esp_err_t factory_console_start(void);
 

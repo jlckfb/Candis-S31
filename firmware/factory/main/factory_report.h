@@ -73,3 +73,12 @@ factory_test_id_t factory_report_find(const char *name);
 
 /** Print one string as an escaped JSON string literal, quotes included. */
 void factory_report_print_json_string(const char *value);
+
+/** Record a FAIL result whose detail is "action: error-name" and print it. */
+void factory_report_error(factory_test_id_t test, esp_err_t error, const char *action);
+
+/** File an operator yes/no/skip answer as PASS/FAIL/NOT_RUN and print it. */
+void factory_report_operator_verdict(factory_test_id_t test, char answer,
+                                     const char *pass_detail,
+                                     const char *fail_detail,
+                                     const char *pending_detail);

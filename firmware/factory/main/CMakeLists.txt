@@ -1,9 +1,19 @@
 idf_component_register(
     SRCS
         "factory_main.c"
+        "factory_audio.c"
+        "factory_camera.c"
         "factory_console.c"
+        "factory_diag.c"
+        "factory_display.c"
+        "factory_input.c"
         "factory_peripherals.c"
+        "factory_power.c"
         "factory_report.c"
+        "factory_rtc.c"
+        "factory_storage.c"
+        "factory_touch.c"
+        "factory_usb.c"
     INCLUDE_DIRS "."
     REQUIRES
         candis_s31

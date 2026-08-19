@@ -269,3 +269,26 @@ factory_test_id_t factory_report_find(const char *name)
     }
     return FACTORY_TEST_COUNT;
 }
+
+void factory_report_error(factory_test_id_t test, esp_err_t error, const char *action)
+{
+    char detail[96];
+    snprintf(detail, sizeof(detail), "%s: %s", action, esp_err_to_name(error));
+    factory_report_set(test, FACTORY_STATUS_FAIL, detail);
+    factory_report_print_one(test);
+}
+
+void factory_report_operator_verdict(factory_test_id_t test, char answer,
+                                     const char *pass_detail,
+                                     const char *fail_detail,
+                                     const char *pending_detail)
+{
+    if (answer == 'y') {
+        factory_report_set(test, FACTORY_STATUS_PASS, pass_detail);
+    } else if (answer == 'n') {
+        factory_report_set(test, FACTORY_STATUS_FAIL, fail_detail);
+    } else {
+        factory_report_set(test, FACTORY_STATUS_NOT_RUN, pending_detail);
+    }
+    factory_report_print_one(test);
+}
