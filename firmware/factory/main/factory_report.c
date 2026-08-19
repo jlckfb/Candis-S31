@@ -52,6 +52,7 @@ static factory_result_t s_results[FACTORY_TEST_COUNT] = {
     [FACTORY_TEST_CAMERA] = {.name = "camera"},
     [FACTORY_TEST_JPEG] = {.name = "jpeg"},
     [FACTORY_TEST_CORDIC] = {.name = "cordic"},
+    [FACTORY_TEST_PPA] = {.name = "ppa"},
     [FACTORY_TEST_CHARGE] = {.name = "charge"},
     [FACTORY_TEST_RTC_ALARM] = {.name = "rtc_alarm"},
     [FACTORY_TEST_BUTTONS] = {.name = "buttons"},

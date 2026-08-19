@@ -84,6 +84,7 @@ absolute path is stored in the repository.
 | `camera_test` | Capture five DVP frames and verify frame size, non-blank content, and frame-to-frame change; each frame wait is bounded by a 3 s timeout | Yes |
 | `jpeg_encode_test [COUNT] [QUALITY]` | Benchmark the S31 hardware JPEG encoder with a synthetic 800x600 RGB565 frame | No, hardware JPEG codec |
 | `cordic_test [COUNT]` | Compare hardware CORDIC sine/cosine output with software math and report timing | No, hardware CORDIC |
+| `ppa_srm_test [COUNT]` | Benchmark a hardware PPA 90-degree RGB565 rotation and verify every output pixel | No, hardware PPA |
 | `mark TEST pass\|fail\|skip [detail]` | Record an operator result; details may contain spaces | Report only |
 | `report` | Print every result and a JSON summary | No |
 | `report_reset` | Return every collected result to `NOT_RUN` while retaining the most recent safe-state result | Report only |

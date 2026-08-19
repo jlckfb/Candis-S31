@@ -27,6 +27,7 @@ idf_component_register(
         esp_phy
         esp_driver_jpeg
         esp_driver_cordic
+        esp_driver_ppa
         esp_psram
         esp_timer
         esp_wifi

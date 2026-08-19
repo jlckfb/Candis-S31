@@ -11,6 +11,7 @@
 
 #include "driver/jpeg_encode.h"
 #include "driver/cordic.h"
+#include "driver/ppa.h"
 #include "esp_console.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
@@ -138,6 +139,138 @@ static int command_jpeg_encode_test(int argc, char **argv)
 }
 #endif
 
+#if SOC_PPA_SUPPORTED
+#define PPA_TEST_WIDTH   800
+#define PPA_TEST_HEIGHT  600
+#define PPA_BUFFER_ALIGN 64
+
+static uint16_t ppa_test_pixel(uint32_t x, uint32_t y)
+{
+    const uint16_t red = (x * 31U) / PPA_TEST_WIDTH;
+    const uint16_t green = (y * 63U) / PPA_TEST_HEIGHT;
+    const uint16_t blue = ((x + y) * 31U) /
+                          (PPA_TEST_WIDTH + PPA_TEST_HEIGHT);
+    return (uint16_t)((red << 11) | (green << 5) | blue);
+}
+
+static int command_ppa_srm_test(int argc, char **argv)
+{
+    uint32_t count = 10;
+    if (argc > 2 ||
+            (argc == 2 && !parse_accel_u32(argv[1], 1, 100, &count))) {
+        printf("usage: ppa_srm_test [COUNT 1-100]\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const size_t input_size = PPA_TEST_WIDTH * PPA_TEST_HEIGHT *
+                              sizeof(uint16_t);
+    const size_t output_size = (input_size + PPA_BUFFER_ALIGN - 1) /
+                               PPA_BUFFER_ALIGN * PPA_BUFFER_ALIGN;
+    uint16_t *input = heap_caps_aligned_calloc(4, input_size,
+                                               sizeof(uint8_t),
+                                               MALLOC_CAP_SPIRAM |
+                                               MALLOC_CAP_DMA);
+    uint16_t *output = heap_caps_aligned_calloc(4, output_size,
+                                                sizeof(uint8_t),
+                                                MALLOC_CAP_SPIRAM |
+                                                MALLOC_CAP_DMA);
+    if (input == NULL || output == NULL) {
+        heap_caps_free(input);
+        heap_caps_free(output);
+        factory_report_error(FACTORY_TEST_PPA, ESP_ERR_NO_MEM,
+                             "ppa buffer alloc");
+        return ESP_ERR_NO_MEM;
+    }
+
+    for (uint32_t y = 0; y < PPA_TEST_HEIGHT; ++y) {
+        for (uint32_t x = 0; x < PPA_TEST_WIDTH; ++x) {
+            input[y * PPA_TEST_WIDTH + x] = ppa_test_pixel(x, y);
+        }
+    }
+
+    ppa_client_handle_t client = NULL;
+    const ppa_client_config_t client_config = {
+        .oper_type = PPA_OPERATION_SRM,
+        .max_pending_trans_num = 1,
+    };
+    esp_err_t result = ppa_register_client(&client_config, &client);
+    const ppa_srm_oper_config_t operation = {
+        .in = {
+            .buffer = input,
+            .pic_w = PPA_TEST_WIDTH,
+            .pic_h = PPA_TEST_HEIGHT,
+            .block_w = PPA_TEST_WIDTH,
+            .block_h = PPA_TEST_HEIGHT,
+            .block_offset_x = 0,
+            .block_offset_y = 0,
+            .srm_cm = PPA_SRM_COLOR_MODE_RGB565,
+        },
+        .out = {
+            .buffer = output,
+            .buffer_size = output_size,
+            .pic_w = PPA_TEST_HEIGHT,
+            .pic_h = PPA_TEST_WIDTH,
+            .block_offset_x = 0,
+            .block_offset_y = 0,
+            .srm_cm = PPA_SRM_COLOR_MODE_RGB565,
+        },
+        .rotation_angle = PPA_SRM_ROTATION_ANGLE_90,
+        .scale_x = 1.0f,
+        .scale_y = 1.0f,
+        .mirror_x = false,
+        .mirror_y = false,
+        .rgb_swap = false,
+        .byte_swap = false,
+        .mode = PPA_TRANS_MODE_BLOCKING,
+    };
+
+    const int64_t start_us = esp_timer_get_time();
+    for (uint32_t index = 0; result == ESP_OK && index < count; ++index) {
+        result = ppa_do_scale_rotate_mirror(client, &operation);
+    }
+    const int64_t total_us = esp_timer_get_time() - start_us;
+
+    uint32_t mismatch_count = 0;
+    for (uint32_t y = 0; result == ESP_OK && y < PPA_TEST_WIDTH; ++y) {
+        for (uint32_t x = 0; x < PPA_TEST_HEIGHT; ++x) {
+            const uint16_t expected = ppa_test_pixel(
+                PPA_TEST_WIDTH - 1 - y, x);
+            if (output[y * PPA_TEST_HEIGHT + x] != expected) {
+                ++mismatch_count;
+            }
+        }
+    }
+
+    if (client != NULL) {
+        const esp_err_t unregister_result = ppa_unregister_client(client);
+        if (result == ESP_OK) {
+            result = unregister_result;
+        }
+    }
+    heap_caps_free(input);
+    heap_caps_free(output);
+
+    const uint64_t pixels = (uint64_t)count * PPA_TEST_WIDTH *
+                            PPA_TEST_HEIGHT;
+    const uint32_t average_us = count == 0 ? 0 :
+        (uint32_t)(total_us / count);
+    const uint32_t megapixels_per_second = total_us == 0 ? 0 :
+        (uint32_t)(pixels * 1000000ULL / total_us / 1000000ULL);
+    const bool passed = result == ESP_OK && mismatch_count == 0;
+
+    char detail[FACTORY_DETAIL_LENGTH];
+    snprintf(detail, sizeof(detail),
+             "800x600 rot90 count=%" PRIu32 " avg_us=%" PRIu32
+             " mpps=%" PRIu32 " mismatch=%" PRIu32,
+             count, average_us, megapixels_per_second, mismatch_count);
+    factory_report_set(FACTORY_TEST_PPA,
+                       passed ? FACTORY_STATUS_PASS : FACTORY_STATUS_FAIL,
+                       detail);
+    factory_report_print_one(FACTORY_TEST_PPA);
+    return passed ? ESP_OK : (result != ESP_OK ? result : ESP_FAIL);
+}
+#endif
+
 #if SOC_CORDIC_SUPPORTED
 static int command_cordic_test(int argc, char **argv)
 {
@@ -259,13 +392,14 @@ static int command_cordic_test(int argc, char **argv)
 
 esp_err_t factory_accel_register(void)
 {
+    esp_err_t error = ESP_OK;
 #if SOC_JPEG_CODEC_SUPPORTED
     const esp_console_cmd_t jpeg_command = {
         .command = "jpeg_encode_test",
         .help = "Benchmark hardware JPEG encoding of a synthetic 800x600 RGB565 frame.",
         .func = command_jpeg_encode_test,
     };
-    const esp_err_t error = esp_console_cmd_register(&jpeg_command);
+    error = esp_console_cmd_register(&jpeg_command);
     if (error != ESP_OK) {
         return error;
     }
@@ -276,8 +410,18 @@ esp_err_t factory_accel_register(void)
         .help = "Compare and benchmark the hardware CORDIC sine/cosine path.",
         .func = command_cordic_test,
     };
-    return esp_console_cmd_register(&cordic_command);
-#else
-    return ESP_OK;
+    error = esp_console_cmd_register(&cordic_command);
+    if (error != ESP_OK) {
+        return error;
+    }
 #endif
+#if SOC_PPA_SUPPORTED
+    const esp_console_cmd_t ppa_command = {
+        .command = "ppa_srm_test",
+        .help = "Benchmark a hardware PPA 90-degree RGB565 rotation.",
+        .func = command_ppa_srm_test,
+    };
+    error = esp_console_cmd_register(&ppa_command);
+#endif
+    return error;
 }
