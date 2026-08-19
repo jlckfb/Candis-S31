@@ -1,3 +1,4 @@
 dependencies:
   idf: ">=5.3"
   espressif/usb_host_msc: "^1.1.4"
+  espressif/esp_asrc: "~1.1"

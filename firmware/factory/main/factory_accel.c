@@ -13,6 +13,7 @@
 #include "driver/cordic.h"
 #include "driver/ppa.h"
 #include "driver/bitscrambler_loopback.h"
+#include "esp_asrc.h"
 #include "esp_console.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
@@ -496,6 +497,128 @@ static int command_bitscrambler_test(int argc, char **argv)
 }
 #endif
 
+#if SOC_ASRC_SUPPORTED
+static int command_asrc_test(int argc, char **argv)
+{
+    uint32_t count = 10;
+    if (argc > 2 ||
+            (argc == 2 && !parse_accel_u32(argv[1], 1, 100, &count))) {
+        printf("usage: asrc_test [COUNT 1-100]\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_asrc_handle_t asrc = NULL;
+    float weight[2] = {1.0f, 1.0f};
+    const esp_asrc_cfg_t config = {
+        .src_info = {
+            .sample_rate = 16000,
+            .channel = 1,
+            .bits_per_sample = 16,
+        },
+        .dest_info = {
+            .sample_rate = 48000,
+            .channel = 2,
+            .bits_per_sample = 16,
+        },
+        .weight = weight,
+        .weight_len = 2,
+        .perf_type = ESP_ASRC_PERF_TYPE_HW_ONLY,
+        .complexity = 1,
+        .timeout_ms = 1000,
+    };
+    esp_asrc_err_t result = esp_asrc_open((esp_asrc_cfg_t *)&config, &asrc);
+    if (result != ESP_ASRC_ERR_OK || asrc == NULL) {
+        factory_report_error(FACTORY_TEST_ASRC, result,
+                             "asrc open");
+        return result == ESP_ASRC_ERR_OK ? ESP_FAIL : result;
+    }
+
+    uint16_t in_sample_bytes = 0;
+    uint16_t out_sample_bytes = 0;
+    uint32_t expected_out_samples = 0;
+    result = esp_asrc_get_bytes_per_sample(asrc, &in_sample_bytes,
+                                           &out_sample_bytes);
+    if (result == ESP_ASRC_ERR_OK) {
+        result = esp_asrc_get_out_sample_num(asrc, 480,
+                                             &expected_out_samples);
+    }
+
+    esp_asrc_buffer_alignment_t alignment = {0};
+    if (result == ESP_ASRC_ERR_OK) {
+        result = esp_asrc_get_buffer_alignment(&alignment);
+    }
+
+    uint32_t allocated_in_size = 0;
+    uint32_t allocated_out_size = 0;
+    uint8_t *input = NULL;
+    uint8_t *output = NULL;
+    if (result == ESP_ASRC_ERR_OK) {
+        input = esp_asrc_align_alloc(480 * in_sample_bytes,
+                                     alignment.inbuf_addr_align,
+                                     alignment.inbuf_size_align,
+                                     &allocated_in_size);
+        output = esp_asrc_align_alloc(expected_out_samples * out_sample_bytes,
+                                      alignment.outbuf_addr_align,
+                                      alignment.outbuf_size_align,
+                                      &allocated_out_size);
+        if (input == NULL || output == NULL) {
+            result = ESP_ASRC_ERR_MEM_LACK;
+        }
+    }
+
+    if (result == ESP_ASRC_ERR_OK) {
+        int16_t *samples = (int16_t *)input;
+        for (uint32_t index = 0; index < 480; ++index) {
+            samples[index] = 0x4000;
+        }
+    }
+
+    uint32_t mismatch_count = 0;
+    uint32_t output_samples = 0;
+    const int64_t start_us = esp_timer_get_time();
+    for (uint32_t index = 0; result == ESP_ASRC_ERR_OK && index < count;
+         ++index) {
+        output_samples = allocated_out_size / out_sample_bytes;
+        result = esp_asrc_process(asrc, input, 480, output,
+                                  &output_samples);
+        if (result == ESP_ASRC_ERR_OK) {
+            const int16_t *stereo = (const int16_t *)output;
+            for (uint32_t sample = 0; sample < output_samples; ++sample) {
+                if (stereo[sample * 2] != stereo[sample * 2 + 1]) {
+                    ++mismatch_count;
+                }
+            }
+        }
+    }
+    const int64_t total_us = esp_timer_get_time() - start_us;
+
+    if (input != NULL) {
+        free(input);
+    }
+    if (output != NULL) {
+        free(output);
+    }
+    if (asrc != NULL) {
+        esp_asrc_close(asrc);
+    }
+
+    const uint32_t average_us = count == 0 ? 0 :
+        (uint32_t)(total_us / count);
+    const bool passed = result == ESP_ASRC_ERR_OK &&
+                        mismatch_count == 0 && output_samples > 0;
+    char detail[FACTORY_DETAIL_LENGTH];
+    snprintf(detail, sizeof(detail),
+             "16k1->48k2 count=%" PRIu32 " avg_us=%" PRIu32
+             " out=%" PRIu32 " mismatch=%" PRIu32,
+             count, average_us, output_samples, mismatch_count);
+    factory_report_set(FACTORY_TEST_ASRC,
+                       passed ? FACTORY_STATUS_PASS : FACTORY_STATUS_FAIL,
+                       detail);
+    factory_report_print_one(FACTORY_TEST_ASRC);
+    return passed ? ESP_OK : (result != ESP_ASRC_ERR_OK ? result : ESP_FAIL);
+}
+#endif
+
 esp_err_t factory_accel_register(void)
 {
     esp_err_t error = ESP_OK;
@@ -539,6 +662,17 @@ esp_err_t factory_accel_register(void)
         .func = command_bitscrambler_test,
     };
     error = esp_console_cmd_register(&bitscrambler_command);
+    if (error != ESP_OK) {
+        return error;
+    }
+#endif
+#if SOC_ASRC_SUPPORTED
+    const esp_console_cmd_t asrc_command = {
+        .command = "asrc_test",
+        .help = "Benchmark hardware ASRC 16 kHz mono to 48 kHz stereo conversion.",
+        .func = command_asrc_test,
+    };
+    error = esp_console_cmd_register(&asrc_command);
 #endif
     return error;
 }
