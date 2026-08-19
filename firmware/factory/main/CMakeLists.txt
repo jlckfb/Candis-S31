@@ -28,6 +28,7 @@ idf_component_register(
         esp_driver_jpeg
         esp_driver_cordic
         esp_driver_ppa
+        esp_driver_bitscrambler
         esp_psram
         esp_timer
         esp_wifi
@@ -38,6 +39,8 @@ idf_component_register(
         usb
         usb_host_msc
 )
+
+target_bitscrambler_add_src("factory_bitscrambler.bsasm")
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     CANDIS_S31_BSP_GIT_REV="${CANDIS_S31_BSP_GIT_REV}"

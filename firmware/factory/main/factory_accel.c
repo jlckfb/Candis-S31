@@ -12,6 +12,7 @@
 #include "driver/jpeg_encode.h"
 #include "driver/cordic.h"
 #include "driver/ppa.h"
+#include "driver/bitscrambler_loopback.h"
 #include "esp_console.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
@@ -390,6 +391,111 @@ static int command_cordic_test(int argc, char **argv)
 }
 #endif
 
+#if SOC_BITSCRAMBLER_SUPPORTED
+#define BITSCRAMBLER_TEST_SIZE 4096
+
+BITSCRAMBLER_PROGRAM(factory_bitscrambler_program, "factory_bitscrambler");
+
+static uint8_t bitscrambler_input_byte(uint32_t index)
+{
+    const uint32_t block = index / 8;
+    const uint32_t offset = index % 8;
+    return (uint8_t)(0x01U << offset) ^ (uint8_t)block;
+}
+
+static uint8_t bitscrambler_expected_byte(const uint8_t *input, uint32_t index)
+{
+    const uint32_t block = index / 8;
+    const uint32_t output_bit = index % 8;
+    uint8_t result = 0;
+    for (uint32_t input_byte = 0; input_byte < 8; ++input_byte) {
+        if ((input[block * 8 + input_byte] & (1U << output_bit)) != 0) {
+            result |= 1U << input_byte;
+        }
+    }
+    return result;
+}
+
+static int command_bitscrambler_test(int argc, char **argv)
+{
+    uint32_t count = 10;
+    if (argc > 2 ||
+            (argc == 2 && !parse_accel_u32(argv[1], 1, 100, &count))) {
+        printf("usage: bitscrambler_test [COUNT 1-100]\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint8_t *input = heap_caps_calloc(BITSCRAMBLER_TEST_SIZE,
+                                      sizeof(uint8_t), MALLOC_CAP_DMA);
+    uint8_t *output = heap_caps_calloc(BITSCRAMBLER_TEST_SIZE,
+                                       sizeof(uint8_t), MALLOC_CAP_DMA);
+    if (input == NULL || output == NULL) {
+        heap_caps_free(input);
+        heap_caps_free(output);
+        factory_report_error(FACTORY_TEST_BITSCRAMBLER, ESP_ERR_NO_MEM,
+                             "bitscrambler buffer alloc");
+        return ESP_ERR_NO_MEM;
+    }
+    for (uint32_t index = 0; index < BITSCRAMBLER_TEST_SIZE; ++index) {
+        input[index] = bitscrambler_input_byte(index);
+    }
+
+    bitscrambler_handle_t bitscrambler = NULL;
+    esp_err_t result = bitscrambler_loopback_create(
+        &bitscrambler, SOC_BITSCRAMBLER_ATTACH_GPSPI2,
+        BITSCRAMBLER_TEST_SIZE);
+    if (result == ESP_OK) {
+        result = bitscrambler_load_program(bitscrambler,
+                                           factory_bitscrambler_program);
+    }
+
+    size_t output_size = 0;
+    const int64_t start_us = esp_timer_get_time();
+    for (uint32_t index = 0; result == ESP_OK && index < count; ++index) {
+        output_size = 0;
+        result = bitscrambler_loopback_run(
+            bitscrambler, input, BITSCRAMBLER_TEST_SIZE,
+            output, BITSCRAMBLER_TEST_SIZE, &output_size);
+    }
+    const int64_t total_us = esp_timer_get_time() - start_us;
+
+    uint32_t mismatch_count = 0;
+    if (result == ESP_OK && output_size == BITSCRAMBLER_TEST_SIZE) {
+        for (uint32_t index = 0; index < BITSCRAMBLER_TEST_SIZE; ++index) {
+            if (output[index] != bitscrambler_expected_byte(input, index)) {
+                ++mismatch_count;
+            }
+        }
+    } else if (result == ESP_OK) {
+        result = ESP_ERR_INVALID_SIZE;
+    }
+
+    if (bitscrambler != NULL) {
+        bitscrambler_free(bitscrambler);
+    }
+    heap_caps_free(input);
+    heap_caps_free(output);
+
+    const uint32_t average_us = count == 0 ? 0 :
+        (uint32_t)(total_us / count);
+    const uint32_t kib_per_second = total_us == 0 ? 0 :
+        (uint32_t)((uint64_t)count * BITSCRAMBLER_TEST_SIZE * 1000000ULL /
+                   total_us / 1024ULL);
+    const bool passed = result == ESP_OK && mismatch_count == 0;
+
+    char detail[FACTORY_DETAIL_LENGTH];
+    snprintf(detail, sizeof(detail),
+             "4096B count=%" PRIu32 " avg_us=%" PRIu32
+             " KiBps=%" PRIu32 " mismatch=%" PRIu32,
+             count, average_us, kib_per_second, mismatch_count);
+    factory_report_set(FACTORY_TEST_BITSCRAMBLER,
+                       passed ? FACTORY_STATUS_PASS : FACTORY_STATUS_FAIL,
+                       detail);
+    factory_report_print_one(FACTORY_TEST_BITSCRAMBLER);
+    return passed ? ESP_OK : (result != ESP_OK ? result : ESP_FAIL);
+}
+#endif
+
 esp_err_t factory_accel_register(void)
 {
     esp_err_t error = ESP_OK;
@@ -422,6 +528,17 @@ esp_err_t factory_accel_register(void)
         .func = command_ppa_srm_test,
     };
     error = esp_console_cmd_register(&ppa_command);
+    if (error != ESP_OK) {
+        return error;
+    }
+#endif
+#if SOC_BITSCRAMBLER_SUPPORTED
+    const esp_console_cmd_t bitscrambler_command = {
+        .command = "bitscrambler_test",
+        .help = "Benchmark and verify a BitScrambler 64-bit transpose program.",
+        .func = command_bitscrambler_test,
+    };
+    error = esp_console_cmd_register(&bitscrambler_command);
 #endif
     return error;
 }
