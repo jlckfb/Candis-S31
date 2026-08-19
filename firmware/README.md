@@ -5,6 +5,7 @@ This directory is reserved for firmware that supports a physical Candis-S31 boar
 | Directory | Purpose | Current state |
 |---|---|---|
 | [`factory/`](factory) | Factory source, build instructions, and release contract | Peripheral command set compile-tested; no image released |
+| [`usb_cdc_device/`](usb_cdc_device) | Dedicated Type-C2 USB CDC device diagnostics | Windows COM6 enumeration and command loop validated on EVT1 |
 | [`recovery/`](recovery) | ROM download and restoration procedure | Draft; hardware not tested |
 
 Normal user examples belong in [`examples/`](../examples). Factory diagnostics are not examples, and recovery must remain possible even when an application image is broken.
