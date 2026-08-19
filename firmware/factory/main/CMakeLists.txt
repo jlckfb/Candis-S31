@@ -30,6 +30,7 @@ idf_component_register(
         nvs_flash
         spi_flash
         usb
+        usb_host_msc
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE

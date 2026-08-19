@@ -839,6 +839,8 @@ esp_err_t factory_console_start(void)
     esp_console_repl_config_t repl_config = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
     repl_config.prompt = "candis-factory>";
     repl_config.max_cmdline_length = 128;
+    /* MSC/FATFS diagnostics make deeper calls than the default REPL stack. */
+    repl_config.task_stack_size = 8192;
 
     esp_console_repl_t *repl = NULL;
     err = esp_console_new_repl_stdio(&repl_config, &repl);

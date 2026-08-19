@@ -56,6 +56,7 @@ absolute path is stored in the repository.
 | `otg on` | Select source role and arm the protected Type-C2 boost path at the 500 mA default advertisement | Yes, sources VBUS after CC attach |
 | `otg off` | Disable Type-C2 VBUS, CC role, and controller power | Yes, disables only |
 | `usb_host_test` | Install the USB Host stack at the 500 mA default advertisement, wait up to 20 s for a Type-C2 device, print VID/PID/speed/strings, then tear everything down | Yes, host stack + VBUS during the test |
+| `usb_msc_test [SECONDS 10-1800] [overwrite]` | Mount a FAT MSC device, write a deterministic pattern, fsync, verify every block, and remove `CANDIS_USB_STRESS.BIN`; refuses an existing file unless `overwrite` is explicit | Yes, host stack + VBUS and USB-drive writes |
 | `wifi_scan` | Scan for access points in station mode; PASS requires at least one AP | No |
 | `ble_smoke` | Initialize, enable, disable, and release the BLE controller | No |
 | `display_test` | Show red, green, blue, and white AMOLED quadrants, then ask the operator to confirm | Yes |
