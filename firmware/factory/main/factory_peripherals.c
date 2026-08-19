@@ -106,6 +106,8 @@ esp_err_t factory_peripherals_register(void)
         factory_audio_register,
         factory_camera_register,
         factory_diag_register,
+        factory_rf_register,
+        factory_accel_register,
     };
     for (size_t index = 0; index < sizeof(modules) / sizeof(modules[0]); ++index) {
         error = modules[index]();

@@ -9,6 +9,8 @@ idf_component_register(
         "factory_input.c"
         "factory_peripherals.c"
         "factory_power.c"
+        "factory_rf.c"
+        "factory_accel.c"
         "factory_report.c"
         "factory_rtc.c"
         "factory_storage.c"
@@ -22,6 +24,8 @@ idf_component_register(
         esp_app_format
         esp_event
         esp_netif
+        esp_phy
+        esp_driver_jpeg
         esp_psram
         esp_timer
         esp_wifi

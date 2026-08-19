@@ -73,6 +73,14 @@ CONFIG_CAM_CTRL_SPI_ENABLE=n
 CONFIG_BT_ENABLED=y
 CONFIG_BT_CONTROLLER_ONLY=y
 
+# Expose Espressif PHY certification TX/RX commands for controlled RF bench
+# measurements. These commands are manual-only and must be stopped with rf_stop.
+CONFIG_ESP_PHY_ENABLE_CERT_TEST=y
+# Match the ESP-IDF certification-test example: continuous RF tests can starve
+# the idle/interrupt watchdog paths.
+CONFIG_ESP_INT_WDT=n
+CONFIG_ESP_TASK_WDT_EN=n
+
 # The Wi-Fi/BLE/camera build does not fit the 1 MB default app partition.
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"

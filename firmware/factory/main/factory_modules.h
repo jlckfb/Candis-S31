@@ -24,6 +24,8 @@ esp_err_t factory_storage_register(void);
 esp_err_t factory_audio_register(void);
 esp_err_t factory_camera_register(void);
 esp_err_t factory_diag_register(void);
+esp_err_t factory_rf_register(void);
+esp_err_t factory_accel_register(void);
 
 /* Cross-domain state accessors used by the power orchestration paths
  * (command_rail, command_peripheral_power, factory_peripherals_power_all_off).

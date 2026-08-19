@@ -61,6 +61,15 @@ absolute path is stored in the repository.
 | `usb_msc_test [SECONDS 10-1800] [overwrite]` | Mount a FAT MSC device, write a deterministic pattern, fsync, verify every block, and remove `CANDIS_USB_STRESS.BIN`; refuses an existing file unless `overwrite` is explicit | Yes, host stack + VBUS and USB-drive writes |
 | `wifi_scan` | Scan for access points in station mode; PASS requires at least one AP | No |
 | `ble_smoke` | Initialize, enable, disable, and release the BLE controller | No |
+| `rf_init` | Enter Espressif PHY RF certification mode | Enables the RF test path |
+| `rf_stop` | Stop the active PHY RF TX/RX test | Disables only |
+| `wifi_tx CHANNEL RATE BACKOFF LENGTH DELAY COUNT` | Start controlled Wi-Fi TX; count 0 is continuous | Yes, RF transmitter |
+| `wifi_rx CHANNEL RATE` | Start controlled Wi-Fi RX counting | Yes, RF receiver |
+| `wifi_tone ENABLE CHANNEL BACKOFF` | Start or stop a Wi-Fi carrier-wave tone | Yes, RF transmitter |
+| `ble_tx LEVEL CHANNEL LENGTH TYPE SYNC RATE COUNT` | Start controlled BLE TX; level is about `(LEVEL-8)*3 dBm` | Yes, RF transmitter |
+| `ble_rx CHANNEL SYNC RATE` | Start controlled BLE RX counting | Yes, RF receiver |
+| `bt_tone ENABLE CHANNEL BACKOFF` | Start or stop a Bluetooth carrier-wave tone | Yes, RF transmitter |
+| `rf_rx_result` | Read the latest PHY RX correct/total counters and RSSI | No |
 | `display_test` | Show red, green, blue, and white AMOLED quadrants, then ask the operator to confirm | Yes |
 | `display_brightness PERCENT` | Set CO5300 brightness from 0 through 100 | Yes |
 | `display_sleep [deep]` | Enter normal sleep or SLPIN + DSTBON deep standby | Yes |
@@ -70,9 +79,10 @@ absolute path is stored in the repository.
 | `touch_draw [SECONDS]` | Track touches with an on-screen marker for 5-300 s and log throttled coordinates plus the raw CTP_INT level; diagnostic only, files no report entry | Yes |
 | `led_test` | Show red, green, and blue on the addressable LED, then ask the operator to confirm | Yes |
 | `sdcard_test` | Mount, write, read, verify, remove, and unmount a test file | Writes the inserted card |
-| `speaker_test` | Play a short, low-level square-wave tone, then ask the operator to confirm | Yes |
-| `microphone_test` | Capture audio and check its peak level | Yes |
+| `speaker_test [FREQ_HZ] [VOLUME] [DURATION_MS]` | Play a square-wave tone, then ask the operator to confirm | Yes |
+| `microphone_test [DURATION_MS] [GAIN_DB]` | Capture stereo audio and require both channels to exceed the noise threshold | Yes |
 | `camera_test` | Capture five DVP frames and verify frame size, non-blank content, and frame-to-frame change; each frame wait is bounded by a 3 s timeout | Yes |
+| `jpeg_encode_test [COUNT] [QUALITY]` | Benchmark the S31 hardware JPEG encoder with a synthetic 800x600 RGB565 frame | No, hardware JPEG codec |
 | `mark TEST pass\|fail\|skip [detail]` | Record an operator result; details may contain spaces | Report only |
 | `report` | Print every result and a JSON summary | No |
 | `report_reset` | Return every collected result to `NOT_RUN` while retaining the most recent safe-state result | Report only |
