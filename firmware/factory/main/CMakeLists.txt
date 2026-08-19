@@ -26,6 +26,7 @@ idf_component_register(
         esp_netif
         esp_phy
         esp_driver_jpeg
+        esp_driver_cordic
         esp_psram
         esp_timer
         esp_wifi
