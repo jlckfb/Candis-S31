@@ -38,7 +38,9 @@ absolute path is stored in the repository.
 | `otp_status` | Read every TG28_SW rail enable/voltage and the DC1SW/DC4SW switch states | No |
 | `pmic_test` | Read TG28_SW identity, battery, VBUS, and charger state | No |
 | `pmic power_on_source` | Read the raw TG28_SW REG20 boot-source bitmap | No |
+| `pmic regs` | Dump the current TG28_SW register map from 0x00 to 0xFF | No |
 | `pmic input_limit [100 \| 500 source_verified]` | Read the Type-C1 input limit, restore the 100 mA safe baseline, or explicitly arm the verified 500 mA stage | Optional write |
+| `pmic vindpm [MILLIVOLTS]` | Read or set the TG28 input-voltage DPM threshold; valid values are 3880-5080 mV in 80 mV steps | Optional write |
 | `pmic charge_current [MILLIAMPS]` | Read or set the exact TG28_SW REG62 charge-current limit | Optional write |
 | `pmic temperature` | Read the TG28_SW ADC channels (VBAT/VBUS/VSYS/TS/TDIE) in millivolts | Enables an ADC channel for the measurement, then restores it |
 | `charge_test [source_verified]` | Read back input-current limit and charge voltage, then grade charger activity; the token is required if the verified input limit is 500 mA | No |

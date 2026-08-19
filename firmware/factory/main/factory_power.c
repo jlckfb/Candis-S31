@@ -57,8 +57,49 @@ static int command_pmic_test(int argc, char **argv)
     return known_id ? ESP_OK : ESP_FAIL;
 }
 
+static int command_pmic_registers(int argc, char **argv)
+{
+    if (argc != 2 || strcmp(argv[1], "regs") != 0) {
+        printf("usage: pmic regs\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint8_t values[16] = {0};
+    unsigned failed = 0;
+    printf("TG28_REGISTER_DUMP_BEGIN\n");
+    for (unsigned base = 0; base <= 0xF0; base += 0x10) {
+        bool row_errors[16] = {false};
+        esp_err_t error = bsp_pmic_read_registers(base, values, sizeof(values));
+        if (error != ESP_OK) {
+            for (unsigned index = 0; index < sizeof(values); ++index) {
+                const uint8_t register_address = (uint8_t)(base + index);
+                error = bsp_pmic_read_registers(register_address,
+                                                &values[index], 1);
+                row_errors[index] = error != ESP_OK;
+                if (error != ESP_OK) {
+                    ++failed;
+                }
+            }
+        }
+        printf("%02x-%02x:", base, (uint8_t)(base + 0x0F));
+        for (unsigned index = 0; index < sizeof(values); ++index) {
+            if (row_errors[index]) {
+                printf(" ERR");
+            } else {
+                printf(" %02x", values[index]);
+            }
+        }
+        printf("\n");
+    }
+    printf("TG28_REGISTER_DUMP_END failed=%u\n", failed);
+    return failed == 0 ? ESP_OK : ESP_FAIL;
+}
+
 static int command_pmic(int argc, char **argv)
 {
+    if (argc == 2 && strcmp(argv[1], "regs") == 0) {
+        return command_pmic_registers(argc, argv);
+    }
     if (argc == 2 && strcmp(argv[1], "power_on_source") == 0) {
         uint8_t source = 0;
         const esp_err_t error = bsp_pmic_get_power_on_source(&source);
@@ -152,6 +193,33 @@ static int command_pmic(int argc, char **argv)
         }
         return error;
     }
+    if ((argc == 2 || argc == 3) && strcmp(argv[1], "vindpm") == 0) {
+        esp_err_t error = ESP_OK;
+        if (argc == 3) {
+            char *end = NULL;
+            const long millivolts = strtol(argv[2], &end, 10);
+            if (end == argv[2] || *end != '\0' ||
+                    millivolts < 0 || millivolts > UINT16_MAX) {
+                return ESP_ERR_INVALID_ARG;
+            }
+            printf("WARNING: changing VINDPM changes the TG28 input-voltage "
+                   "regulation threshold\n");
+            error = bsp_pmic_set_vindpm((uint16_t)millivolts);
+            if (error != ESP_OK) {
+                printf("valid VINDPM values: 3880-5080 mV in 80 mV steps\n");
+                return error;
+            }
+        }
+        uint16_t actual = 0;
+        if (error == ESP_OK) {
+            error = bsp_pmic_get_vindpm(&actual);
+        }
+        if (error == ESP_OK) {
+            const uint8_t code = (uint8_t)((actual - 3880) / 80);
+            printf("vindpm=%u mV (REG15[3:0]=0x%02x)\n", actual, code);
+        }
+        return error;
+    }
     if ((argc == 2 || argc == 3) && strcmp(argv[1], "charge_current") == 0) {
         esp_err_t error = ESP_OK;
         if (argc == 3) {
@@ -178,7 +246,7 @@ static int command_pmic(int argc, char **argv)
         }
         return error;
     }
-    printf("usage: pmic power_on_source | pmic power_off_source | pmic irq_snapshot | pmic input_limit [100 | {500|900|1000|1500|2000} source_verified] | pmic charge_current [MILLIAMPS] | pmic temperature\n");
+    printf("usage: pmic regs | pmic power_on_source | pmic power_off_source | pmic irq_snapshot | pmic input_limit [100 | {500|900|1000|1500|2000} source_verified] | pmic vindpm [MILLIVOLTS] | pmic charge_current [MILLIAMPS] | pmic temperature\n");
     return ESP_ERR_INVALID_ARG;
 }
 
