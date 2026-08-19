@@ -56,7 +56,7 @@ static bool parse_u32(const char *text, uint32_t minimum, uint32_t maximum,
                       uint32_t *value)
 {
     char *end = NULL;
-    const unsigned long parsed = strtoul(text, &end, 10);
+    const unsigned long parsed = strtoul(text, &end, 0);
     if (end == text || *end != '\0' || parsed < minimum || parsed > maximum) {
         return false;
     }
@@ -68,7 +68,7 @@ static bool parse_i32(const char *text, int32_t minimum, int32_t maximum,
                       int32_t *value)
 {
     char *end = NULL;
-    const long parsed = strtol(text, &end, 10);
+    const long parsed = strtol(text, &end, 0);
     if (end == text || *end != '\0' || parsed < minimum || parsed > maximum) {
         return false;
     }
