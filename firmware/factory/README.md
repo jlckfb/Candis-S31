@@ -63,7 +63,8 @@ absolute path is stored in the repository.
 | `display_sleep [deep]` | Enter normal sleep or SLPIN + DSTBON deep standby | Yes |
 | `display_wake [deep]` | Wake through SLPOUT or the required deep-standby reset pulse | Yes |
 | `display_sleep_test` | Cycle sleep and deep standby with an operator visual check after each enter/exit | Yes |
-| `touch_test` | Require a touch in every display quadrant within 15 seconds | Yes |
+| `touch_test` | Prompt the four corners in order and require each press to land in its corner zone (orientation errors fail at least one step) | Yes |
+| `touch_draw [SECONDS]` | Track touches with an on-screen marker for 5-300 s and log throttled coordinates plus the raw CTP_INT level; diagnostic only, files no report entry | Yes |
 | `led_test` | Show red, green, and blue on the addressable LED, then ask the operator to confirm | Yes |
 | `sdcard_test` | Mount, write, read, verify, remove, and unmount a test file | Writes the inserted card |
 | `speaker_test` | Play a short, low-level square-wave tone, then ask the operator to confirm | Yes |
