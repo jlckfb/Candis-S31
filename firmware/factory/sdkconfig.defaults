@@ -1,4 +1,4 @@
-# Candis-S31 EVT1 factory diagnostics use conservative memory bus settings.
+# Candis-S31 EVT1 factory diagnostic baseline.
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_ESP_CONSOLE_UART_DEFAULT=y
@@ -14,10 +14,51 @@ CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
 # Keep PSRAM optional at boot so a failed device can still reach the console.
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
-CONFIG_SPIRAM_SPEED_40M=y
 CONFIG_SPIRAM_IGNORE_NOTFOUND=y
 CONFIG_SPIRAM_USE_CAPS_ALLOC=y
-CONFIG_SPIRAM_MEMTEST=n
+
+# Display: 48 MHz is the highest exact QSPI clock within the CO5300 50 MHz
+# write limit (BBPLL 480 MHz / 10). TE aligns the first write with the panel
+# scan; full-screen traffic still exceeds one 60 Hz frame and cannot be called
+# unconditionally tear-free. A 15 ms LVGL period lets small dirty updates use
+# every TE edge while touch and animation state are serviced at high cadence.
+CONFIG_BSP_LCD_PIXEL_CLOCK_MHZ=48
+CONFIG_BSP_LCD_TE_SYNC=y
+CONFIG_LV_DEF_REFR_PERIOD=15
+
+# Low-latency display pipeline: two 460x80 internal DMA buffers in LVGL
+# PARTIAL mode. Only the first chunk of a refresh cycle waits for TE; the
+# remaining chunks stream back-to-back while LVGL renders into the other
+# buffer. A full 460x460 transfer still needs at least 17.6 ms at 48 MHz and
+# is therefore paced by every second 60 Hz TE edge.
+# CONFIG_BSP_LCD_DIRECT_MODE is not set
+CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=80
+CONFIG_BSP_LCD_DRAW_BUF_DOUBLE=y
+
+# Keep PSRAM at 100 MHz for image assets and the camera path. It is the lowest
+# non-40 MHz S31 grade; the long-octal part is rated 120 MHz. MEMTEST stays on
+# while the setting is validated on the 3.3 V rail (pre-J1 rework).
+CONFIG_SPIRAM_SPEED_100M=y
+CONFIG_SPIRAM_MEMTEST=y
+
+# 1 ms tick granularity so the LVGL task paces refresh cycles precisely
+# against the 16.67 ms TE period instead of the 10 ms quantization at HZ=100.
+CONFIG_FREERTOS_HZ=1000
+
+# Per-task CPU usage for the factory sys_tasks command (display pipeline
+# bottleneck analysis); the ESP timer keeps the counter at 1 MHz.
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
+CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER=y
+
+# Both RISC-V cores render in parallel; buffers stay cache-line aligned and
+# LVGL writes RGB565 directly in the byte order consumed by the CO5300.
+# (LVGL's PPA backend is P4-only in 9.5 - esp.cmake and the L2 cache line
+# check do not cover the S31 - so hardware PPA acceleration is not used yet.)
+# LV_USE_OS_FREERTOS is required for more than one SW draw unit.
+CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
+CONFIG_LV_DRAW_BUF_ALIGN=64
+CONFIG_LV_DRAW_SW_SUPPORT_RGB565_SWAPPED=y
+CONFIG_LV_OS_FREERTOS=y
 
 # OV5640 on the DVP interface; RGB565 big-endian 800x600 at 10 fps is the
 # EVT1 sensor configuration and doubles as the driver's default format.
