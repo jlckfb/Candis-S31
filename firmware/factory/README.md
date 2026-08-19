@@ -91,6 +91,8 @@ Two ordering facts matter for the first passes:
   schematic strap address 0x21 while its control domain is on. The host runner
   records this second observation as `type_c_power_scan` before USB Host takes
   ownership of the port and tears it down.
+  `typec_test` also waits up to 1 s for CC attach debounce after enabling the
+  controller, and reports both the FUSB303B identity type and live Type register.
 - The BSP panel init sequence programs the CO5300 brightness register to
   30 % before any Display-On, and `bsp_display_backlight_on()` restores the
   last level set through `bsp_display_brightness_set()` instead of forcing

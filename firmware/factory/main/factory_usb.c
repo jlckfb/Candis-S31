@@ -19,25 +19,68 @@
 #include "factory_modules.h"
 #include "factory_report.h"
 
+#define TYPE_C_ATTACH_SETTLE_MS  1000
+#define TYPE_C_POLL_INTERVAL_MS  50
+
+static const char *type_c_role_name(bsp_type_c_role_t role)
+{
+    switch (role) {
+    case BSP_TYPE_C_ROLE_DISABLED: return "disabled";
+    case BSP_TYPE_C_ROLE_SINK: return "sink";
+    case BSP_TYPE_C_ROLE_SOURCE: return "source";
+    case BSP_TYPE_C_ROLE_DRP: return "drp";
+    default: return "invalid";
+    }
+}
+
+static const char *type_c_current_name(bsp_type_c_current_t current)
+{
+    switch (current) {
+    case BSP_TYPE_C_CURRENT_1_5_A: return "1.5A";
+    case BSP_TYPE_C_CURRENT_3_0_A: return "3.0A";
+    case BSP_TYPE_C_CURRENT_DEFAULT:
+    default: return "default";
+    }
+}
+
+static esp_err_t type_c_read_settled_status(bsp_type_c_status_t *status)
+{
+    esp_err_t error = bsp_type_c_get_status(status, false);
+    const int64_t deadline = esp_timer_get_time() +
+                             TYPE_C_ATTACH_SETTLE_MS * INT64_C(1000);
+    while (error == ESP_OK && !status->attached &&
+            esp_timer_get_time() < deadline) {
+        vTaskDelay(pdMS_TO_TICKS(TYPE_C_POLL_INTERVAL_MS));
+        error = bsp_type_c_get_status(status, false);
+    }
+    if (error == ESP_OK) {
+        error = bsp_type_c_get_status(status, true);
+    }
+    return error;
+}
+
 static int command_type_c_test(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
     bsp_type_c_status_t status;
-    const esp_err_t error = bsp_type_c_get_status(&status, true);
+    const esp_err_t error = type_c_read_settled_status(&status);
     if (error != ESP_OK) {
         factory_report_error(FACTORY_TEST_TYPE_C, error, "FUSB303B read failed");
         return error;
     }
-    printf("addr=0x%02x id=0x%02x type=0x%02x attached=%s vbus=%s "
-           "safe0v=%s fault=%s remedy=%s orientation=%u role=%u "
-           "peer_current=%u\n",
+    printf("addr=0x%02x id=0x%02x device_type=0x%02x type=0x%02x "
+           "attached=%s vbus=%s "
+           "safe0v=%s fault=%s remedy=%s orientation=%u role=%s "
+           "peer_current=%s\n",
            status.i2c_address, status.device_id, status.device_type,
-           status.attached ? "yes" : "no", status.vbus_ok ? "yes" : "no",
+           status.type, status.attached ? "yes" : "no",
+           status.vbus_ok ? "yes" : "no",
            status.vbus_safe_0v ? "yes" : "no",
            status.fault ? "yes" : "no",
            status.remedy_active ? "yes" : "no", status.orientation,
-           (unsigned)status.role, (unsigned)status.advertised_current);
+           type_c_role_name(status.role),
+           type_c_current_name(status.advertised_current));
 
     factory_status_t result = FACTORY_STATUS_PASS;
     const char *verdict;
@@ -64,10 +107,10 @@ static int command_type_c_test(int argc, char **argv)
 
     char detail[FACTORY_DETAIL_LENGTH];
     snprintf(detail, sizeof(detail),
-             "%s (type=0x%02x role=%u peer_current=%u fault=%u remedy=%u)",
-             verdict, status.device_type, (unsigned)status.role,
-             (unsigned)status.advertised_current, (unsigned)status.fault,
-             (unsigned)status.remedy_active);
+             "%s (type=0x%02x role=%s peer_current=%s fault=%u remedy=%u)",
+             verdict, status.type, type_c_role_name(status.role),
+             type_c_current_name(status.advertised_current),
+             (unsigned)status.fault, (unsigned)status.remedy_active);
     factory_report_set(FACTORY_TEST_TYPE_C, result, detail);
     factory_report_print_one(FACTORY_TEST_TYPE_C);
     return result == FACTORY_STATUS_FAIL ? ESP_FAIL : ESP_OK;
