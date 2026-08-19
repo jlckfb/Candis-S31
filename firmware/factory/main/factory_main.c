@@ -18,6 +18,12 @@
 #define FACTORY_NVS_KEY_CONFAIL      "console_fail"
 #define FACTORY_CONSOLE_MAX_FAILURES 3
 
+/* Factory-lab override: raise the Type-C1 input-current limit from the BSP
+ * 500 mA boot default to the TG28 maximum. Decision 2026-08-19 during the
+ * DCDC1 brownout investigation: the lab default is locked at 2000 mA. This
+ * is an application-level choice; the BSP stays source-agnostic. */
+#define FACTORY_INPUT_CURRENT_LIMIT_MA 2000
+
 static const char *TAG = "candis_factory";
 
 /* Best-effort restart accounting so a persistent console-start fault halts
@@ -136,6 +142,17 @@ void app_main(void)
     const esp_err_t board_init_err = bsp_board_init();
     if (boot_safe_err == ESP_OK) {
         boot_safe_err = board_init_err;
+    }
+    const esp_err_t limit_err =
+        bsp_pmic_set_input_current_limit(FACTORY_INPUT_CURRENT_LIMIT_MA);
+    if (limit_err == ESP_OK) {
+        uint16_t applied = 0;
+        bsp_pmic_get_input_current_limit(&applied);
+        ESP_LOGI(TAG, "input current limit: %u mA (factory override)",
+                 applied);
+    } else {
+        ESP_LOGW(TAG, "input current limit override failed: %s",
+                 esp_err_to_name(limit_err));
     }
     const esp_err_t nvs_err = factory_console_ensure_nvs();
     if (nvs_err != ESP_OK) {
