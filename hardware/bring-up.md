@@ -1,18 +1,373 @@
-# EVT1 bring-up notes
+# EVT1 bring-up
 
-EVT1 schematic revision 0.5 went to fabrication on 2026-08-03 as `v0.5_260803_1544`; the boards have not arrived yet. Hardware-dependent results remain `NOT_RUN`.
+> **Board status (2026-08-19).** EVT1 schematic revision 0.5 went to fabrication on
+> 2026-08-03 as `v0.5_260803_1544`; boards are in hand and powered. **S1-S4 are
+> closed, S5 is in progress, S6/S7 have produced results, S8-S10 have not started.**
+> Per-stage status and evidence paths are in the stage sections below. Items still
+> without hardware evidence are marked `NOT_RUN` individually — the document as a
+> whole is no longer in a "boards have not arrived" state.
+>
+> One rework is applied to the current board: **`R95` removed 2026-08-19**
+> (see `facts.md`, "Post-fabrication reworks"). Results recorded after that date
+> reflect the reworked state.
 
-## Incoming inspection (before any power)
+## How to use this document
 
-Perform on at least two boards from the lot before any power is applied:
+This is the stage index for EVT1 bring-up. Each stage has an entry condition, a
+quantified exit criterion, the evidence that must be kept, and a failure fallback.
+Stages are ordered, with one exception: **S7 is triggered, not scheduled** — any
+stage that produces a whole-board power-off, deadlock or silent no-boot enters S7
+immediately and does not resume until the root cause is closed.
 
-- Confirm board revision, silkscreen, BOM substitutions, and DNP placements against the fabrication package (notably the ES8389 AD0/AD1 pull-ups R62/R65, which are DNP).
-- Inspect QFN soldering (U4, U6) visually or by AOI for bridges, voids, and orientation.
-- Measure every power rail's resistance to GND and check for rail-to-rail shorts before energizing.
-- Confirm the battery connector (CN1) polarity marking against the cable.
-- Diode-check D1 (BAS70WS) by **pin number, not by signal direction**: pin 1 is the cathode (K) on `KEY_RST_N`, pin 2 is the anode (A) that reaches `CHIP_PU` through R28 (0Ω). A forward drop appears with the red probe on pin 2 and the black probe on pin 1; the opposite probe order must read open. That open reading is the blocking direction, **not** a defect — do not rework D1 for it. The orientation is functionally correct: when TG28 PWROK (`KEY_RST_N`, pin 29) goes low the diode forward-biases and pulls `CHIP_PU` down, and when PWROK is high the diode blocks so R7 (10kΩ) holds `CHIP_PU` at 3.3 V.
-- Confirm U14 BTB and FPC1 contact-face orientation before mating the display and camera.
-- Check for unintended continuity between CC1/CC2 and VBUS on both Type-C connectors.
+Three companion documents:
+
+- `facts.md` — as-fabricated netlist facts, DNP positions, reworks, I2C addresses.
+- `../AGENT-AI.md` (repo-external working notes) — running incident log and decisions.
+- `../firmware/factory/README.md` — Factory command reference.
+
+A compile result is not bring-up evidence. A successful display transfer, LED
+update or audio write is not evidence that the external device lit up or made
+sound; visual and audible items require an operator verdict.
+
+## Stage map
+
+S1 incoming inspection → S2 power tree without the SoC → S3 programming link →
+S4 minimum firmware core domains → S5 BSP peripheral domains → S6 subsystem
+performance → **S7 anomaly forensics (triggered)** → S8 hardware accelerators →
+S9 low power and power budget → S10 soak, thermal, multi-board and DVT freeze.
+
+| Stage | Scope | Status | Evidence |
+|---|---|---|---|
+| S1 | Incoming inspection before any power | **closed** | polarity / bridge / dry-joint inspection passed |
+| S2 | PMIC rails with the SoC held off | **closed** | VBUS 5.02 V, TG28_VBUS 5.02 V, VSYS ≈ 4.92 V, VTPS switching verified |
+| S3 | ROM download, UART, flash | **closed** | CH343P enumerates; TX/RX series resistors verified at 115200 / 460800 / 2 M; ROM version string read |
+| S4 | Minimum firmware core domains | **closed 8/8** | `.work/evt1/s4_evt_summary.md` |
+| S5 | BSP peripheral domains one at a time | **in progress** | Wi-Fi ✅ BLE ✅ AMOLED ✅ CST820 ✅ USB host ✅ USB device ✅ · camera ❌ blocked · audio `NOT_RUN` |
+| S6 | Subsystem performance and physical limits | **display closed** | TE 16.529 ms (60.5 Hz); `display_motion ball` 60.5 fps; `full` 29.7 fps |
+| S7 | Anomaly forensics (triggered) | **1 closed, 1 open** | RF/TG28 collapse closed; camera/DCDC1 collapse root-caused to `R95`, 20/20 after removal |
+| S8 | Hardware accelerators and compute | `NOT_RUN` | image builds, not yet flashed |
+| S9 | Low power and power budget | `NOT_RUN` | — |
+| S10 | Soak, thermal, multi-board, DVT freeze | `NOT_RUN` | — |
+
+## Safety gates that apply to every stage
+
+### G1 Physical changes need an explicit decision
+
+Do not change supply, connectors, modules or rework state without the operator
+agreeing first. Camera and display modules must have their pinout confirmed
+against the connector definition in `facts.md` **before** mating — pins 23/24 of
+the 24-pin camera FPC are not consistent across module families and have already
+destroyed one board-level test session (S7 case 2).
+
+### G2 DCDC1 85 % undervoltage protection is the board's top failure mode
+
+TG28 `REG23` reads `0x3f` at power-on reset: the 85 % undervoltage shutdown is
+enabled for DCDC1-DCDC5 (datasheet §6.5.4.3, POR default). If a transient drags
+the DCDC1 output below 3.3 V × 85 % = **2.805 V**, TG28 performs a deliberate
+whole-board power-off. Observable signature:
+
+- console dies mid-command, `VCC_3V3_MAIN` goes to 0 V, whole-board current falls
+  to roughly 3-5 mA (only RTCLDO remains);
+- the short PWRON press does nothing; **a long PWRON press restores the board**;
+- after recovery `REG21` = `0x20` (bit 5 = DCDC undervoltage as power-off source)
+  and `REG20` = `0x01` (POK long press as power-on source);
+- the boot interrupt snapshot is all zeros, because this is a controlled
+  power-off and not a latched fault.
+
+This is not a hypothetical: it has fired repeatedly under
+"display at 100 % + camera init", and once during flashing. Treat any sudden
+current collapse to a few mA as this mechanism until proven otherwise.
+
+### G3 Evidence before recovery after any collapse
+
+**Do not remove the cable first.** TG28 only resets when VBUS is removed, so
+unplugging destroys the register evidence that identifies the power-off source.
+Order of operations after a collapse:
+
+1. long-press PWRON to bring the board back;
+2. immediately run `pmic regs`, `pmic power_off_source`, `pmic power_on_source`,
+   `pmic irq_snapshot`;
+3. save the current-meter CSV and the console log;
+4. only then change anything physical.
+
+`factory_run.py` resets at SoC level (`CHIP_PU`) and does not disturb TG28
+registers, so a firmware-level reset is safe to use while preserving evidence.
+
+### G4 Input current limit and charge current are different quantities
+
+Do not conflate them, and do not follow any older "raise to 500 mA then restore
+50 mA" instruction:
+
+| Quantity | Value | Where it is set |
+|---|---|---|
+| Type-C1 **input current limit** | **500 mA, written into the BSP default** (final decision 2026-08-18; no manual raise needed) | `BSP_PMIC_SAFE_INPUT_CURRENT_LIMIT_MA`, applied at boot |
+| Same limit, **Factory diagnostic image only** | overridden to **2000 mA** at boot for lab work while the DCDC1 investigation is open | `FACTORY_INPUT_CURRENT_LIMIT_MA` |
+| Battery **charge current** | **50 mA** agreed default, unchanged | TG28 `REG62`, verified with `pmic charge_current` |
+
+Record the value `pmic input_limit` actually reports at the start of every
+session. If a board has been reflashed with pre-2026-08-17 firmware its default
+returns to 100 mA, and RF work must not start until the limit is raised.
+
+### G5 Current meter and RF are mutually exclusive
+
+The IoT Power meter in series adds impedance in front of VBUS. Wi-Fi TX peaks
+around 377 mA and BLE TX around 340 mA at the chip supply, which is exactly the
+transient that provoked the first collapse family. **Never run RF tests with the
+meter in series**: Type-C1 goes directly to the host for RF work, and the meter is
+only inserted for the S9 power measurements. Conversely, `rf_stop` must be issued
+after every TX/RX command, and every family starts at reduced power with a finite
+packet count.
+
+Antenna path as built: `R2` (ceramic branch) fitted, `R1` (IPEX branch) and `L1`
+(RF shunt) DNP. Radiated/near-field evaluation is possible; a calibrated conducted
+measurement requires an approved `R1`/`R2` rework first.
+
+### G6 Silent no-boot: first response
+
+If the board produces no output at all — not even the ROM boot line — do not
+reflash repeatedly. Measure BOOT at the non-ground end of `SW2`:
+
+- BOOT at 0 V with its 10 kΩ pull-up (`R19`) intact means something is actively
+  sinking the pin. Unplug Type-C1 for about 20 s for a full cold start; this has
+  recovered the board every time so far, which means the latch is a powered state
+  and not a hard short.
+- The flash image is very unlikely to be the problem — read it back and verify
+  before considering a reflash.
+
+The full CH343P line-state analysis and the proposed ECO options are in the
+working notes; the important operational rule is cold-start first, evidence
+second, reflash last.
+
+### G7 Interrupt and rail ownership
+
+- **GPIO16 (display TE) belongs to `esp_lvgl_port`.** A GPIO has exactly one ISR
+  slot, so no diagnostic code may call `gpio_isr_handler_add/remove` on it.
+  Measure TE only through `lvgl_port_display_te_observer_set()`; the Factory
+  `display_te` command is the reference implementation.
+- GPIO2 is a shared, active-low interrupt from TG28 and RX8130CE; see
+  "Shared interrupt" below.
+- Switched rails have owners. Do not drive a rail directly while a protocol
+  owner (panel, touch, codec, camera) holds it.
+
+---
+
+## S1 Incoming inspection
+
+**Goal.** Reject fatal assembly defects before any energy reaches the board.
+**Entry.** At least two boards from the lot, plus the fabrication package.
+**Exit.** Every item in "Incoming inspection" of the per-board checklist ticked, with
+the eleven DNP positions individually confirmed empty and all rail-to-GND resistances
+recorded.
+**Evidence.** Inspection photos, resistance table, DNP verification table.
+**Fallback.** Any short, reversed polarity or suspect DNP position quarantines the
+board — do not power it.
+**Status: closed.** Polarity, bridging and dry-joint inspection passed.
+
+## S2 Power tree without the SoC
+
+**Goal.** Prove the PMIC produces correct rails while the SoC is held off.
+**Entry.** S1 passed; current-limited supply; **no lithium cell fitted and charging
+off** (gate 1 in "First power-on order"); TG28 vendor confirmations in writing.
+**Exit.** Every rail in "Rail map and measurement points" within its stated tolerance
+at its measurement point; the OTP readback matches confirmation sheet V1.3; VTPS
+switching verified.
+**Evidence.** Meter readings per rail, the power-on-reset register snapshot, and the
+DCDC4 oscilloscope capture required by gate 2.
+**Fallback.** Any rail out of tolerance stops bring-up here; fix the power tree before
+attempting S3.
+**Status: closed.** VBUS 5.02 V, TG28_VBUS 5.02 V, VSYS ≈ 4.92 V, VTPS switching verified.
+
+## S3 Programming link
+
+**Goal.** Establish a repeatable download and console path.
+**Entry.** S2 passed.
+**Exit.** ROM sync succeeds; flashing verified through the UART series resistors at
+115200, 460800 and the intended high baud with no framing errors; `VDD_SPI` measures
+3.2-3.3 V; the flash image is read back and its SHA-256 recorded.
+**Evidence.** Console logs at each baud, the ROM version string, the flash backup and
+its checksum.
+**Fallback.** Silent no-boot follows gate G6 — measure BOOT, cold start, do not reflash
+blindly. If flashing itself fails, use `../firmware/recovery/`.
+**Status: closed.** CH343P enumerates; series resistors verified at 115200 / 460800 / 2 M;
+ROM version string read. 2 M baud is the working default (about 44 s per flash cycle);
+the recovery path deliberately stays at 115200.
+
+## S4 Minimum firmware, core domains
+
+**Goal.** Confirm SoC, PMIC, RTC, card slot and keys with no external load attached.
+**Entry.** S3 passed; Factory image flashed.
+**Exit.** All eight core items PASS — power, boot, charge path, safe-state,
+buttons (including the shared-interrupt edge), RTC (three timekeeping runs),
+SD card (three cold starts with a fresh card), PMIC — and the final summary reports
+zero failures.
+**Evidence.** Per-command console output, the OTP boot snapshot line captured after a
+true power-on boot, and the aggregated summary.
+**Fallback.** A single I2C device not answering is isolatable: power that domain down,
+mark it BLOCKED, continue. Power, strap or reset anomalies are a global stop.
+**Status: closed, 8/8 PASS.**
+
+## S5 BSP peripheral domains
+
+**Goal.** Bring up one peripheral domain at a time, each with its own rail evidence.
+**Entry.** S4 passed. Measure the domain's rail before and after enabling it.
+**Exit.** Each domain independently PASS with an operator verdict where the result is
+visual or audible; off-state residual voltage in spec; `power_all_off` returns every
+switched rail to off between domains.
+**Evidence.** One log per domain plus the rail table; visual/audible verdict recorded
+explicitly, never inferred from a successful transfer.
+**Fallback.** A failing domain is powered down and marked BLOCKED while independent
+domains continue. **A whole-board power-off escalates to S7 immediately.**
+
+**Status: in progress.**
+
+| Domain | Result |
+|---|---|
+| Wi-Fi | PASS — scan and association; alternating Wi-Fi/BLE stress 10/10 after the input-limit fix |
+| BLE | PASS — controller init/enable/disable/deinit |
+| AMOLED (CO5300) | PASS — panel lit; colour verification after the RGB565 byte-order change is still an open operator item |
+| Touch (CST820) | PASS — ordered four-corner orientation check |
+| USB host / Type-C2 | PASS — source/sink, enumeration, 600 s MSC read/write stress |
+| USB device (CDC) | PASS — host COM port enumerated, two rounds of command loopback |
+| Camera (DVP) | **BLOCKED** — see the note below |
+| Audio (speaker + microphones) | `NOT_RUN` |
+
+**Camera blocker (root-caused 2026-08-19, fix staged, not yet verified on hardware).**
+Two separate problems were tangled together:
+
+1. *Whole-board power-off* — root-caused in S7 to the 24-pin FPC pin 23/24 family
+   mismatch and closed by removing `R95` (20/20 afterwards). See `facts.md`,
+   "Post-fabrication reworks".
+2. *`camera_test` reporting "not found"* — a **build configuration defect**, unrelated
+   to the module, wiring or supplies. `CONFIG_CAMERA_OV5640=y` only compiles the
+   driver; registering the sensor with `esp_video` additionally requires
+   `CONFIG_CAMERA_OV5640_AUTO_DETECT_DVP_INTERFACE_SENSOR`, which defaults to `n`
+   (the MIPI-CSI equivalent defaults to `y`, and ESP32-S31 has no MIPI CSI). Without
+   it the sensor detect table links empty, `esp_video_init()` iterates zero times,
+   never creates the video device, and still returns success — so the failure only
+   surfaces later when the application opens the device node. The giveaway is that
+   the log contains **no sensor detect line at all**, not even a failure.
+   Both auto-detect entries are now enabled in `sdkconfig.defaults`. Verify before
+   flashing that the detect table is non-empty in the ELF, then expect a
+   `Detected Camera sensor PID=…` line on the next run.
+
+## S6 Subsystem performance
+
+**Goal.** Move a domain from "works" to "meets a number", and state the physical limit
+where one exists.
+**Entry.** The domain already PASSed in S5.
+**Exit.** Quantified figures with both a measurement and a supporting calculation or
+code reference. A ceiling that follows from physics is recorded as the criterion, not
+treated as a defect.
+**Evidence.** Benchmark logs with frame-rate, TE-period and throughput statistics.
+**Fallback.** If a target is unreachable, first establish whether it is a physical
+limit; if it is, restate the criterion and stop optimising.
+**Status: display closed.** TE period 16.529 ms (60.5 Hz) with a 419 µs high time;
+partial-area animation 60.5 fps locked to TE; full-screen 29.7 fps. Full-screen 60 fps
+is arithmetically impossible at the panel's 50 MHz QSPI ceiling — one full frame needs
+about 17.6 ms against a 16.67 ms frame period — so **30 fps full-screen is the accepted
+limit, not a regression to chase**. Because the vertical blanking interval is only
+419 µs, TE aligns the start of a write but a full-frame write necessarily crosses the
+scan-out window; do not claim tear-free full-screen output.
+
+## S7 Anomaly forensics (triggered)
+
+**Goal.** Explain any whole-board power-off, deadlock or silent no-boot with an
+evidence chain, then close it with a verified fix.
+**Entry.** Triggered by an anomaly in any other stage. Not scheduled.
+**Exit.** A root cause supported by measurements or register state rather than
+inference; a reproduction procedure; a solution matrix with what was tried and
+rejected; and a regression run of at least 20 consecutive passes of the case that
+used to fail.
+**Evidence.** Follow gate G3 — register dumps and current logs captured **before**
+anything is unplugged — plus the reproduction script.
+**Fallback.** Until the root cause is closed, the test that triggered it cannot be
+marked PASS and dependent stages stay suspended.
+
+**Case 1 — RF activity powered the board off. Closed 2026-08-17.**
+Root cause: the VBUS→VMID path inside the PMIC could not hold up during RF bursts,
+so the 3.3 V converter's input sagged and its 85 % undervoltage protection shut the
+board down. Storage along the path is asymmetric — 22 µF at VBUS, 10 µF at VMID and
+roughly 48 µF at VSYS — leaving VMID the weakest node while the analog/buffer LDO
+inputs hang off VSYS. Fix: the boot-time input current limit is written to 500 mA,
+which passed 10/10 alternating Wi-Fi/BLE stress; a diagnostic VMID-to-VBUS jumper also
+worked but bypasses the protection path and is not a product option. Adding VMID bulk
+capacitance was evaluated and **rejected** — the 500 mA default is the final answer.
+
+**Case 2 — camera plus display powered the board off. Root cause closed 2026-08-19.**
+The board's 24-pin camera FPC follows the OV5640-AF convention (pin 23 = AF supply,
+pin 24 = ground), but the module fitted was an ESP32-S31-Korvo-1 OV3660 whose pin 23
+is an LED supply and pin 24 an IR-cut coil. Mating them energised that coil
+continuously, overloading the camera analog LDO; together with a 100 % display load and
+the camera initialisation transient this pushed the 3.3 V rail through its 85 %
+threshold. `REG21` read `0x20` (converter undervoltage) and `REG20` `0x01` (long-press
+restart) on every occurrence, and the interrupt snapshot was always zero — a
+deliberate power-off, not a latched fault. The experiment matrix ruled out the input
+current limit (500 mA and 2000 mA both failed), VMID bulk (10 µF and 32 µF both
+failed), the current meter and the cable, and staged pre-powering of all three camera
+rails (which survived, proving the rail inrush was not the trigger). Removing `R95`
+turned the same 4-times-failing case into 20/20 passes.
+Outstanding: measure pin 23 to pin 24 on the removed module to close the last link,
+and re-run the display-plus-camera stress if a genuine AF module ever needs `R95` back.
+
+## S8 Hardware accelerators and compute
+
+**Goal.** Exercise the JPEG codec, pixel-processing accelerator, sample-rate converter,
+CORDIC unit, bit-scrambler and the DMA paths that feed them.
+**Entry.** S5 base domains stable and **no open power-related root cause in S7**.
+**Exit.** Every accelerator diagnostic passes with a zero failure mask, each with a
+hardware-versus-software timing comparison so the acceleration is demonstrated rather
+than assumed.
+**Evidence.** Aggregate diagnostic output plus the per-block timing table.
+**Fallback.** A single failing block is isolated and the rest continue; anything that
+looks like a DMA or PSRAM crash escalates to S7.
+**Status: `NOT_RUN`.** The image builds; it has not been flashed. Note that the
+certification build follows the upstream example in disabling the interrupt and task
+watchdogs — acceptable for a diagnostic image, but it must be revisited before product
+firmware, and it removes deadlock detection during long runs.
+
+## S9 Low power and power budget
+
+**Goal.** Anchor a real current figure to every defined power state.
+**Entry.** S5 main domains PASS. Do not run S8 concurrently.
+**Exit.** Every state in the matrix has a measured value, taken at a stated measurement
+point, with the meter's range code recorded; sub-milliamp states verified on the range
+that actually resolves them. **"Can it wake" and "how accurately does it wake" are two
+separate conclusions** — the board has no 32.768 kHz crystal, so deep-sleep timing
+comes from an internal RC oscillator and drift must be measured, not assumed.
+**Evidence.** One current log per state plus the matching console log, with the
+measurement point and range code written down.
+**Fallback.** If a state misses its target, work through the interference list before
+changing the criterion. **Never run RF with the meter in series (gate G5).**
+**Status: `NOT_RUN`.**
+
+Measurement points differ and are not interchangeable: the VBUS side includes the
+charger current and the PMIC's own quiescent draw, and host-side USB enumeration alone
+is a milliamp-scale load that swamps a microamp measurement — so microamp states must
+be measured on the battery side with Type-C1 unplugged. The Factory image currently has
+no sleep support at all, so this stage needs either the low-power example image or new
+sleep commands.
+
+## S10 Soak, thermal, multi-board and DVT freeze
+
+**Goal.** Show the design is reproducible across boards and stable over time, then
+freeze the change list for DVT.
+**Entry.** The main items of S4-S9 closed.
+**Exit.** At least three boards through the same flow with consistent results; a
+sustained combined-load soak with no undervoltage shutdown, no reboot and stable
+temperatures; a filled report per board; and every DVT change either accepted with
+evidence or explicitly deferred.
+**Evidence.** One report per board with serial number and rework state, thermal
+observations, and the final change list.
+**Fallback.** A soak failure returns to the owning stage — a long-run test must never
+be used to paper over an unresolved single-domain failure.
+**Status: `NOT_RUN`.**
+
+---
+
+# Reference material
+
+The sections below are the detailed procedures and tables the stages above refer
+to. They are reference data, not a separate running order.
 
 ## Checks before fabrication
 
@@ -65,9 +420,11 @@ recovery instead of re-running stages blindly.
 1. Run `board_info`, `power_status`, `flash_test`, and `psram_test` without any external load attached. Copy the `OTP boot snapshot` line from the boot log into the board record — it is lot evidence only when the log shows it after a power-on boot, because a warm reset leaves the TG28 exactly as the previous run left it (the firmware then downgrades the line to a warning). `otp_status` re-reads the live rails at any time but cannot prove the OTP after the boot safe state ran.
 2. Run `i2c_scan lp`, `pmic_test`, `pmic power_on_source`, and `rtc_test`;
    compare battery and VBUS readings with a meter. Confirm
-   `pmic charge_current` reports the agreed 50 mA default. Under current
-   limiting and battery temperature monitoring, set 500 mA only for the target
-   current test, then restore 50 mA. EVT1 has no battery NTC (the TS pin is a
+   `pmic charge_current` reports the agreed 50 mA default and leave it there —
+   see gate G4: the 500 mA figure is the **Type-C1 input current limit**, which
+   the firmware already applies at boot, and it must not be written to the
+   charge-current register. Record what `pmic input_limit` reports instead of
+   changing it. EVT1 has no battery NTC (the TS pin is a
    fixed input), so monitor the cell with an external probe and watch the
    TG28 die-sensor trend through `pmic temperature` (TDIE is a sensor
    voltage, not degrees). If the RTC reports the recovery epoch, set
@@ -196,8 +553,8 @@ For every command, record the exact command line, start/end timestamp, complete
 console output, measured values or fixture result, and the final
 `PASS`/`FAIL`/`SKIP` decision with rationale. Attach the final `report` JSON
 summary, ROM boot log, oscilloscope captures, thermal observations, and any
-known limitation. Hardware-dependent items remain **待 EVT1** until this
-evidence exists.
+known limitation. An item without this evidence stays `NOT_RUN`; see the stage
+map for what is already closed.
 
 ## Per-board checklist
 
@@ -212,6 +569,9 @@ completed — one checklist per physical board.
 ### Incoming inspection (at least two boards)
 
 - [ ] Board revision, silkscreen, and BOM substitutions confirmed against the fabrication package
+- [ ] Rework state recorded against `facts.md` "Post-fabrication reworks" — on the current
+      board `R95` is **removed** (camera FPC pin 23 left open). A board that still has `R95`
+      fitted must not be mated with an OV3660-class module: see S7 case 2
 - [ ] All ten PCB-present DNP positions confirmed genuinely empty (table in [`facts.md`](facts.md), "DNP positions as fabricated"): `R9` `R22` `R24` `R1` `L1` (esp32-s31/RF), `C74` (display), `R62` `R65` (audio), `R41` `R42` (usb-c2-otg). All are 0201 except `C74` 0603
 - [ ] `R9` verified empty **visually** (0201 pad on the esp32-s31 side) — this is the one DNP that blocks boot. Do not try to prove it with an ohmmeter: with power off, GPIO36-to-GND reads ~10 kΩ through R9 if fitted, but also reads R6 10 kΩ in series with an unknown powered-down rail impedance if it is not, so the two cases are not separable. The decisive test is the powered VDD_SPI/GPIO36 voltage check in the first power-on section below
 - [ ] `R24` and `R22` verified empty visually, and understood as correct-by-design rather than defects: VDD_SPI is an internally supplied output. Do not "repair" them. An ohmmeter cannot confirm `R24` either — the SoC's internal VDD3P3-to-VDD_SPI path (RSPI ≈ 3Ω, datasheet Table 5-3) bridges the same two nodes

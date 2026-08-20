@@ -5,6 +5,7 @@ This directory is reserved for firmware that supports a physical Candis-S31 boar
 | Directory | Purpose | Current state |
 |---|---|---|
 | [`factory/`](factory) | Factory source, build instructions, and release contract | Peripheral command set compile-tested; no image released |
+| [`demo/`](demo) | Watch-style comprehensive demo covering every on-board peripheral (LVGL UI) | Builds clean; EVT1 board validation pending |
 | [`usb_cdc_device/`](usb_cdc_device) | Dedicated Type-C2 USB CDC device diagnostics | Windows COM6 enumeration and command loop validated on EVT1 |
 | [`recovery/`](recovery) | ROM download and restoration procedure | Draft; hardware not tested |
 

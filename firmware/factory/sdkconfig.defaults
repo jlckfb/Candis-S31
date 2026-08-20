@@ -63,8 +63,27 @@ CONFIG_LV_OS_FREERTOS=y
 # OV5640 on the DVP interface; RGB565 big-endian 800x600 at 10 fps is the
 # EVT1 sensor configuration and doubles as the driver's default format.
 CONFIG_CAMERA_OV5640=y
+# CONFIG_CAMERA_OV5640 only compiles the driver. Registering the sensor with
+# esp_video needs the auto-detect entry as well: the DVP detect function in
+# esp_cam_sensor's ov5640.c is wrapped in
+# #if CONFIG_CAMERA_OV5640_AUTO_DETECT_DVP_INTERFACE_SENSOR, and that option is
+# "default n" while the MIPI-CSI one is "default y". ESP32-S31 has
+# SOC_LCDCAM_CAM_SUPPORTED but no SOC_MIPI_CSI_SUPPORTED, so leaving this unset
+# links an empty detect table (__esp_cam_sensor_detect_fn_array_start ==
+# __esp_cam_sensor_detect_fn_array_end). esp_video_init() then iterates zero
+# times, never creates /dev/video2, and still returns ESP_OK - so camera_test
+# fails later at open() with ESP_ERR_NOT_FOUND and no sensor log line at all.
+CONFIG_CAMERA_OV5640_AUTO_DETECT_DVP_INTERFACE_SENSOR=y
 CONFIG_CAMERA_OV5640_DVP_RGB565_BE_800X600_10FPS=y
 CONFIG_CAMERA_OV5640_DVP_DEFAULT_FMT_RGB565_BE_800X600_10FPS=y
+# Keep the OV3660 detect entry compiled in as well so an ESP32-S31-Korvo-1
+# module still enumerates without a rebuild (its DVP auto-detect is already
+# "default y", unlike OV5640's). Two DVP detect entries are safe even though
+# both sensors answer at SCCB 0x3C: each detect reads the sensor PID and returns
+# NULL on mismatch, and esp_video treats that as non-fatal - it sets ret = ESP_OK
+# before unwinding and leaves device_inited at 0, so the detect loop simply tries
+# the next entry and the first matching PID claims the port.
+CONFIG_CAMERA_OV3660=y
 # The sensor is controlled over SCCB/I2C on this board, not SPI.
 CONFIG_CAM_CTRL_SPI_ENABLE=n
 

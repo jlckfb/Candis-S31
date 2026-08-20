@@ -18,12 +18,12 @@ Candis-S31 低功耗状态机原型。四档功耗状态 + LP core 管家，演�
 |---|---|---|---|---|---|---|
 | **S0** | `RUN` | 亮 | dynamic | 开 | light sleep 切片轮询 | 运行（值守共享 IRQ 线） |
 | **S1** | `SCREEN_OFF` | CO5300 sleep | monitor（~10µA，可被触摸唤醒） | 保持 | light sleep | **停止**（交还 GPIO2） |
-| **DEEP_SLEEP** | `DEEP_SLEEP` | 关协议后断显示轨（EVT1 的 VBAT 硬接 TG28_VSYS，无法由软件断开） | 断电 | 外设/控制轨全关 | deep sleep（唤醒即重启） | 停止 |
+| **DEEP_SLEEP** | `DEEP_SLEEP` | 关协议后断显示轨（VCI/IOVCC 关断，面板 VBAT 亦可经 U18 TPS22917 由 GPIO5 关断） | 断电 | 外设/控制轨全关 | deep sleep（唤醒即重启） | 停止 |
 | **S2** | `SHUTDOWN` | 断电 | 断电 | 全关 | 断电（主轨切断后） | 断电 |
 
 S0 的关键点是**委派**：HP 不自己轮询 RTC/PMIC，而是进 light sleep，由 LP core 通过 mailbox 中断把事件推上来。
 
-DEEP_SLEEP 是 S1 与 S2 之间的深睡档：S1 超时后不直接深关机，先关闭面板/触摸协议所有者，再执行 `bsp_power_safe_state()`，把全部可控外设/控制轨和防倒灌 GPIO 收到安全态后进入深睡。EVT1 的面板 VBAT 硬接 TG28_VSYS，软件只能关闭 VCI/IOVCC 并将 QSPI/控制脚置高阻，不能声称面板完全断电；唤醒会重跑 `app_main`，`bsp_board_init()` 再次执行安全态，随后 S0 重新上电初始化面板/触摸，因此当前实现**不具备跨唤醒免初始化能力**。唤醒源是 SoC RTC 定时（20s）+ GPIO2 EXT1 任意低电平（RX8130CE 闹钟 /IRQ、TG28 IRQ 都能经它唤醒）。共享线上的 RX8130CE/TG28 由常供电源轨供电，不依赖外设轨。**深睡期间触摸不能唤醒**：CST820 INT 接 GPIO3，不在共享 GPIO2 线上，本档只武装 GPIO2，因此唤醒路径只有 RTC 定时或 PMIC/RTC 事件。若产品要求深睡触摸唤醒，必须把 GPIO3 也加入 EXT1 ANY_LOW mask 后再实测验证。深睡唤醒靠 RTC 慢速内存里 `RTC_NOINIT_ATTR` 的跨深睡计数器决定回 S0 还是升级 S2。
+DEEP_SLEEP 是 S1 与 S2 之间的深睡档：S1 超时后不直接深关机，先关闭面板/触摸协议所有者，再执行 `bsp_power_safe_state()`，把全部可控外设/控制轨和防倒灌 GPIO 收到安全态后进入深睡。面板 VBAT 由 U18 TPS22917 供电，ON 脚为 `LCD_VBAT_EN_H`=GPIO5（`hardware/facts.md` U4 pad 10、TG28_VSYS→U18 行；BSP `src/bsp_power.c` 的 `BSP_POWER_DISPLAY_VBAT` 域即控制该脚），因此软件可以关断面板 VBAT，而不是只能关 VCI/IOVCC；深睡前应显式关闭该域，否则面板供电会抬高静态电流；唤醒会重跑 `app_main`，`bsp_board_init()` 再次执行安全态，随后 S0 重新上电初始化面板/触摸，因此当前实现**不具备跨唤醒免初始化能力**。唤醒源是 SoC RTC 定时（20s）+ GPIO2 EXT1 任意低电平（RX8130CE 闹钟 /IRQ、TG28 IRQ 都能经它唤醒）。共享线上的 RX8130CE/TG28 由常供电源轨供电，不依赖外设轨。**深睡期间触摸不能唤醒**：CST820 INT 接 GPIO3，不在共享 GPIO2 线上，本档只武装 GPIO2，因此唤醒路径只有 RTC 定时或 PMIC/RTC 事件。若产品要求深睡触摸唤醒，必须把 GPIO3 也加入 EXT1 ANY_LOW mask 后再实测验证。深睡唤醒靠 RTC 慢速内存里 `RTC_NOINIT_ATTR` 的跨深睡计数器决定回 S0 还是升级 S2。
 
 ## 迁移表
 
@@ -124,8 +124,8 @@ GPIO2 同一时刻只能属于一方：LP core（RTC 功能，LP IO matrix）或
 | | **S1 合计** | **无法给出** | 缺面板与轨静态两项，凑不出可信总数 |
 | **DEEP_SLEEP** | ESP32-S31 deep sleep | ~10µA 级 | S31 datasheet deep-sleep 量级（估算，未实测） |
 | | 可控外设/控制轨 | 关断；残余**未知** | 进入 deep sleep 前执行 `bsp_power_safe_state()`；需实测各断电节点残压/漏电 |
-| | 面板硬接 VBAT + TG28/RX8130CE 常供域 | **未知** | EVT1 面板 VBAT 接 TG28_VSYS，PMIC/RTC 也必须留供电，均需实测 |
-| | **DEEP_SLEEP 合计** | **无法给出** | 缺硬接 VBAT、PMIC/RTC 与关断残余实测 |
+| | 面板 VBAT（U18 可软关断）+ TG28/RX8130CE 常供域 | **未知** | 面板 VBAT 经 U18 TPS22917 由 GPIO5 控制，深睡前应关断；TG28/RX8130CE 必须留供电，均需实测 |
+| | **DEEP_SLEEP 合计** | **无法给出** | 缺面板 VBAT 关断后残余、PMIC/RTC 常供域与各断电节点漏电实测 |
 | **S2** | ESP32-S31 | 0 | 主轨已断，芯片无供电 |
 | | RX8130CE（备份域） | 亚 µA 级 | 备份电池供电，`INIEN=1` 自动切换；具体值查 ETM50E-05 |
 | | TG28 待机 | **未知** | 取决于 TG28 Soft PWROFF 后进入哪一档（未实测） |

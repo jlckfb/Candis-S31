@@ -4,6 +4,7 @@
 
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "nvs.h"
@@ -90,23 +91,25 @@ static bool test_is_valid(factory_test_id_t test)
 /* Best-effort persistence: a missing or unusable NVS never blocks a test. */
 static void factory_report_persist(void)
 {
-    factory_nvs_blob_t blob = {
-        .magic = FACTORY_NVS_MAGIC,
-        .version = FACTORY_NVS_VERSION,
-        .count = FACTORY_TEST_COUNT,
-    };
+    factory_nvs_blob_t *blob = calloc(1, sizeof(*blob));
+    if (blob == NULL) {
+        return;
+    }
+    blob->magic = FACTORY_NVS_MAGIC;
+    blob->version = FACTORY_NVS_VERSION;
+    blob->count = FACTORY_TEST_COUNT;
     for (int test = 0; test < FACTORY_TEST_COUNT; ++test) {
-        blob.tests[test].status = (uint8_t)s_results[test].status;
-        memcpy(blob.tests[test].detail, s_results[test].detail,
+        blob->tests[test].status = (uint8_t)s_results[test].status;
+        memcpy(blob->tests[test].detail, s_results[test].detail,
                FACTORY_DETAIL_LENGTH);
     }
     nvs_handle_t handle;
-    if (nvs_open(FACTORY_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
-        return;
+    if (nvs_open(FACTORY_NVS_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
+        nvs_set_blob(handle, FACTORY_NVS_KEY, blob, sizeof(*blob));
+        nvs_commit(handle);
+        nvs_close(handle);
     }
-    nvs_set_blob(handle, FACTORY_NVS_KEY, &blob, sizeof(blob));
-    nvs_commit(handle);
-    nvs_close(handle);
+    free(blob);
 }
 
 void factory_report_print_json_string(const char *value)
@@ -165,31 +168,37 @@ void factory_report_init(void)
 
 void factory_report_load(void)
 {
-    factory_nvs_blob_t blob;
-    size_t length = sizeof(blob);
-    nvs_handle_t handle;
-    bool loaded = false;
-    if (nvs_open(FACTORY_NVS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
-        const esp_err_t error = nvs_get_blob(handle, FACTORY_NVS_KEY, &blob,
-                                             &length);
-        nvs_close(handle);
-        loaded = error == ESP_OK && length == sizeof(blob) &&
-                 blob.magic == FACTORY_NVS_MAGIC &&
-                 blob.version == FACTORY_NVS_VERSION &&
-                 blob.count == FACTORY_TEST_COUNT;
-    }
-    if (!loaded) {
+    factory_nvs_blob_t *blob = calloc(1, sizeof(*blob));
+    if (blob == NULL) {
         factory_report_init();
         return;
     }
+    size_t length = sizeof(*blob);
+    nvs_handle_t handle;
+    bool loaded = false;
+    if (nvs_open(FACTORY_NVS_NAMESPACE, NVS_READONLY, &handle) == ESP_OK) {
+        const esp_err_t error = nvs_get_blob(handle, FACTORY_NVS_KEY, blob,
+                                             &length);
+        nvs_close(handle);
+        loaded = error == ESP_OK && length == sizeof(*blob) &&
+                 blob->magic == FACTORY_NVS_MAGIC &&
+                 blob->version == FACTORY_NVS_VERSION &&
+                 blob->count == FACTORY_TEST_COUNT;
+    }
+    if (!loaded) {
+        factory_report_init();
+        free(blob);
+        return;
+    }
     for (int test = 0; test < FACTORY_TEST_COUNT; ++test) {
-        s_results[test].status = blob.tests[test].status < FACTORY_STATUS_COUNT ?
-                                 (factory_status_t)blob.tests[test].status :
+        s_results[test].status = blob->tests[test].status < FACTORY_STATUS_COUNT ?
+                                 (factory_status_t)blob->tests[test].status :
                                  FACTORY_STATUS_NOT_RUN;
-        memcpy(s_results[test].detail, blob.tests[test].detail,
+        memcpy(s_results[test].detail, blob->tests[test].detail,
                FACTORY_DETAIL_LENGTH);
         s_results[test].detail[FACTORY_DETAIL_LENGTH - 1] = '\0';
     }
+    free(blob);
 }
 
 esp_err_t factory_report_set(factory_test_id_t test, factory_status_t status, const char *detail)

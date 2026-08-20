@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "driver/jpeg_encode.h"
 #include "driver/cordic.h"
@@ -43,26 +44,53 @@ static int command_jpeg_encode_test(int argc, char **argv)
 {
     uint32_t count = 10;
     uint32_t quality = 80;
-    if (argc > 3 ||
+    uint32_t width = JPEG_TEST_WIDTH;
+    uint32_t height = JPEG_TEST_HEIGHT;
+    jpeg_enc_input_format_t src_type = JPEG_ENCODE_IN_FORMAT_RGB565;
+    uint32_t bytes_per_pixel = 2;
+    bool use_internal_ram = false;
+    if (argc > 7 ||
             (argc >= 2 && !parse_accel_u32(argv[1], 1, 100, &count)) ||
-            (argc >= 3 && !parse_accel_u32(argv[2], 1, 100, &quality))) {
-        printf("usage: jpeg_encode_test [COUNT 1-100] [QUALITY 1-100]\n");
+            (argc >= 3 && !parse_accel_u32(argv[2], 1, 100, &quality)) ||
+            (argc >= 4 && !parse_accel_u32(argv[3], 16, 1920, &width)) ||
+            (argc >= 5 && !parse_accel_u32(argv[4], 16, 1920, &height)) ||
+            (argc >= 6 && strcmp(argv[5], "rgb565") != 0 &&
+             strcmp(argv[5], "rgb888") != 0) ||
+            (argc >= 7 && strcmp(argv[6], "psram") != 0 &&
+             strcmp(argv[6], "internal") != 0)) {
+        printf("usage: jpeg_encode_test [COUNT 1-100] [QUALITY 1-100] "
+               "[WIDTH 16-1920] [HEIGHT 16-1920] [rgb565|rgb888] "
+               "[psram|internal]\n");
         return ESP_ERR_INVALID_ARG;
     }
+    if (argc >= 6 && strcmp(argv[5], "rgb888") == 0) {
+        src_type = JPEG_ENCODE_IN_FORMAT_RGB888;
+        bytes_per_pixel = 3;
+    }
+    if (argc >= 7 && strcmp(argv[6], "internal") == 0) {
+        use_internal_ram = true;
+    }
 
-    const uint32_t input_size = JPEG_TEST_WIDTH * JPEG_TEST_HEIGHT * 2;
-    const jpeg_encode_memory_alloc_cfg_t input_alloc = {
-        .buffer_direction = JPEG_ENC_ALLOC_INPUT_BUFFER,
-    };
-    const jpeg_encode_memory_alloc_cfg_t output_alloc = {
-        .buffer_direction = JPEG_ENC_ALLOC_OUTPUT_BUFFER,
-    };
+    const uint32_t input_size = width * height * bytes_per_pixel;
     size_t input_allocated = 0;
     size_t output_allocated = 0;
-    uint8_t *input = jpeg_alloc_encoder_mem(input_size, &input_alloc,
-                                             &input_allocated);
-    uint8_t *output = jpeg_alloc_encoder_mem(input_size, &output_alloc,
-                                              &output_allocated);
+    uint8_t *input = NULL;
+    uint8_t *output = NULL;
+    if (use_internal_ram) {
+        input_allocated = (input_size + 63U) / 64U * 64U;
+        output_allocated = input_allocated;
+        input = heap_caps_aligned_calloc(64, 1, input_allocated,
+                                         MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+        output = heap_caps_aligned_calloc(64, 1, output_allocated,
+                                          MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    } else {
+        input_allocated = (input_size + 63U) / 64U * 64U;
+        output_allocated = input_allocated;
+        input = heap_caps_aligned_calloc(64, 1, input_allocated,
+                                         MALLOC_CAP_SPIRAM);
+        output = heap_caps_aligned_calloc(64, 1, output_allocated,
+                                          MALLOC_CAP_SPIRAM);
+    }
     if (input == NULL || output == NULL) {
         heap_caps_free(input);
         heap_caps_free(output);
@@ -71,15 +99,25 @@ static int command_jpeg_encode_test(int argc, char **argv)
         return ESP_ERR_NO_MEM;
     }
 
-    uint16_t *pixels = (uint16_t *)input;
-    for (uint32_t y = 0; y < JPEG_TEST_HEIGHT; ++y) {
-        for (uint32_t x = 0; x < JPEG_TEST_WIDTH; ++x) {
-            const uint16_t red = (x * 31U) / JPEG_TEST_WIDTH;
-            const uint16_t green = (y * 63U) / JPEG_TEST_HEIGHT;
+    uint8_t *pixels = input;
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            const uint16_t red = (x * 31U) / width;
+            const uint16_t green = (y * 63U) / height;
             const uint16_t blue = ((x + y) * 31U) /
-                                  (JPEG_TEST_WIDTH + JPEG_TEST_HEIGHT);
-            pixels[y * JPEG_TEST_WIDTH + x] =
-                (uint16_t)((red << 11) | (green << 5) | blue);
+                                  (width + height);
+            const uint32_t offset =
+                (y * width + x) * bytes_per_pixel;
+            if (src_type == JPEG_ENCODE_IN_FORMAT_RGB565) {
+                const uint16_t pixel = (uint16_t)((red << 11) |
+                                                  (green << 5) | blue);
+                pixels[offset] = (uint8_t)(pixel >> 8);
+                pixels[offset + 1] = (uint8_t)pixel;
+            } else {
+                pixels[offset] = (uint8_t)(red * 255U / 31U);
+                pixels[offset + 1] = (uint8_t)(green * 255U / 63U);
+                pixels[offset + 2] = (uint8_t)(blue * 255U / 31U);
+            }
         }
     }
 
@@ -89,9 +127,9 @@ static int command_jpeg_encode_test(int argc, char **argv)
     };
     esp_err_t result = jpeg_new_encoder_engine(&engine_config, &encoder);
     const jpeg_encode_cfg_t encode_config = {
-        .width = JPEG_TEST_WIDTH,
-        .height = JPEG_TEST_HEIGHT,
-        .src_type = JPEG_ENCODE_IN_FORMAT_RGB565,
+        .width = width,
+        .height = height,
+        .src_type = src_type,
         .sub_sample = JPEG_DOWN_SAMPLING_YUV422,
         .image_quality = quality,
         .pixel_reverse = false,
@@ -128,8 +166,11 @@ static int command_jpeg_encode_test(int argc, char **argv)
         output_size * 100U / input_size;
     char detail[FACTORY_DETAIL_LENGTH];
     snprintf(detail, sizeof(detail),
-             "800x600 count=%" PRIu32 " avg_us=%" PRIu32
-             " fps=%" PRIu32 " out=%" PRIu32 " ratio=%" PRIu32 "%%",
+             "%" PRIu32 "x%" PRIu32 " %s count=%" PRIu32
+             " avg_us=%" PRIu32 " fps=%" PRIu32 " out=%" PRIu32
+             " ratio=%" PRIu32 "%%",
+             width, height,
+             src_type == JPEG_ENCODE_IN_FORMAT_RGB565 ? "rgb565" : "rgb888",
              count, average_us, fps, output_size, ratio_pct);
     factory_report_set(FACTORY_TEST_JPEG,
                        passed && result == ESP_OK ? FACTORY_STATUS_PASS :

@@ -104,8 +104,10 @@ esp_err_t factory_peripherals_register(void)
         factory_touch_register,
         factory_storage_register,
         factory_audio_register,
+        factory_audio_file_register,
         factory_camera_register,
         factory_diag_register,
+        factory_low_power_register,
         factory_rf_register,
         factory_accel_register,
     };

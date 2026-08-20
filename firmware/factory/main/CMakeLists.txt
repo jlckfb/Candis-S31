@@ -2,11 +2,13 @@ idf_component_register(
     SRCS
         "factory_main.c"
         "factory_audio.c"
+        "factory_audio_file.c"
         "factory_camera.c"
         "factory_console.c"
         "factory_diag.c"
         "factory_display.c"
         "factory_input.c"
+        "factory_low_power.c"
         "factory_peripherals.c"
         "factory_power.c"
         "factory_rf.c"
@@ -29,6 +31,8 @@ idf_component_register(
         esp_driver_cordic
         esp_driver_ppa
         esp_driver_bitscrambler
+        esp_driver_tsens
+        esp_driver_uart
         esp_psram
         esp_timer
         esp_wifi

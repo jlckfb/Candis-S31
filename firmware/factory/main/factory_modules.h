@@ -22,10 +22,21 @@ esp_err_t factory_display_register(void);
 esp_err_t factory_touch_register(void);
 esp_err_t factory_storage_register(void);
 esp_err_t factory_audio_register(void);
+esp_err_t factory_audio_file_register(void);
 esp_err_t factory_camera_register(void);
 esp_err_t factory_diag_register(void);
+esp_err_t factory_low_power_register(void);
 esp_err_t factory_rf_register(void);
 esp_err_t factory_accel_register(void);
+
+/** Capture deep-sleep wake timing as early as possible after app reset. */
+void factory_low_power_note_boot(void);
+
+/** Stop any active certification worker/tone before a sleep attempt. The
+ *  function returns ESP_ERR_INVALID_STATE when RF certification mode was
+ *  initialized during this boot because the public PHY API has no matching
+ *  deinit operation; restart the application before running sleep tests. */
+esp_err_t factory_rf_prepare_for_sleep(void);
 
 /* Cross-domain state accessors used by the power orchestration paths
  * (command_rail, command_peripheral_power, factory_peripherals_power_all_off).
@@ -41,6 +52,8 @@ bool factory_audio_busy(void);
 /** Release the speaker/microphone codec handles; OK when idle. Does not call
  *  bsp_audio_deinit() - the power orchestrator owns that step. */
 esp_err_t factory_audio_stop(void);
+/** Select optional ES8389 ADC input route for diagnostics; NULL/default keeps BSP route. */
+esp_err_t factory_audio_set_input_route(const char *route);
 
 /** Delete the RGB LED indicator handle; OK when idle. */
 esp_err_t factory_led_stop(void);

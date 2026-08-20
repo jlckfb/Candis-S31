@@ -12,6 +12,7 @@
 #include "nvs.h"
 
 #include "factory_console.h"
+#include "factory_modules.h"
 #include "factory_report.h"
 
 #define FACTORY_NVS_NAMESPACE        "factory"
@@ -57,6 +58,8 @@ static void console_failure_count_clear(void)
 
 void app_main(void)
 {
+    factory_low_power_note_boot();
+
     /* Remove every direct GPIO-controlled supply before filesystem/NVS work
      * or any optional peripheral initialization. Put the display enables in
      * the only safe removal order even after a software reset: VCI, 2 ms,
@@ -169,7 +172,8 @@ void app_main(void)
                        esp_err_to_name(boot_safe_err));
 
     ESP_LOGI(TAG, "Candis-S31 Factory Bring-up");
-    ESP_LOGW(TAG, "EVT1 hardware has not been tested; use commands one stage at a time");
+    ESP_LOGW(TAG, "EVT1 bring-up is in progress; preserve NOT_RUN for every "
+             "unverified test and run commands one stage at a time");
     factory_report_print_one(FACTORY_TEST_SAFE_STATE);
     if (otp_boot_err == ESP_OK) {
         /* Label the line by boot type so a warm-reset read can never be

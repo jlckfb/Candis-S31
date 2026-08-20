@@ -371,6 +371,12 @@ esp_err_t factory_console_capture_otp_boot_snapshot(char *out, size_t out_size)
     size_t used = 0;
     for (int index = 0; index < BSP_PMIC_REGULATOR_COUNT; ++index) {
         const bsp_pmic_regulator_t regulator = (bsp_pmic_regulator_t)index;
+        /* Candis-S31 OTP repurposes the DLDO pins as DC1SW/DC4SW. Their LDO
+         * voltage registers are inert, so report them only through the
+         * switch loop below instead of presenting a fake programmed voltage. */
+        if (regulator == BSP_PMIC_DLDO1 || regulator == BSP_PMIC_DLDO2) {
+            continue;
+        }
         bool enabled = false;
         uint16_t millivolts = 0;
         error = bsp_pmic_regulator_is_enabled(regulator, &enabled);

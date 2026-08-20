@@ -310,10 +310,113 @@ static int command_charge_test(int argc, char **argv)
     return ESP_OK;
 }
 
+static bool rail_uses_otp_switch(bsp_pmic_regulator_t regulator,
+                                 bsp_pmic_switch_t *sw)
+{
+    if (regulator == BSP_PMIC_DLDO1) {
+        *sw = BSP_PMIC_SWITCH_DC1SW;
+        return true;
+    }
+    if (regulator == BSP_PMIC_DLDO2) {
+        *sw = BSP_PMIC_SWITCH_DC4SW;
+        return true;
+    }
+    return false;
+}
+
+static esp_err_t remember_first_error(esp_err_t first_error, esp_err_t error)
+{
+    return first_error == ESP_OK ? error : first_error;
+}
+
+static esp_err_t rail_dump_all(void)
+{
+    esp_err_t first_error = ESP_OK;
+    printf("RAIL_DUMP_BEGIN\n");
+    for (int index = 0; index < BSP_PMIC_REGULATOR_COUNT; ++index) {
+        const bsp_pmic_regulator_t regulator = (bsp_pmic_regulator_t)index;
+        bsp_pmic_switch_t unused_switch = BSP_PMIC_SWITCH_COUNT;
+        if (rail_uses_otp_switch(regulator, &unused_switch)) {
+            continue;
+        }
+
+        bool enabled = false;
+        uint16_t millivolts = 0;
+        const esp_err_t enable_error =
+            bsp_pmic_regulator_is_enabled(regulator, &enabled);
+        const esp_err_t voltage_error =
+            bsp_pmic_regulator_get_voltage(regulator, &millivolts);
+        if (enable_error != ESP_OK) {
+            first_error = remember_first_error(first_error, enable_error);
+        }
+        if (voltage_error != ESP_OK) {
+            first_error = remember_first_error(first_error, voltage_error);
+        }
+
+        printf("RAIL name=%s kind=regulator enabled=",
+               bsp_pmic_regulator_name(regulator));
+        if (enable_error == ESP_OK) {
+            printf("%s", enabled ? "yes" : "no");
+        } else {
+            printf("error");
+        }
+        printf(" programmed_mv=");
+        if (voltage_error == ESP_OK) {
+            printf("%u", (unsigned)millivolts);
+        } else {
+            printf("error");
+        }
+        printf(" status=%s", enable_error == ESP_OK && voltage_error == ESP_OK ?
+               "ok" : "error");
+        if (enable_error != ESP_OK) {
+            printf(" enable_error=%s", esp_err_to_name(enable_error));
+        }
+        if (voltage_error != ESP_OK) {
+            printf(" voltage_error=%s", esp_err_to_name(voltage_error));
+        }
+        printf("\n");
+    }
+
+    static const struct {
+        bsp_pmic_switch_t sw;
+        const char *pin_name;
+    } switches[] = {
+        { BSP_PMIC_SWITCH_DC1SW, "dldo1" },
+        { BSP_PMIC_SWITCH_DC4SW, "dldo2" },
+    };
+    for (size_t index = 0; index < sizeof(switches) / sizeof(switches[0]);
+            ++index) {
+        bool enabled = false;
+        const esp_err_t error =
+            bsp_pmic_switch_is_enabled(switches[index].sw, &enabled);
+        if (error != ESP_OK) {
+            first_error = remember_first_error(first_error, error);
+        }
+        printf("RAIL name=%s kind=otp_switch alias=%s state=%s "
+               "programmed_mv=n/a status=%s",
+               switches[index].pin_name,
+               bsp_pmic_switch_name(switches[index].sw),
+               error == ESP_OK ? (enabled ? "closed" : "open") : "error",
+               error == ESP_OK ? "ok" : "error");
+        if (error != ESP_OK) {
+            printf(" state_error=%s", esp_err_to_name(error));
+        }
+        printf("\n");
+    }
+
+    printf("RAIL_DUMP_END result=%s\n", esp_err_to_name(first_error));
+    printf("rail dump note: programmed_mv is the TG28 register setting, not "
+           "a measured voltage; verify rails with a meter or oscilloscope\n");
+    return first_error;
+}
+
 static int command_rail(int argc, char **argv)
 {
+    if (argc == 2 && strcmp(argv[1], "dump") == 0) {
+        return rail_dump_all();
+    }
     if (argc < 3 || argc > 4) {
-        printf("usage: rail NAME status|on|off [millivolts]\n");
+        printf("usage: rail dump | rail NAME status|on|off [millivolts]\n");
         return ESP_ERR_INVALID_ARG;
     }
     bsp_pmic_regulator_t regulator = BSP_PMIC_REGULATOR_COUNT;
@@ -326,6 +429,26 @@ static int command_rail(int argc, char **argv)
     if (regulator == BSP_PMIC_REGULATOR_COUNT) {
         printf("unknown rail: %s\n", argv[1]);
         return ESP_ERR_INVALID_ARG;
+    }
+    bsp_pmic_switch_t otp_switch = BSP_PMIC_SWITCH_COUNT;
+    if (rail_uses_otp_switch(regulator, &otp_switch)) {
+        if (argc != 3 || strcmp(argv[2], "status") != 0) {
+            printf("%s is OTP-configured as %s, not an adjustable LDO; "
+                   "rail supports status only\n",
+                   argv[1], bsp_pmic_switch_name(otp_switch));
+            return ESP_ERR_INVALID_ARG;
+        }
+        bool enabled = false;
+        const esp_err_t error = bsp_pmic_switch_is_enabled(otp_switch, &enabled);
+        if (error == ESP_OK) {
+            printf("name=%s kind=otp_switch alias=%s state=%s "
+                   "programmed_mv=n/a\n",
+                   argv[1], bsp_pmic_switch_name(otp_switch),
+                   enabled ? "closed" : "open");
+        } else {
+            printf("rail status failed: %s\n", esp_err_to_name(error));
+        }
+        return error;
     }
     const bool changes_state = strcmp(argv[2], "status") != 0;
     const bool display_owned = factory_display_started() &&
@@ -347,8 +470,9 @@ static int command_rail(int argc, char **argv)
             error = bsp_pmic_regulator_is_enabled(regulator, &enabled);
         }
         if (error == ESP_OK) {
-            printf("%s %s %u mV\n", argv[1], enabled ? "enabled" : "disabled",
-                   millivolts);
+            printf("name=%s kind=regulator enabled=%s programmed_mv=%u\n",
+                   argv[1], enabled ? "yes" : "no", millivolts);
+            printf("rail status note: programmed_mv is not a measured voltage\n");
         }
     } else if (strcmp(argv[2], "off") == 0 && argc == 3) {
         error = bsp_pmic_regulator_enable(regulator, false);
@@ -426,7 +550,7 @@ esp_err_t factory_power_register(void)
         {.command = "pmic_test", .help = "Read TG28_SW identity, battery, VBUS, and charge state.", .func = command_pmic_test},
         {.command = "pmic", .help = "Read PMIC state or set charge/input limits with explicit safety gates.", .func = command_pmic},
         {.command = "charge_test", .help = "Check charger state: charge_test [source_verified].", .func = command_charge_test},
-        {.command = "rail", .help = "Inspect/control an unowned TG28_SW rail.", .func = command_rail},
+        {.command = "rail", .help = "Dump all TG28_SW rails or inspect/control one unowned rail.", .func = command_rail},
         {.command = "peripheral_power", .help = "Apply a complete, owner-aware peripheral power sequence.", .func = command_peripheral_power},
     };
     for (size_t index = 0; index < sizeof(commands) / sizeof(commands[0]); ++index) {

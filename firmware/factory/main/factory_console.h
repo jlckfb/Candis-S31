@@ -31,7 +31,9 @@ void factory_console_note_sd_detect_boot_level(int level);
 #define FACTORY_OTP_SNAPSHOT_LENGTH 256
 
 /**
- * Snapshot every TG28_SW rail's enable state and programmed voltage.
+ * Snapshot every adjustable TG28_SW regulator's enable state and programmed
+ * voltage, plus the DC1SW/DC4SW states. Candis-S31 OTP repurposes DLDO1 and
+ * DLDO2 as those switches, so no meaningless DLDO voltage is reported.
  *
  * Must run before bsp_power_safe_state() when the goal is to capture the
  * power-on (OTP) state: the safe state deliberately disables optional rails,
@@ -39,7 +41,8 @@ void factory_console_note_sd_detect_boot_level(int level);
  * bsp_pmic_init() is called internally when needed; it only opens the LP I2C
  * device and services interrupt flags, never regulator configuration.
  *
- * The output is a complete single-line "name=on@3300mV ..." report.
+ * The output is a complete single-line "name=on@3300mV ... dc1sw=open ..."
+ * report. Programmed voltages are register settings, not measurements.
  *
  * @param out destination buffer
  * @param out_size buffer size in bytes; pass at least FACTORY_OTP_SNAPSHOT_LENGTH

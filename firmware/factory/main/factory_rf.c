@@ -5,18 +5,29 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "esp_console.h"
 #include "esp_err.h"
 #include "esp_phy_cert_test.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include "factory_modules.h"
 
 #define RF_TASK_STACK_SIZE (10 * 1024)
+#define RF_STOP_WAIT_MS    5000
+#define RF_STOP_POLL_MS    10
+
+typedef enum {
+    RF_TONE_NONE = 0,
+    RF_TONE_WIFI,
+    RF_TONE_BT,
+} rf_tone_kind_t;
 
 typedef struct {
     uint32_t channel;
@@ -49,8 +60,12 @@ typedef struct {
 } ble_rx_args_t;
 
 static bool s_rf_initialized;
-static volatile bool s_rf_task_busy;
-static volatile bool s_rf_tone_active;
+static atomic_bool s_rf_stop_requested;
+static SemaphoreHandle_t s_rf_worker_idle;
+static StaticSemaphore_t s_rf_worker_idle_storage;
+static rf_tone_kind_t s_rf_tone_kind;
+static uint32_t s_rf_tone_channel;
+static uint32_t s_rf_tone_backoff;
 
 static bool parse_u32(const char *text, uint32_t minimum, uint32_t maximum,
                       uint32_t *value)
@@ -93,6 +108,56 @@ static int command_rf_init(int argc, char **argv)
     return ESP_OK;
 }
 
+static bool rf_worker_is_idle(void)
+{
+    if (s_rf_worker_idle == NULL) {
+        return false;
+    }
+    if (xSemaphoreTake(s_rf_worker_idle, 0) != pdTRUE) {
+        return false;
+    }
+    xSemaphoreGive(s_rf_worker_idle);
+    return true;
+}
+
+static void rf_stop_tone(void)
+{
+    if (s_rf_tone_kind == RF_TONE_WIFI) {
+        esp_phy_wifi_tx_tone(0, s_rf_tone_channel, s_rf_tone_backoff);
+    } else if (s_rf_tone_kind == RF_TONE_BT) {
+        esp_phy_bt_tx_tone(0, s_rf_tone_channel, s_rf_tone_backoff);
+    }
+    s_rf_tone_kind = RF_TONE_NONE;
+}
+
+static esp_err_t rf_stop_activity(void)
+{
+    atomic_store_explicit(&s_rf_stop_requested, true, memory_order_release);
+    rf_stop_tone();
+    esp_phy_test_start_stop(0);
+
+    const int64_t started_us = esp_timer_get_time();
+    while (!rf_worker_is_idle() &&
+            esp_timer_get_time() - started_us < RF_STOP_WAIT_MS * 1000LL) {
+        /* Repeat the stop request while a just-created worker is starting.
+         * This closes the window where the worker could write start=3 after
+         * the console issued its first stop=0. */
+        esp_phy_test_start_stop(0);
+        vTaskDelay(pdMS_TO_TICKS(RF_STOP_POLL_MS));
+    }
+    const uint32_t waited_ms =
+        (uint32_t)((esp_timer_get_time() - started_us) / 1000);
+    if (!rf_worker_is_idle()) {
+        printf("rf_cert: stop requested, but worker is still active after "
+               "%" PRIu32 " ms; do not start another test\n", waited_ms);
+        return ESP_ERR_TIMEOUT;
+    }
+    atomic_store_explicit(&s_rf_stop_requested, false, memory_order_release);
+    printf("rf_cert: TX/RX stopped; worker=idle waited_ms=%" PRIu32 "\n",
+           waited_ms);
+    return ESP_OK;
+}
+
 static int command_rf_stop(int argc, char **argv)
 {
     (void)argc;
@@ -101,49 +166,84 @@ static int command_rf_stop(int argc, char **argv)
         printf("rf_cert: not initialized\n");
         return ESP_OK;
     }
+    return rf_stop_activity();
+}
+
+esp_err_t factory_rf_prepare_for_sleep(void)
+{
+    if (!s_rf_initialized) {
+        return ESP_OK;
+    }
+
+    const esp_err_t stop_error = rf_stop_activity();
+    if (stop_error != ESP_OK) {
+        printf("sleep_test: RF certification activity could not be quiesced; "
+               "sleep aborted\n");
+        return stop_error;
+    }
+    printf("sleep_test: RF certification mode was initialized during this "
+           "boot and has no supported deinit; restart before sleep_test\n");
+    return ESP_ERR_INVALID_STATE;
+}
+
+static bool rf_worker_begin(void)
+{
+    if (atomic_load_explicit(&s_rf_stop_requested, memory_order_acquire)) {
+        return false;
+    }
+    esp_phy_test_start_stop(3);
+    if (atomic_load_explicit(&s_rf_stop_requested, memory_order_acquire)) {
+        esp_phy_test_start_stop(0);
+        return false;
+    }
+    return true;
+}
+
+static void rf_worker_finish(void)
+{
     esp_phy_test_start_stop(0);
-    s_rf_tone_active = false;
-    printf("rf_cert: TX/RX stopped\n");
-    return ESP_OK;
+    atomic_store_explicit(&s_rf_stop_requested, false, memory_order_release);
+    xSemaphoreGive(s_rf_worker_idle);
+    vTaskDelete(NULL);
 }
 
 static void wifi_tx_task(void *argument)
 {
     const wifi_tx_args_t *args = argument;
-    esp_phy_test_start_stop(3);
-    esp_phy_wifi_tx(args->channel, args->rate, (int8_t)args->backoff,
-                    args->length_byte, args->packet_delay, args->packet_num);
-    s_rf_task_busy = false;
-    vTaskDelete(NULL);
+    if (rf_worker_begin()) {
+        esp_phy_wifi_tx(args->channel, args->rate, (int8_t)args->backoff,
+                        args->length_byte, args->packet_delay, args->packet_num);
+    }
+    rf_worker_finish();
 }
 
 static void wifi_rx_task(void *argument)
 {
     const wifi_rx_args_t *args = argument;
-    esp_phy_test_start_stop(3);
-    esp_phy_wifi_rx(args->channel, args->rate);
-    s_rf_task_busy = false;
-    vTaskDelete(NULL);
+    if (rf_worker_begin()) {
+        esp_phy_wifi_rx(args->channel, args->rate);
+    }
+    rf_worker_finish();
 }
 
 static void ble_tx_task(void *argument)
 {
     const ble_tx_args_t *args = argument;
-    esp_phy_test_start_stop(3);
-    esp_phy_ble_tx(args->tx_power_level, args->channel, args->length_byte,
-                   (esp_phy_ble_type_t)args->data_type, args->syncword,
-                   args->rate, args->packet_num);
-    s_rf_task_busy = false;
-    vTaskDelete(NULL);
+    if (rf_worker_begin()) {
+        esp_phy_ble_tx(args->tx_power_level, args->channel, args->length_byte,
+                       (esp_phy_ble_type_t)args->data_type, args->syncword,
+                       args->rate, args->packet_num);
+    }
+    rf_worker_finish();
 }
 
 static void ble_rx_task(void *argument)
 {
     const ble_rx_args_t *args = argument;
-    esp_phy_test_start_stop(3);
-    esp_phy_ble_rx(args->channel, args->syncword, args->rate);
-    s_rf_task_busy = false;
-    vTaskDelete(NULL);
+    if (rf_worker_begin()) {
+        esp_phy_ble_rx(args->channel, args->syncword, args->rate);
+    }
+    rf_worker_finish();
 }
 
 static bool rf_task_ready(void)
@@ -152,11 +252,12 @@ static bool rf_task_ready(void)
         printf("rf_cert: run rf_init first\n");
         return false;
     }
-    if (s_rf_task_busy) {
-        printf("rf_cert: another TX/RX task is active; run rf_stop and retry\n");
+    if (!rf_worker_is_idle()) {
+        printf("rf_cert: another TX/RX task is active; run rf_stop and wait "
+               "for worker=idle before retrying\n");
         return false;
     }
-    if (s_rf_tone_active) {
+    if (s_rf_tone_kind != RF_TONE_NONE) {
         printf("rf_cert: a tone is active; disable it or run rf_stop first\n");
         return false;
     }
@@ -165,10 +266,15 @@ static bool rf_task_ready(void)
 
 static bool rf_task_start(TaskFunction_t task, const char *name, void *argument)
 {
-    s_rf_task_busy = true;
+    if (s_rf_worker_idle == NULL ||
+            xSemaphoreTake(s_rf_worker_idle, 0) != pdTRUE) {
+        printf("rf_cert: worker is not idle\n");
+        return false;
+    }
+    atomic_store_explicit(&s_rf_stop_requested, false, memory_order_release);
     if (xTaskCreate(task, name, RF_TASK_STACK_SIZE, argument, 2, NULL) != pdPASS) {
         printf("rf_cert: failed to create task\n");
-        s_rf_task_busy = false;
+        xSemaphoreGive(s_rf_worker_idle);
         return false;
     }
     return true;
@@ -231,12 +337,14 @@ static int command_wifi_tone(int argc, char **argv)
     if (enable != 0 && !rf_task_ready()) {
         return ESP_FAIL;
     }
-    if (enable != 0) {
-        s_rf_tone_active = true;
-    } else {
-        s_rf_tone_active = false;
-    }
     esp_phy_wifi_tx_tone(enable, channel, backoff);
+    if (enable != 0) {
+        s_rf_tone_kind = RF_TONE_WIFI;
+        s_rf_tone_channel = channel;
+        s_rf_tone_backoff = backoff;
+    } else if (s_rf_tone_kind == RF_TONE_WIFI) {
+        s_rf_tone_kind = RF_TONE_NONE;
+    }
     printf("wifi_tone: enable=%" PRIu32 " channel=%" PRIu32
            " backoff=%" PRIu32 "\n",
            enable, channel, backoff);
@@ -303,12 +411,14 @@ static int command_bt_tone(int argc, char **argv)
     if (enable != 0 && !rf_task_ready()) {
         return ESP_FAIL;
     }
-    if (enable != 0) {
-        s_rf_tone_active = true;
-    } else {
-        s_rf_tone_active = false;
-    }
     esp_phy_bt_tx_tone(enable, channel, backoff);
+    if (enable != 0) {
+        s_rf_tone_kind = RF_TONE_BT;
+        s_rf_tone_channel = channel;
+        s_rf_tone_backoff = backoff;
+    } else if (s_rf_tone_kind == RF_TONE_BT) {
+        s_rf_tone_kind = RF_TONE_NONE;
+    }
     printf("bt_tone: enable=%" PRIu32 " channel=%" PRIu32
            " backoff=%" PRIu32 "\n",
            enable, channel, backoff);
@@ -331,6 +441,12 @@ static int command_rf_rx_result(int argc, char **argv)
 
 esp_err_t factory_rf_register(void)
 {
+    s_rf_worker_idle = xSemaphoreCreateBinaryStatic(&s_rf_worker_idle_storage);
+    if (s_rf_worker_idle == NULL || xSemaphoreGive(s_rf_worker_idle) != pdTRUE) {
+        return ESP_ERR_NO_MEM;
+    }
+    atomic_init(&s_rf_stop_requested, false);
+
     const esp_console_cmd_t commands[] = {
         {.command = "rf_init", .help = "Enter ESP PHY RF certification mode.", .func = command_rf_init},
         {.command = "rf_stop", .help = "Stop the current ESP PHY RF TX/RX test.", .func = command_rf_stop},

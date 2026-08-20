@@ -5,9 +5,12 @@ Candis-S31 hardware. It is not a product demo. Tests are run individually from
 the serial console so an unverified peripheral is never enabled as a side
 effect of booting the firmware.
 
-> EVT1 has not been fabricated. The project compiles with ESP-IDF `v6.1-beta1`,
-> but every electrical and peripheral result remains **NOT RUN** until it is
-> recorded on a physical board.
+> EVT1 Bring-Up is in progress on physical `v0.5_260803_1544` boards. The
+> Factory image compiles with ESP-IDF `v6.1-beta1-dirty`, and S1-S4 plus substantial
+> S5-S7 evidence has been collected. Camera, audio, RF closure, and S8-S10
+> remain open. The 2026-08-20 low-power/RF-stop/rail/microphone updates are
+> compile-verified only and have not been flashed or run on hardware; a
+> successful build is never promoted to a hardware `PASS`.
 
 ## Design
 
@@ -35,20 +38,26 @@ absolute path is stored in the repository.
 | `psram_test` | Write and verify a temporary 64 KiB PSRAM allocation | Temporary RAM only |
 | `i2c_scan main` | Probe the main I2C bus on GPIO33/GPIO34 | I2C address probes only |
 | `i2c_scan lp` | Probe the low-power I2C bus on GPIO6/GPIO7 | I2C address probes only |
-| `otp_status` | Read every TG28_SW rail enable/voltage and the DC1SW/DC4SW switch states | No |
+| `otp_status` | Read adjustable TG28_SW regulator enable/programmed-voltage settings plus DC1SW/DC4SW switch states; DLDO1/DLDO2 are OTP switches, not adjustable LDOs | No |
 | `pmic_test` | Read TG28_SW identity, battery, VBUS, and charger state | No |
 | `pmic power_on_source` | Read the raw TG28_SW REG20 boot-source bitmap | No |
+| `pmic power_off_source` | Read the raw TG28_SW REG21 power-off-source bitmap | No |
+| `pmic irq_snapshot` | Read the retained boot-time TG28_SW IRQ snapshot and validity flag | No |
 | `pmic regs` | Dump the current TG28_SW register map from 0x00 to 0xFF | No |
-| `pmic input_limit [100 \| 500 source_verified]` | Read the Type-C1 input limit, restore the 100 mA safe baseline, or explicitly arm the verified 500 mA stage | Optional write |
+| `pmic input_limit [100 \| {500\|900\|1000\|1500\|2000} source_verified]` | Read the Type-C1 input limit, force the 100 mA fallback, or explicitly select a verified-source level | Optional write |
 | `pmic vindpm [MILLIVOLTS]` | Read or set the TG28 input-voltage DPM threshold; valid values are 3880-5080 mV in 80 mV steps | Optional write |
 | `pmic charge_current [MILLIAMPS]` | Read or set the exact TG28_SW REG62 charge-current limit | Optional write |
 | `pmic temperature` | Read the TG28_SW ADC channels (VBAT/VBUS/VSYS/TS/TDIE) in millivolts | Enables an ADC channel for the measurement, then restores it |
-| `charge_test [source_verified]` | Read back input-current limit and charge voltage, then grade charger activity; the token is required if the verified input limit is 500 mA | No |
-| `rail NAME status` | Read one TG28_SW regulator setting | No |
+| `charge_test [source_verified]` | Read back input-current limit and charge voltage, then grade charger activity; `source_verified` is required to accept a level above the BSP 500 mA baseline | No |
+| `rail dump` | Best-effort dump of every adjustable regulator and both OTP switch outputs; failures do not hide later rails, and programmed values are explicitly not measurements | No |
+| `rail NAME status` | Read one TG28_SW regulator setting, or the switch state for OTP-mapped `dldo1`/`dldo2` | No |
 | `rail NAME on MILLIVOLTS` | Program and enable one TG28_SW regulator; rejected while an active display/audio owner holds that rail | Yes |
 | `rail NAME off` | Disable one TG28_SW regulator; rejected while an active display/audio owner holds that rail | Yes |
 | `peripheral_power NAME on\|off [output_only]` | Apply a complete peripheral power sequence; EXT pin 2 requires `external_3v3 on output_only` and no self-powered load | Yes |
 | `power_all_off` | Stop activity, release handles, and switch every peripheral rail off; idempotent and best-effort (first error kept, every failure printed) | Yes, disables only |
+| `temp_read [SAMPLES] [INTERVAL_MS]` | Sample the ESP32-S31 die-temperature estimate and print min/max/average; not ambient, battery, or TG28 temperature | Internal sensor only |
+| `sleep_test light\|deep SECONDS` | Stop RF activity, require a boot with no prior `rf_init`, force the board safe state, then enter timer-only SoC sleep | Yes, disables peripherals and sleeps |
+| `wake_info` | Decode reset/wake causes and the retained requested/measured duration from the latest `sleep_test` | No |
 | `rtc_test` | Read RX8130CE calendar data and validity flags | No |
 | `rtc_set YYYY-MM-DD HH:MM:SS WEEKDAY` | Set the RTC, read it back, and verify the stored value; out-of-range fields are rejected before writing | Yes, RTC registers only |
 | `rtc_alarm` | Arm an alarm at the next minute boundary and wait for the RX8130CE alarm flag; minute granularity only | Rearms RTC alarm registers |
@@ -62,7 +71,7 @@ absolute path is stored in the repository.
 | `wifi_scan` | Scan for access points in station mode; PASS requires at least one AP | No |
 | `ble_smoke` | Initialize, enable, disable, and release the BLE controller | No |
 | `rf_init` | Enter Espressif PHY RF certification mode | Enables the RF test path |
-| `rf_stop` | Stop the active PHY RF TX/RX test | Disables only |
+| `rf_stop` | Stop the active tone/TX/RX path, repeatedly assert stop during worker startup, and wait up to 5 s for a real idle acknowledgment | Disables only |
 | `wifi_tx CHANNEL RATE BACKOFF LENGTH DELAY COUNT` | Start controlled Wi-Fi TX; count 0 is continuous | Yes, RF transmitter |
 | `wifi_rx CHANNEL RATE` | Start controlled Wi-Fi RX counting | Yes, RF receiver |
 | `wifi_tone ENABLE CHANNEL BACKOFF` | Start or stop a Wi-Fi carrier-wave tone | Yes, RF transmitter |
@@ -75,12 +84,14 @@ absolute path is stored in the repository.
 | `display_sleep [deep]` | Enter normal sleep or SLPIN + DSTBON deep standby | Yes |
 | `display_wake [deep]` | Wake through SLPOUT or the required deep-standby reset pulse | Yes |
 | `display_sleep_test` | Cycle sleep and deep standby with an operator visual check after each enter/exit | Yes |
+| `display_te [WINDOW_MS]` | Measure panel TE edges, starting the display if needed | Yes |
+| `display_motion [SECONDS] [full\|ball]` | Run a continuous-motion tearing/FPS demo | Yes |
 | `touch_test` | Prompt the four corners in order and require each press to land in its corner zone (orientation errors fail at least one step) | Yes |
 | `touch_draw [SECONDS]` | Track touches with an on-screen marker for 5-300 s and log throttled coordinates plus the raw CTP_INT level; diagnostic only, files no report entry | Yes |
 | `led_test` | Show red, green, and blue on the addressable LED, then ask the operator to confirm | Yes |
 | `sdcard_test` | Mount, write, read, verify, remove, and unmount a test file | Writes the inserted card |
-| `speaker_test [FREQ_HZ] [VOLUME] [DURATION_MS]` | Play a square-wave tone, then ask the operator to confirm | Yes |
-| `microphone_test [DURATION_MS] [GAIN_DB]` | Capture stereo audio and require both channels to exceed the noise threshold | Yes |
+| `speaker_test [FREQ_HZ] [VOLUME] [DURATION_MS]` | Play a square-wave tone (20% default volume), then ask the operator to confirm | Yes |
+| `microphone_test [DURATION_MS] [GAIN_DB]` | Capture ch0/ch1, report peak/DC-removed RMS/DC/clipping, fail dead or clearly clipped channels, and remain WARN until physical mapping is verified | Yes |
 | `camera_test` | Capture five DVP frames and verify frame size, non-blank content, and frame-to-frame change; each frame wait is bounded by a 3 s timeout | Yes |
 | `jpeg_encode_test [COUNT] [QUALITY]` | Benchmark the S31 hardware JPEG encoder with a synthetic 800x600 RGB565 frame | No, hardware JPEG codec |
 | `cordic_test [COUNT]` | Compare hardware CORDIC sine/cosine output with software math and report timing | No, hardware CORDIC |
@@ -88,6 +99,7 @@ absolute path is stored in the repository.
 | `bitscrambler_test [COUNT]` | Verify and benchmark a BitScrambler 64-bit transpose program | No, hardware BitScrambler |
 | `asrc_test [COUNT]` | Benchmark hardware ASRC conversion from 16 kHz mono to 48 kHz stereo | No, hardware ASRC |
 | `accel_test` | Run all hardware accelerator diagnostics: JPEG, CORDIC, PPA, BitScrambler, and ASRC | No, hardware accelerators |
+| `sys_tasks [PERIOD_MS]` | Print per-task CPU usage and stack high-water marks | No |
 | `mark TEST pass\|fail\|skip [detail]` | Record an operator result; details may contain spaces | Report only |
 | `report` | Print every result and a JSON summary | No |
 | `report_reset` | Return every collected result to `NOT_RUN` while retaining the most recent safe-state result | Report only |
@@ -117,13 +129,15 @@ Two ordering facts matter for the first passes:
   100 %, so the first light-up never flashes full brightness. Raise the level
   in steps and record current/temperature per step.
 
-The console registers 39 top-level commands including `help`. PMIC init first
-clamps the Type-C1 input-current limit to 100 mA. `pmic input_limit 500
-source_verified` is the only 500 mA path; use it only after verifying the
-source/cable and watching VBUS with a current probe, then restore the safe
-baseline with `pmic input_limit 100`. Plain `charge_test` requires that 100 mA
-baseline. Only during the instrumented 500 mA step, run `charge_test
-source_verified`.
+The console registers 61 application commands plus the built-in `help` command
+(62 top-level commands total). The BSP initializes Type-C1 at a conservative
+500 mA baseline, then this brownout-investigation Factory image deliberately
+overrides it to 2000 mA at every boot. Use only a directly connected, verified
+source for this image. `pmic input_limit 100` is the explicit low-current
+fallback; selecting 500/900/1000/1500/2000 at runtime requires the
+`source_verified` token and prints a warning. Plain `charge_test` accepts the
+BSP 500 mA baseline; pass `source_verified` when the board is intentionally
+above that baseline. Neither form raises a limit by itself.
 
 `pmic_test` already reads fuel-gauge SOC and voltage. `pmic charge_current 500`
 sets the EVT target current without changing the OTP/default setting at boot.
@@ -189,11 +203,25 @@ dead or unpowered sensor now fails the command with `ESP_ERR_TIMEOUT` instead
 of stalling the console; investigate the sensor power and DVP wiring, then
 rerun.
 
+`sleep_test` is a **SoC timer-sleep and board-safe-state smoke test**, not the
+product S1/S2/TG28 soft-power-off acceptance test. UART, TG28, RTC, LP-I2C,
+VBUS, and board leakage can still dominate current. The command first stops
+any active RF worker/tone; if `rf_init` ran at any point in the same boot it
+then refuses to sleep because the public certification API has no matching
+deinit. Reboot, do not run `rf_init`, and retry. `wake_info` labels rejected,
+incomplete, and reset-mismatched retained records instead of presenting them
+as valid wake evidence; a rejected attempt replaces the previous retained
+record. Deep-sleep `measured_us` is captured at `app_main` entry, so it still
+includes boot latency but does not include the operator's console wait.
+
 Valid `rail` names are `dcdc1` through `dcdc4`, `aldo1` through `aldo4`,
 `bldo1` through `bldo2`, `cpusldo`, and `dldo1` through `dldo2`. `cpusldo` is
 unconnected on this board and is expected to stay off (OTP-disabled), so
 `rail cpusldo status` reading back disabled is the pass condition, not a
-measurement failure. Valid
+measurement failure. Candis-S31 OTP maps `dldo1` to DC1SW and `dldo2` to
+DC4SW, so those two names are status-only and have no meaningful programmed
+millivolt value. Every reported `programmed_mv` is a PMIC register setting,
+not a measured rail voltage. Valid
 `peripheral_power` names are `display`, `touch`, `audio`, `camera`, `sdcard`,
 and `external_3v3`. The BSP rejects voltages that do not have an exact TG28_SW
 register encoding.
@@ -212,10 +240,11 @@ idf.py --preview build
 ```
 
 The initial configuration uses 16 MB flash, DIO at 40 MHz, and octal PSRAM at
-40 MHz. PSRAM-not-found is tolerated during boot so the console remains
-available to report the failure. The explicit `psram_test` command performs a
-small non-destructive allocation test. `sdkconfig.defaults` also enables the OV5640 DVP sensor in
-RGB565 big-endian 800x600 at 10 fps and the BLE controller for `ble_smoke`.
+100 MHz (the long-octal part is rated 120 MHz). PSRAM-not-found is tolerated
+during boot so the console remains available to report the failure. The
+explicit `psram_test` command performs a small non-destructive allocation test.
+`sdkconfig.defaults` also enables the OV5640 DVP sensor in RGB565 big-endian
+800x600 at 10 fps and the BLE controller for `ble_smoke`.
 The BLE host stack is disabled (`BT_CONTROLLER_ONLY`): the smoke test talks to
 the controller directly. Because the diagnostic build exceeds the 1 MB default
 app partition, the project ships a custom `partitions.csv` with a 4 MB factory
