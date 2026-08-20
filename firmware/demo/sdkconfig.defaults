@@ -1,0 +1,77 @@
+# Candis-S31 watch demo baseline. Derives from firmware/factory/sdkconfig.defaults
+# minus the RF-cert/WDT-off diagnostics knobs, plus NimBLE, CJK font and a
+# larger LVGL heap. Performance build: the display pipeline is the product.
+CONFIG_IDF_TARGET="esp32s31"
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# Report peripheral failures instead of aborting on them.
+CONFIG_BSP_ERROR_CHECK=n
+
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
+
+# Single 8 MB app partition (no OTA); see partitions.csv.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# PSRAM: long-octal part rated 120 MHz; 100 MHz is the lowest non-40 MHz S31
+# grade and is the EVT1-validated setting (pre-J1 rework).
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+CONFIG_SPIRAM_SPEED_100M=y
+CONFIG_SPIRAM_MEMTEST=y
+
+# Display: 48 MHz QSPI (CO5300 50 MHz write limit), TE sync, two 460x80
+# internal DMA buffers in LVGL PARTIAL mode. Whole-frame transfer needs
+# 17.6 ms > 16.67 ms TE period, so full-screen updates run at 30 fps and
+# local animations lock to the 60 Hz TE cadence. Keep dirty areas <= 430
+# lines for 60 fps content.
+CONFIG_BSP_LCD_PIXEL_CLOCK_MHZ=48
+CONFIG_BSP_LCD_TE_SYNC=y
+CONFIG_LV_DEF_REFR_PERIOD=15
+CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=80
+CONFIG_BSP_LCD_DRAW_BUF_DOUBLE=y
+
+# Both RISC-V cores render in parallel; RGB565_SWAPPED makes LVGL write the
+# byte order the CO5300 consumes directly.
+CONFIG_LV_OS_FREERTOS=y
+CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
+CONFIG_LV_DRAW_BUF_ALIGN=64
+CONFIG_LV_DRAW_SW_SUPPORT_RGB565_SWAPPED=y
+
+# 1 ms tick so the LVGL task paces refresh cycles against the 16.67 ms TE period.
+CONFIG_FREERTOS_HZ=1000
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
+CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER=y
+
+# app_main drives board bring-up and service startup; 3584 is factory-REPL
+# sized, too small for this app (factory stack-protection incident 2026-08-20).
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# LVGL heap: 14 apps with lists, keyboard and animations need more than the
+# factory diagnostic 64 KB.
+CONFIG_LV_MEM_SIZE_KILOBYTES=128
+
+# Fonts: Source Han Sans SC 16 CJK as the UI default (Simplified Chinese),
+# Montserrat for large digits/labels. Only size 16: 14 px CJK is unreadable
+# at 325 ppi.
+CONFIG_LV_FONT_SOURCE_HAN_SANS_SC_16_CJK=y
+CONFIG_LV_FONT_DEFAULT_SOURCE_HAN_SANS_SC_16_CJK=y
+CONFIG_LV_FONT_MONTSERRAT_24=y
+CONFIG_LV_FONT_MONTSERRAT_32=y
+CONFIG_LV_FONT_MONTSERRAT_48=y
+
+# BLE host stack: NimBLE (lighter than Bluedroid). Replaces the factory
+# controller-only configuration; the controller itself stays enabled.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+
+# WiFi stays at IDF defaults (enabled on this target); credentials persist in
+# the nvs partition.
