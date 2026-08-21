@@ -28,15 +28,34 @@ CONFIG_SPIRAM_USE_CAPS_ALLOC=y
 CONFIG_SPIRAM_SPEED_100M=y
 CONFIG_SPIRAM_MEMTEST=y
 
-# Display: 48 MHz QSPI (CO5300 50 MHz write limit), TE sync, two 460x80
+# Internal RAM budget: two 460x80 LVGL DMA buffers take 147 KB of it, so the
+# WiFi driver + NimBLE host cannot also live there (first-flash boot loop:
+# esp_wifi_init ESP_ERR_NO_MEM, then a btdm controller assert, 2026-08-21).
+# Move the general heap into PSRAM - >=16 KB mallocs prefer PSRAM, WiFi/LWIP
+# bulk allocations too, and the NimBLE host pool is external entirely. The
+# display buffers stay internal via MALLOC_CAP_DMA and are unaffected.
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+CONFIG_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+
+# Display: 48 MHz QSPI (CO5300 50 MHz write limit), TE sync, two 460x48
 # internal DMA buffers in LVGL PARTIAL mode. Whole-frame transfer needs
 # 17.6 ms > 16.67 ms TE period, so full-screen updates run at 30 fps and
 # local animations lock to the 60 Hz TE cadence. Keep dirty areas <= 430
 # lines for 60 fps content.
+#
+# Buffer height 48, not 80: QSPI DMA cannot read octal PSRAM, so the two
+# LVGL buffers must fit internal RAM alongside the WiFi driver and the BLE
+# controller pool. 2x460x80 (147 KB) left < 25 KB and esp_wifi_init plus
+# btdm_osal_elem_mempool_init both failed (2026-08-21); 2x460x48 (88 KB)
+# frees ~59 KB while keeping ~10 flushes per frame, invisible with TE sync.
 CONFIG_BSP_LCD_PIXEL_CLOCK_MHZ=48
 CONFIG_BSP_LCD_TE_SYNC=y
 CONFIG_LV_DEF_REFR_PERIOD=15
-CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=80
+CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=48
 CONFIG_BSP_LCD_DRAW_BUF_DOUBLE=y
 
 # Both RISC-V cores render in parallel; RGB565_SWAPPED makes LVGL write the
@@ -55,9 +74,12 @@ CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER=y
 # sized, too small for this app (factory stack-protection incident 2026-08-20).
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 
-# LVGL heap: 14 apps with lists, keyboard and animations need more than the
-# factory diagnostic 64 KB.
-CONFIG_LV_MEM_SIZE_KILOBYTES=128
+# LVGL heap: the built-in allocator pool lives in internal RAM. 128 KB here
+# plus two 460x80 DMA buffers (147 KB) overran the internal heap at boot
+# (lvgl_port buf2 allocation failed, 2026-08-21 first flash). 64 KB is the
+# factory-validated size; the nav stack keeps only 1-2 app screens alive at a
+# time, so per-screen widget trees fit comfortably.
+CONFIG_LV_MEM_SIZE_KILOBYTES=64
 
 # Fonts: Source Han Sans SC 16 CJK as the UI default (Simplified Chinese),
 # Montserrat for large digits/labels. Only size 16: 14 px CJK is unreadable
@@ -72,6 +94,18 @@ CONFIG_LV_FONT_MONTSERRAT_48=y
 # controller-only configuration; the controller itself stays enabled.
 CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
+
+# WiFi/BLE controller buffer diet. With 147 KB of display DMA buffers the
+# internal heap (~237 KB) cannot feed the default driver pools: esp_wifi_init
+# returned ESP_ERR_NO_MEM and the BT controller died in
+# btdm_osal_elem_mempool_init (2026-08-21). The demo only scans, joins one AP
+# and keeps a single BLE link, so the default buffer fleets are pure waste.
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=12
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=16
+# Advertisement flow-control buffers: 50 is the Kconfig minimum (24 was
+# silently clamped back to the 100 default); each slot costs only ~35 B.
+CONFIG_BT_CTRL_BLE_ADV_REPORT_FLOW_CTRL_NUM=50
 
 # WiFi stays at IDF defaults (enabled on this target); credentials persist in
 # the nvs partition.
