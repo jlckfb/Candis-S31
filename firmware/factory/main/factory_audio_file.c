@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
 #include <unistd.h>
 
 #include "bsp/esp-bsp.h"
@@ -33,6 +34,8 @@
 #define AUDIO_DEMO_DEFAULT_GAIN_DB   24U
 #define AUDIO_DEMO_DEFAULT_VOLUME    20U
 #define AUDIO_DEMO_DEFAULT_FILE      "candis_record.wav"
+#define AUDIO_DEMO_MIC1_MANUAL_FILE  "mic1_ch0_manual.wav"
+#define AUDIO_DEMO_MIC2_MANUAL_FILE  "mic2_ch1_manual.wav"
 #define AUDIO_DEMO_WAV_HEADER_BYTES  44U
 #define AUDIO_DEMO_MAX_FILENAME      64U
 #define AUDIO_DEMO_MAX_CHUNKS        64U
@@ -312,6 +315,73 @@ static void capture_stats_add(stereo_capture_stats_t *stats,
     }
 }
 
+static void drain_console_input(void)
+{
+    char discard[32];
+    for (;;) {
+        fd_set read_set;
+        FD_ZERO(&read_set);
+        FD_SET(STDIN_FILENO, &read_set);
+        struct timeval no_wait = {.tv_sec = 0, .tv_usec = 0};
+        if (select(STDIN_FILENO + 1, &read_set, NULL, NULL, &no_wait) <= 0 ||
+                read(STDIN_FILENO, discard, sizeof(discard)) <= 0) {
+            break;
+        }
+    }
+}
+
+static char wait_for_manual_record_start(const char *command_name)
+{
+    drain_console_input();
+    printf("%s: send y to start recording, or n to cancel\n", command_name);
+    fflush(stdout);
+
+    for (;;) {
+        fd_set read_set;
+        FD_ZERO(&read_set);
+        FD_SET(STDIN_FILENO, &read_set);
+        struct timeval slice = {.tv_sec = 0, .tv_usec = 100000};
+        if (select(STDIN_FILENO + 1, &read_set, NULL, NULL, &slice) <= 0) {
+            continue;
+        }
+        char input[16];
+        const ssize_t count = read(STDIN_FILENO, input, sizeof(input));
+        for (ssize_t index = 0; index < count; ++index) {
+            const char key = (char)(input[index] | 0x20);
+            if (key == 'y' || key == 'n') {
+                printf("%s: control=%c\n", command_name, key);
+                fflush(stdout);
+                return key;
+            }
+        }
+    }
+}
+
+static bool manual_record_stop_requested(void)
+{
+    bool stop = false;
+    char input[32];
+    for (;;) {
+        fd_set read_set;
+        FD_ZERO(&read_set);
+        FD_SET(STDIN_FILENO, &read_set);
+        struct timeval no_wait = {.tv_sec = 0, .tv_usec = 0};
+        if (select(STDIN_FILENO + 1, &read_set, NULL, NULL, &no_wait) <= 0) {
+            break;
+        }
+        const ssize_t count = read(STDIN_FILENO, input, sizeof(input));
+        if (count <= 0) {
+            break;
+        }
+        for (ssize_t index = 0; index < count; ++index) {
+            if ((input[index] | 0x20) == 'n') {
+                stop = true;
+            }
+        }
+    }
+    return stop;
+}
+
 static esp_err_t capture_stereo(esp_codec_dev_handle_t microphone,
                                 uint8_t *capture, uint32_t capture_size,
                                 uint32_t gain_db,
@@ -364,6 +434,71 @@ static esp_err_t capture_stereo(esp_codec_dev_handle_t microphone,
     }
     if (result != ESP_CODEC_DEV_OK) {
         printf("audio_demo: microphone capture failed: %s\n",
+               esp_err_to_name(result));
+    }
+    return result;
+}
+
+static esp_err_t capture_stereo_manual(esp_codec_dev_handle_t microphone,
+                                       uint8_t *capture,
+                                       uint32_t capture_capacity,
+                                       uint32_t gain_db,
+                                       const char *command_name,
+                                       const char *route,
+                                       stereo_capture_stats_t *stats,
+                                       uint32_t *captured_size)
+{
+    *captured_size = 0;
+    esp_codec_dev_sample_info_t format = sample_format(AUDIO_DEMO_SAMPLE_RATE);
+    int result = esp_codec_dev_open(microphone, &format);
+    if (result == ESP_CODEC_DEV_OK) {
+        result = esp_codec_dev_set_in_gain(microphone, (float)gain_db);
+    }
+    if (result == ESP_CODEC_DEV_OK) {
+        result = factory_audio_set_input_route(route);
+    }
+    if (result != ESP_CODEC_DEV_OK) {
+        printf("%s: microphone open/gain failed: %s\n", command_name,
+               esp_err_to_name(result));
+        esp_codec_dev_close(microphone);
+        return result;
+    }
+
+    for (unsigned index = 0; index < 2 && result == ESP_CODEC_DEV_OK; ++index) {
+        result = esp_codec_dev_read(microphone, s_audio_io,
+                                    sizeof(s_audio_io));
+    }
+
+    capture_stats_init(stats);
+    while (result == ESP_CODEC_DEV_OK &&
+            *captured_size < capture_capacity) {
+        const uint32_t remaining = capture_capacity - *captured_size;
+        const uint32_t bytes = remaining < sizeof(s_audio_io) ? remaining :
+                               sizeof(s_audio_io);
+        result = esp_codec_dev_read(microphone, s_audio_io, bytes);
+        if (result != ESP_CODEC_DEV_OK) {
+            break;
+        }
+        memcpy(capture + *captured_size, s_audio_io, bytes);
+        capture_stats_add(stats, (const int16_t *)s_audio_io,
+                          bytes / sizeof(int16_t));
+        *captured_size += bytes;
+        if (manual_record_stop_requested()) {
+            printf("%s: n received, stopping capture\n", command_name);
+            break;
+        }
+    }
+
+    if (result == ESP_CODEC_DEV_OK && *captured_size == capture_capacity) {
+        printf("%s: reached the %u s safety limit\n", command_name,
+               AUDIO_DEMO_MAX_SECONDS);
+    }
+    const int close_result = esp_codec_dev_close(microphone);
+    if (result == ESP_CODEC_DEV_OK && close_result != ESP_CODEC_DEV_OK) {
+        result = close_result;
+    }
+    if (result != ESP_CODEC_DEV_OK) {
+        printf("%s: microphone capture failed: %s\n", command_name,
                esp_err_to_name(result));
     }
     return result;
@@ -739,6 +874,200 @@ cleanup:
     return result;
 }
 
+static int command_manual_mic_channel(int argc, char **argv,
+                                      const char *command_name,
+                                      const char *microphone_name,
+                                      unsigned selected_channel,
+                                      wav_play_mode_t play_mode,
+                                      const char *default_filename)
+{
+    uint32_t gain_db = AUDIO_DEMO_DEFAULT_GAIN_DB;
+    uint32_t volume = 100U;
+    const char *filename = default_filename;
+    if (argc > 4 ||
+            (argc >= 2 && !parse_u32(argv[1], 0, 48, &gain_db)) ||
+            (argc >= 3 && !parse_u32(argv[2], 0, 100, &volume))) {
+        printf("usage: %s [GAIN_DB 0-48] [VOLUME 0-100] [FILE.wav]\n",
+               command_name);
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (argc >= 4) {
+        filename = argv[3];
+    }
+
+    char path[sizeof(BSP_SD_MOUNT_POINT) + AUDIO_DEMO_MAX_FILENAME + 2U];
+    if (!make_sd_path(filename, path, sizeof(path))) {
+        printf("%s: FILE must be a 1-64 character ASCII root filename "
+               "using letters, digits, '.', '_' or '-'\n", command_name);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    bool mounted_here = false;
+    bool file_written = false;
+    esp_err_t result = prepare_audio_command(&mounted_here);
+    esp_codec_dev_handle_t microphone = NULL;
+    esp_codec_dev_handle_t speaker = NULL;
+    uint8_t *capture = NULL;
+    if (result != ESP_OK) {
+        return result;
+    }
+
+    const uint32_t capture_capacity = AUDIO_DEMO_MAX_SECONDS *
+                                      AUDIO_DEMO_SAMPLE_RATE *
+                                      AUDIO_DEMO_FRAME_BYTES;
+    capture = heap_caps_malloc(capture_capacity,
+                               MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (capture == NULL) {
+        printf("%s: need %" PRIu32
+               " bytes of PSRAM for the manual capture buffer\n",
+               command_name, capture_capacity);
+        result = ESP_ERR_NO_MEM;
+        goto cleanup;
+    }
+
+    microphone = bsp_audio_codec_microphone_init();
+    speaker = bsp_audio_codec_speaker_init();
+    if (microphone == NULL || speaker == NULL) {
+        printf("%s: codec initialization failed\n", command_name);
+        result = ESP_FAIL;
+        goto cleanup;
+    }
+
+    printf("%s: %s differential input -> logical CH%u; "
+           "gain=%" PRIu32 " dB volume=%" PRIu32 " max=%u s\n",
+           command_name, microphone_name, selected_channel, gain_db, volume,
+           AUDIO_DEMO_MAX_SECONDS);
+    if (wait_for_manual_record_start(command_name) != 'y') {
+        printf("%s: cancelled before recording\n", command_name);
+        result = ESP_ERR_INVALID_STATE;
+        goto cleanup;
+    }
+    drain_console_input();
+    printf("%s: RECORDING - send n to stop and play CH%u\n", command_name,
+           selected_channel);
+    fflush(stdout);
+
+    stereo_capture_stats_t stats;
+    uint32_t capture_size = 0;
+    result = capture_stereo_manual(microphone, capture, capture_capacity,
+                                   gain_db, command_name, "default", &stats,
+                                   &capture_size);
+    if (result != ESP_OK) {
+        goto cleanup;
+    }
+    if (capture_size < AUDIO_DEMO_FRAME_BYTES) {
+        printf("%s: no complete audio frame captured\n", command_name);
+        result = ESP_ERR_INVALID_SIZE;
+        goto cleanup;
+    }
+
+    const uint32_t p2p[2] = {
+        (uint32_t)((int32_t)stats.maximum[0] - stats.minimum[0]),
+        (uint32_t)((int32_t)stats.maximum[1] - stats.minimum[1]),
+    };
+    const unsigned ignored_channel = selected_channel ^ 1U;
+    const bool selected_live = p2p[selected_channel] >= 16U;
+    const uint32_t duration_ms =
+        (uint32_t)(((uint64_t)capture_size * 1000U) /
+                   (AUDIO_DEMO_SAMPLE_RATE * AUDIO_DEMO_FRAME_BYTES));
+    printf("%s: capture complete; duration_ms=%" PRIu32
+           " ch%u peak=%u p2p=%" PRIu32 " live=%s; "
+           "ch%u ignored peak=%u p2p=%" PRIu32 "\n",
+           command_name, duration_ms, selected_channel,
+           stats.peak[selected_channel], p2p[selected_channel],
+           selected_live ? "yes" : "no", ignored_channel,
+           stats.peak[ignored_channel], p2p[ignored_channel]);
+
+    char microphone_detail[FACTORY_DETAIL_LENGTH];
+    snprintf(microphone_detail, sizeof(microphone_detail),
+             "manual %s/CH%u peak=%u p2p=%" PRIu32
+             " gain=%" PRIu32 " dur_ms=%" PRIu32,
+             microphone_name, selected_channel, stats.peak[selected_channel],
+             p2p[selected_channel], gain_db, duration_ms);
+    factory_report_set(FACTORY_TEST_MICROPHONE,
+                       selected_live ? FACTORY_STATUS_WARN :
+                                       FACTORY_STATUS_FAIL,
+                       microphone_detail);
+    factory_report_print_one(FACTORY_TEST_MICROPHONE);
+
+    const uint32_t capture_checksum =
+        fnv1a_update(UINT32_C(2166136261), capture, capture_size);
+    result = wav_write_file(path, capture, capture_size);
+    heap_caps_free(capture);
+    capture = NULL;
+    if (result != ESP_OK) {
+        factory_report_error(FACTORY_TEST_SDCARD, result,
+                             "manual microphone WAV write failed");
+        goto cleanup;
+    }
+    file_written = true;
+    printf("%s: wrote %s bytes=%" PRIu32 " checksum=0x%08" PRIx32 "\n",
+           command_name, path, capture_size + AUDIO_DEMO_WAV_HEADER_BYTES,
+           capture_checksum);
+
+    uint32_t playback_checksum = 0;
+    printf("%s: playing %s logical CH%u only\n", command_name,
+           microphone_name, selected_channel);
+    result = wav_play_file(speaker, path, volume, play_mode,
+                           &playback_checksum);
+    if (result != ESP_OK || playback_checksum != capture_checksum) {
+        if (result == ESP_OK) {
+            result = ESP_ERR_INVALID_CRC;
+        }
+        printf("%s: TF readback checksum mismatch capture=0x%08" PRIx32
+               " playback=0x%08" PRIx32 "\n", command_name,
+               capture_checksum, playback_checksum);
+        factory_report_error(FACTORY_TEST_SDCARD, result,
+                             "manual microphone WAV readback/playback failed");
+        goto cleanup;
+    }
+
+    char sd_detail[FACTORY_DETAIL_LENGTH];
+    snprintf(sd_detail, sizeof(sd_detail),
+             "manual %s/CH%u WAV write/read passed bytes=%" PRIu32
+             " checksum=%08" PRIx32,
+             microphone_name, selected_channel,
+             capture_size + AUDIO_DEMO_WAV_HEADER_BYTES, capture_checksum);
+    factory_report_set(FACTORY_TEST_SDCARD, FACTORY_STATUS_PASS, sd_detail);
+    factory_report_print_one(FACTORY_TEST_SDCARD);
+
+    char speaker_detail[FACTORY_DETAIL_LENGTH];
+    snprintf(speaker_detail, sizeof(speaker_detail),
+             "%s CH%u WAV played; external confirmation pending",
+             microphone_name, selected_channel);
+    factory_report_set(FACTORY_TEST_SPEAKER, FACTORY_STATUS_NOT_RUN,
+                       speaker_detail);
+    factory_report_print_one(FACTORY_TEST_SPEAKER);
+
+    if (!selected_live) {
+        printf("%s: FAIL - %s/CH%u was effectively silent\n", command_name,
+               microphone_name, selected_channel);
+        result = ESP_FAIL;
+    }
+
+cleanup:
+    heap_caps_free(capture);
+    result = finish_audio_command(mounted_here, microphone, speaker, result);
+    printf("%s: %s (%s); %s\n", command_name,
+           result == ESP_OK ? "PASS" : "FAIL", esp_err_to_name(result),
+           file_written ? path : "no new WAV file written");
+    return result;
+}
+
+static int command_mic1_ch0_manual(int argc, char **argv)
+{
+    return command_manual_mic_channel(
+        argc, argv, "mic1_ch0_manual", "MIC1", 0, WAV_PLAY_LEFT,
+        AUDIO_DEMO_MIC1_MANUAL_FILE);
+}
+
+static int command_mic2_ch1_manual(int argc, char **argv)
+{
+    return command_manual_mic_channel(
+        argc, argv, "mic2_ch1_manual", "MIC2", 1, WAV_PLAY_RIGHT,
+        AUDIO_DEMO_MIC2_MANUAL_FILE);
+}
+
 static bool parse_play_mode(const char *text, wav_play_mode_t *mode)
 {
     if (strcmp(text, "mix") == 0 || strcmp(text, "stereo") == 0) {
@@ -814,6 +1143,16 @@ esp_err_t factory_audio_file_register(void)
             .command = "wav_play",
             .help = "Play 16-bit PCM WAV from TF: wav_play FILE [VOL] [mix|ch0|ch1].",
             .func = command_wav_play,
+        },
+        {
+            .command = "mic1_ch0_manual",
+            .help = "Manual MIC1/CH0 test: y starts recording, n stops and plays CH0.",
+            .func = command_mic1_ch0_manual,
+        },
+        {
+            .command = "mic2_ch1_manual",
+            .help = "Manual MIC2/CH1 test: y starts recording, n stops and plays CH1.",
+            .func = command_mic2_ch1_manual,
         },
     };
     for (size_t index = 0; index < sizeof(commands) / sizeof(commands[0]);
