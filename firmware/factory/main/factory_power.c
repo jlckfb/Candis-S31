@@ -119,6 +119,26 @@ static int command_pmic(int argc, char **argv)
         }
         return error;
     }
+    if (argc >= 2 && strcmp(argv[1], "model_dump") == 0) {
+        /* Fuel-gauge model area dump: captures the factory ROM default or
+         * the programmed/self-learned SRAM model for battery characterization
+         * review. Usage: pmic model_dump [rom|sram]  (default sram). */
+        const bool from_sram = !(argc == 3 && strcmp(argv[2], "rom") == 0);
+        uint8_t model[128] = {0};
+        const esp_err_t error = bsp_pmic_read_battery_model(from_sram, model, sizeof(model));
+        if (error != ESP_OK) {
+            return error;
+        }
+        printf("battery_model[%s] 128 bytes:\n", from_sram ? "sram" : "rom");
+        for (int i = 0; i < (int)sizeof(model); i += 16) {
+            printf("%02x:", i);
+            for (int j = 0; j < 16; ++j) {
+                printf(" %02x", model[i + j]);
+            }
+            printf("\n");
+        }
+        return ESP_OK;
+    }
     if (argc == 2 && strcmp(argv[1], "irq_snapshot") == 0) {
         uint8_t status[3] = {0};
         bool valid = false;
@@ -246,7 +266,7 @@ static int command_pmic(int argc, char **argv)
         }
         return error;
     }
-    printf("usage: pmic regs | pmic power_on_source | pmic power_off_source | pmic irq_snapshot | pmic input_limit [100 | {500|900|1000|1500|2000} source_verified] | pmic vindpm [MILLIVOLTS] | pmic charge_current [MILLIAMPS] | pmic temperature\n");
+    printf("usage: pmic regs | pmic power_on_source | pmic power_off_source | pmic irq_snapshot | pmic model_dump [rom|sram] | pmic input_limit [100 | {500|900|1000|1500|2000} source_verified] | pmic vindpm [MILLIVOLTS] | pmic charge_current [MILLIAMPS] | pmic temperature\n");
     return ESP_ERR_INVALID_ARG;
 }
 
