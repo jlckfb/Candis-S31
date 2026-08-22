@@ -1,0 +1,157 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="group__capabilities" kind="group">
+    <compoundname>capabilities</compoundname>
+    <title>Capabilities</title>
+    <sectiondef kind="define">
+      <memberdef kind="define" id="group__capabilities_1gaf3184870706e0f9f1b2b197c88b1d97f" prot="public" static="no">
+        <name>BSP_CAPS_DISPLAY</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="57" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="57" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__capabilities_1gad0498d67d7e36d8e145c39888a1e6a4d" prot="public" static="no">
+        <name>BSP_CAPS_TOUCH</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="58" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="58" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__capabilities_1gaec2ddd404379a47d2676d04ead119f5a" prot="public" static="no">
+        <name>BSP_CAPS_BUTTONS</name>
+        <initializer>0</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="59" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="59" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__capabilities_1gab277c010723e28568f339e353fce6bef" prot="public" static="no">
+        <name>BSP_CAPS_KNOB</name>
+        <initializer>0</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="60" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="60" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__capabilities_1gad63a95c6d3dc6ac82b209c1321571376" prot="public" static="no">
+        <name>BSP_CAPS_AUDIO</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="61" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="61" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__capabilities_1ga01e31729481f9bfca5e9fe071438a177" prot="public" static="no">
+        <name>BSP_CAPS_AUDIO_SPEAKER</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="62" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="62" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__capabilities_1ga811d0c5c3218cf067cd4dc08e519a01b" prot="public" static="no">
+        <name>BSP_CAPS_AUDIO_MIC</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="63" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="63" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__capabilities_1ga2a5c3ffe7d8bf63f01bc45a713a424d1" prot="public" static="no">
+        <name>BSP_CAPS_SDCARD</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="64" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="64" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__capabilities_1ga6372d1e8828a9b631ca8bbd348a2cc20" prot="public" static="no">
+        <name>BSP_CAPS_LED</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="65" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="65" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__capabilities_1gacc33fc23039abc16d88b1e266b7d76b2" prot="public" static="no">
+        <name>BSP_CAPS_CAMERA</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="66" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="66" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__capabilities_1ga420edbb8092cf7798d9b60f7b6b099ed" prot="public" static="no">
+        <name>BSP_CAPS_BAT</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="67" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="67" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__capabilities_1gaf5bb0ba529832b2529e25954094d3baa" prot="public" static="no">
+        <name>BSP_CAPS_IMU</name>
+        <initializer>0</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="68" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="68" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__capabilities_1gaa4989eb0836176c95447f3174c096775" prot="public" static="no">
+        <name>BSP_CAPS_HUMITURE</name>
+        <initializer>0</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="69" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="69" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+<para>Features implemented by the BSP. </para>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+  </compounddef>
+</doxygen>

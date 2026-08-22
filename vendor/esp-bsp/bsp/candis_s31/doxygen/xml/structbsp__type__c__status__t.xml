@@ -1,0 +1,258 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="structbsp__type__c__status__t" kind="struct" language="C++" prot="public">
+    <compoundname>bsp_type_c_status_t</compoundname>
+    <includes refid="candis__s31_8h" local="no">candis_s31.h</includes>
+    <sectiondef kind="public-attrib">
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1a729023e7afcf943d0e1c0b714135e582" prot="public" static="no" mutable="no">
+        <type>uint8_t</type>
+        <definition>uint8_t bsp_type_c_status_t::i2c_address</definition>
+        <argsstring></argsstring>
+        <name>i2c_address</name>
+        <qualifiedname>bsp_type_c_status_t::i2c_address</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="410" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="410" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1abd2329fc83c3dbee22fb3aef7cd5d582" prot="public" static="no" mutable="no">
+        <type>uint8_t</type>
+        <definition>uint8_t bsp_type_c_status_t::device_id</definition>
+        <argsstring></argsstring>
+        <name>device_id</name>
+        <qualifiedname>bsp_type_c_status_t::device_id</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="411" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="411" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1a64b351bfe38159aeed053e4816e12f9f" prot="public" static="no" mutable="no">
+        <type>uint8_t</type>
+        <definition>uint8_t bsp_type_c_status_t::device_type</definition>
+        <argsstring></argsstring>
+        <name>device_type</name>
+        <qualifiedname>bsp_type_c_status_t::device_type</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="412" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="412" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1a81cf20b0a19602db91be3c258ce9d990" prot="public" static="no" mutable="no">
+        <type>uint8_t</type>
+        <definition>uint8_t bsp_type_c_status_t::status</definition>
+        <argsstring></argsstring>
+        <name>status</name>
+        <qualifiedname>bsp_type_c_status_t::status</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="413" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="413" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1a93df87888a3fc31f1f72abd804595323" prot="public" static="no" mutable="no">
+        <type>uint8_t</type>
+        <definition>uint8_t bsp_type_c_status_t::status1</definition>
+        <argsstring></argsstring>
+        <name>status1</name>
+        <qualifiedname>bsp_type_c_status_t::status1</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="414" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="414" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1af0ad90de07914fcb401e9f5ba1b9f8f9" prot="public" static="no" mutable="no">
+        <type>uint8_t</type>
+        <definition>uint8_t bsp_type_c_status_t::type</definition>
+        <argsstring></argsstring>
+        <name>type</name>
+        <qualifiedname>bsp_type_c_status_t::type</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="415" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="415" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1a5794be968e8843482ffc630c3bcb18d8" prot="public" static="no" mutable="no">
+        <type>uint8_t</type>
+        <definition>uint8_t bsp_type_c_status_t::interrupt</definition>
+        <argsstring></argsstring>
+        <name>interrupt</name>
+        <qualifiedname>bsp_type_c_status_t::interrupt</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="416" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="416" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1a4ffbc211b92c46e096e6d0ea373acad8" prot="public" static="no" mutable="no">
+        <type>uint8_t</type>
+        <definition>uint8_t bsp_type_c_status_t::interrupt1</definition>
+        <argsstring></argsstring>
+        <name>interrupt1</name>
+        <qualifiedname>bsp_type_c_status_t::interrupt1</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="417" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="417" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1a8fb94a95cc8f59a5bf1e73fb41149d28" prot="public" static="no" mutable="no">
+        <type>bool</type>
+        <definition>bool bsp_type_c_status_t::attached</definition>
+        <argsstring></argsstring>
+        <name>attached</name>
+        <qualifiedname>bsp_type_c_status_t::attached</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="418" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="418" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1acf05f864ce72bcffc027ce27ee815189" prot="public" static="no" mutable="no">
+        <type>bool</type>
+        <definition>bool bsp_type_c_status_t::vbus_ok</definition>
+        <argsstring></argsstring>
+        <name>vbus_ok</name>
+        <qualifiedname>bsp_type_c_status_t::vbus_ok</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="419" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="419" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1a66c7bc1a90d344bf75e7e25930b975b2" prot="public" static="no" mutable="no">
+        <type>bool</type>
+        <definition>bool bsp_type_c_status_t::vbus_safe_0v</definition>
+        <argsstring></argsstring>
+        <name>vbus_safe_0v</name>
+        <qualifiedname>bsp_type_c_status_t::vbus_safe_0v</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="420" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="420" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1a582d8a04d20fda622bc1261377f8119b" prot="public" static="no" mutable="no">
+        <type>bool</type>
+        <definition>bool bsp_type_c_status_t::fault</definition>
+        <argsstring></argsstring>
+        <name>fault</name>
+        <qualifiedname>bsp_type_c_status_t::fault</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="421" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="421" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1a4dc1c3df91889b7c9f0430d2b952fb0f" prot="public" static="no" mutable="no">
+        <type>bool</type>
+        <definition>bool bsp_type_c_status_t::remedy_active</definition>
+        <argsstring></argsstring>
+        <name>remedy_active</name>
+        <qualifiedname>bsp_type_c_status_t::remedy_active</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="422" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="422" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1ae491fd5274a89e67dda110a505bd53d2" prot="public" static="no" mutable="no">
+        <type>uint8_t</type>
+        <definition>uint8_t bsp_type_c_status_t::orientation</definition>
+        <argsstring></argsstring>
+        <name>orientation</name>
+        <qualifiedname>bsp_type_c_status_t::orientation</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="423" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="423" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1a84a0301c7e81e8e024a85375eae69f87" prot="public" static="no" mutable="no">
+        <type>bsp_type_c_role_t</type>
+        <definition>bsp_type_c_role_t bsp_type_c_status_t::role</definition>
+        <argsstring></argsstring>
+        <name>role</name>
+        <qualifiedname>bsp_type_c_status_t::role</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="424" column="23" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="424" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__type__c__status__t_1a14b9b5d980eca9c56ab27867b658cc38" prot="public" static="no" mutable="no">
+        <type><ref refid="group__g07__usb_1ga3ade17ee740539518d6a3f572ac1fd6d" kindref="member">bsp_type_c_current_t</ref></type>
+        <definition>bsp_type_c_current_t bsp_type_c_status_t::advertised_current</definition>
+        <argsstring></argsstring>
+        <name>advertised_current</name>
+        <qualifiedname>bsp_type_c_status_t::advertised_current</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Current advertised by the attached partner. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="425" column="26" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="425" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+<para>FUSB303B connection snapshot. </para>
+    </detaileddescription>
+    <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="409" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="409" bodyend="426"/>
+    <listofallmembers>
+      <member refid="structbsp__type__c__status__t_1a14b9b5d980eca9c56ab27867b658cc38" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>advertised_current</name></member>
+      <member refid="structbsp__type__c__status__t_1a8fb94a95cc8f59a5bf1e73fb41149d28" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>attached</name></member>
+      <member refid="structbsp__type__c__status__t_1abd2329fc83c3dbee22fb3aef7cd5d582" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>device_id</name></member>
+      <member refid="structbsp__type__c__status__t_1a64b351bfe38159aeed053e4816e12f9f" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>device_type</name></member>
+      <member refid="structbsp__type__c__status__t_1a582d8a04d20fda622bc1261377f8119b" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>fault</name></member>
+      <member refid="structbsp__type__c__status__t_1a729023e7afcf943d0e1c0b714135e582" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>i2c_address</name></member>
+      <member refid="structbsp__type__c__status__t_1a5794be968e8843482ffc630c3bcb18d8" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>interrupt</name></member>
+      <member refid="structbsp__type__c__status__t_1a4ffbc211b92c46e096e6d0ea373acad8" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>interrupt1</name></member>
+      <member refid="structbsp__type__c__status__t_1ae491fd5274a89e67dda110a505bd53d2" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>orientation</name></member>
+      <member refid="structbsp__type__c__status__t_1a4dc1c3df91889b7c9f0430d2b952fb0f" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>remedy_active</name></member>
+      <member refid="structbsp__type__c__status__t_1a84a0301c7e81e8e024a85375eae69f87" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>role</name></member>
+      <member refid="structbsp__type__c__status__t_1a81cf20b0a19602db91be3c258ce9d990" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>status</name></member>
+      <member refid="structbsp__type__c__status__t_1a93df87888a3fc31f1f72abd804595323" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>status1</name></member>
+      <member refid="structbsp__type__c__status__t_1af0ad90de07914fcb401e9f5ba1b9f8f9" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>type</name></member>
+      <member refid="structbsp__type__c__status__t_1acf05f864ce72bcffc027ce27ee815189" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>vbus_ok</name></member>
+      <member refid="structbsp__type__c__status__t_1a66c7bc1a90d344bf75e7e25930b975b2" prot="public" virt="non-virtual"><scope>bsp_type_c_status_t</scope><name>vbus_safe_0v</name></member>
+    </listofallmembers>
+  </compounddef>
+</doxygen>

@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="structbsp__camera__cfg__t" kind="struct" language="C++" prot="public">
+    <compoundname>bsp_camera_cfg_t</compoundname>
+    <sectiondef kind="public-attrib">
+      <memberdef kind="variable" id="structbsp__camera__cfg__t_1a3ad8463e53e0dab57111cb11317e92b7" prot="public" static="no" mutable="no">
+        <type>uint8_t</type>
+        <definition>uint8_t bsp_camera_cfg_t::dummy</definition>
+        <argsstring></argsstring>
+        <name>dummy</name>
+        <qualifiedname>bsp_camera_cfg_t::dummy</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="480" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="480" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="479" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="479" bodyend="481"/>
+    <listofallmembers>
+      <member refid="structbsp__camera__cfg__t_1a3ad8463e53e0dab57111cb11317e92b7" prot="public" virt="non-virtual"><scope>bsp_camera_cfg_t</scope><name>dummy</name></member>
+    </listofallmembers>
+  </compounddef>
+</doxygen>

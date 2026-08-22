@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="dir_56ce7566e2db0b2c1431c0d6c15f5449" kind="dir">
+    <compoundname>bsp/candis_s31/include/bsp</compoundname>
+    <innerfile refid="candis__s31_8h">candis_s31.h</innerfile>
+    <innerfile refid="display_8h">display.h</innerfile>
+    <innerfile refid="touch_8h">touch.h</innerfile>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <location file="bsp/candis_s31/include/bsp/"/>
+  </compounddef>
+</doxygen>

@@ -1,0 +1,245 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="group__g07__usb" kind="group">
+    <compoundname>g07_usb</compoundname>
+    <title>USB and Type-C</title>
+    <innerclass refid="structbsp__type__c__status__t" prot="public">bsp_type_c_status_t</innerclass>
+    <sectiondef kind="enum">
+      <memberdef kind="enum" id="group__g07__usb_1ga4154f72fdbdc86f5cc48db8541c2267b" prot="public" static="no" strong="no">
+        <type></type>
+        <name>bsp_type_c_role_t</name>
+        <enumvalue id="group__g07__usb_1gga4154f72fdbdc86f5cc48db8541c2267ba07fe46f7fb1365e1469ad5d6733d7bf2" prot="public">
+          <name>BSP_TYPE_C_ROLE_DISABLED</name>
+          <initializer>= 0</initializer>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g07__usb_1gga4154f72fdbdc86f5cc48db8541c2267ba52f473ae2de6ec0de033fa5b91caebf5" prot="public">
+          <name>BSP_TYPE_C_ROLE_SINK</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g07__usb_1gga4154f72fdbdc86f5cc48db8541c2267ba48565286701225e222557c5f95ba1bed" prot="public">
+          <name>BSP_TYPE_C_ROLE_SOURCE</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g07__usb_1gga4154f72fdbdc86f5cc48db8541c2267ba8d62c0ca5e726c378343b6e4e0bc2b04" prot="public">
+          <name>BSP_TYPE_C_ROLE_DRP</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="391" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="391" bodyend="396"/>
+      </memberdef>
+      <memberdef kind="enum" id="group__g07__usb_1ga3ade17ee740539518d6a3f572ac1fd6d" prot="public" static="no" strong="no">
+        <type></type>
+        <name>bsp_type_c_current_t</name>
+        <enumvalue id="group__g07__usb_1gga3ade17ee740539518d6a3f572ac1fd6da47b7740fef184e7ff58a401efc74523f" prot="public">
+          <name>BSP_TYPE_C_CURRENT_DEFAULT</name>
+          <initializer>= 0</initializer>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g07__usb_1gga3ade17ee740539518d6a3f572ac1fd6da92063cbcbfb840080fa792f1251d42fe" prot="public">
+          <name>BSP_TYPE_C_CURRENT_1_5_A</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g07__usb_1gga3ade17ee740539518d6a3f572ac1fd6daec0ceef08bba164a8f8fab3133e22b71" prot="public">
+          <name>BSP_TYPE_C_CURRENT_3_0_A</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Board source policy accepts only USB Type-C default current (500 mA). The higher enum values report the attached partner&apos;s advertised capability through <ref refid="structbsp__type__c__status__t_1a14b9b5d980eca9c56ab27867b658cc38" kindref="member">bsp_type_c_status_t.advertised_current</ref>; passing them to a board role or VBUS API fails with ESP_ERR_NOT_SUPPORTED. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="402" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="402" bodyend="406"/>
+      </memberdef>
+      <memberdef kind="enum" id="group__g07__usb_1ga580c2455e8b1da85776fdd8a1460a92e" prot="public" static="no" strong="no">
+        <type></type>
+        <name>bsp_usb_host_power_mode_t</name>
+        <enumvalue id="group__g07__usb_1gga580c2455e8b1da85776fdd8a1460a92ea35cdd0577613e8a199ced0d97b434579" prot="public">
+          <name>BSP_USB_HOST_POWER_MODE_USB_DEV</name>
+          <initializer>= 0</initializer>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Power source selection kept compatible with the common ESP-BSP USB API. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="488" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="488" bodyend="490"/>
+      </memberdef>
+    </sectiondef>
+    <sectiondef kind="func">
+      <memberdef kind="function" id="group__g07__usb_1gac9e57b339c3aa510e4d63e41077b9243" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_type_c_init</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_type_c_init</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>FUSB303B access. Every explicit role selection first clears the 5 V boost latch and never re-enables it; bsp_usb_otg_power_set(true, ...) performs the only supported Source-before-boost sequence. Native USB Host owns the role and boost lifecycle while running, so direct role/power/deinit calls then fail with ESP_ERR_INVALID_STATE. Type-C2 only advertises the USB 500 mA default: other current requests fail with ESP_ERR_NOT_SUPPORTED. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="696" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="696" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g07__usb_1ga33c87518a30105716fe1457a35d5afc7" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_type_c_deinit</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_type_c_deinit</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="697" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="697" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g07__usb_1gaeb7fa973270192bef5f3f1eb3144ee1e" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_type_c_get_status</definition>
+        <argsstring>(bsp_type_c_status_t *status, bool clear_interrupts)</argsstring>
+        <name>bsp_type_c_get_status</name>
+        <param>
+          <type><ref refid="structbsp__type__c__status__t" kindref="compound">bsp_type_c_status_t</ref> *</type>
+          <declname>status</declname>
+        </param>
+        <param>
+          <type>bool</type>
+          <declname>clear_interrupts</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="698" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="698" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g07__usb_1ga157fe964ad0a62e9be0ab76c75f7b49e" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_type_c_set_role</definition>
+        <argsstring>(bsp_type_c_role_t role, bsp_type_c_current_t current)</argsstring>
+        <name>bsp_type_c_set_role</name>
+        <param>
+          <type>bsp_type_c_role_t</type>
+          <declname>role</declname>
+        </param>
+        <param>
+          <type><ref refid="group__g07__usb_1ga3ade17ee740539518d6a3f572ac1fd6d" kindref="member">bsp_type_c_current_t</ref></type>
+          <declname>current</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="699" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="699" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g07__usb_1ga0a14efb0edc77bf5a759abac48625339" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_usb_otg_power_set</definition>
+        <argsstring>(bool enable, bsp_type_c_current_t current)</argsstring>
+        <name>bsp_usb_otg_power_set</name>
+        <param>
+          <type>bool</type>
+          <declname>enable</declname>
+        </param>
+        <param>
+          <type><ref refid="group__g07__usb_1ga3ade17ee740539518d6a3f572ac1fd6d" kindref="member">bsp_type_c_current_t</ref></type>
+          <declname>current</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="700" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="700" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g07__usb_1gab8e10e9abff865257cb18e197a2aef7f" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_usb_host_start</definition>
+        <argsstring>(bsp_usb_host_power_mode_t mode, bool limit_500mA)</argsstring>
+        <name>bsp_usb_host_start</name>
+        <param>
+          <type><ref refid="group__g07__usb_1ga580c2455e8b1da85776fdd8a1460a92e" kindref="member">bsp_usb_host_power_mode_t</ref></type>
+          <declname>mode</declname>
+        </param>
+        <param>
+          <type>bool</type>
+          <declname>limit_500mA</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Install or remove the native USB Host library for the Type-C2 connector. limit_500mA must be true (the only source current this board advertises); passing false fails with ESP_ERR_NOT_SUPPORTED. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="705" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="705" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g07__usb_1gadd721af3d1fd30bb2828bd82783bdde5" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_usb_host_stop</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_usb_host_stop</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="706" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="706" declcolumn="11"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+<para>USB Host, power switch, and Type-C controller interface. </para>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+  </compounddef>
+</doxygen>

@@ -1,0 +1,125 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="structbsp__display__cfg__t" kind="struct" language="C++" prot="public">
+    <compoundname>bsp_display_cfg_t</compoundname>
+    <sectiondef kind="public-attrib">
+      <memberdef kind="variable" id="structbsp__display__cfg__t_1a5ca8835d65e0fc958726cbfb17861afb" prot="public" static="no" mutable="no">
+        <type>uint32_t</type>
+        <definition>uint32_t bsp_display_cfg_t::buffer_size</definition>
+        <argsstring></argsstring>
+        <name>buffer_size</name>
+        <qualifiedname>bsp_display_cfg_t::buffer_size</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="761" column="14" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="761" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__display__cfg__t_1a9865134f79a455deb42ed07e52dc7d33" prot="public" static="no" mutable="no">
+        <type>bool</type>
+        <definition>bool bsp_display_cfg_t::double_buffer</definition>
+        <argsstring></argsstring>
+        <name>double_buffer</name>
+        <qualifiedname>bsp_display_cfg_t::double_buffer</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="762" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="762" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__display__cfg__t_1a3c212f07d5d4337a5cadf642b2790e51" prot="public" static="no" mutable="no">
+        <type>unsigned int</type>
+        <definition>unsigned int bsp_display_cfg_t::buff_dma</definition>
+        <argsstring></argsstring>
+        <name>buff_dma</name>
+        <qualifiedname>bsp_display_cfg_t::buff_dma</qualifiedname>
+        <bitfield> 1</bitfield>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="768" column="22" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="768" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__display__cfg__t_1ae63a516e34101a45ef07c63519dba582" prot="public" static="no" mutable="no">
+        <type>unsigned int</type>
+        <definition>unsigned int bsp_display_cfg_t::buff_spiram</definition>
+        <argsstring></argsstring>
+        <name>buff_spiram</name>
+        <qualifiedname>bsp_display_cfg_t::buff_spiram</qualifiedname>
+        <bitfield> 1</bitfield>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="769" column="22" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="769" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__display__cfg__t_1a3f8159130f2fcf0d4aab4b04febb5cf0" prot="public" static="no" mutable="no">
+        <type>unsigned int</type>
+        <definition>unsigned int bsp_display_cfg_t::sw_rotate</definition>
+        <argsstring></argsstring>
+        <name>sw_rotate</name>
+        <qualifiedname>bsp_display_cfg_t::sw_rotate</qualifiedname>
+        <bitfield> 1</bitfield>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="770" column="22" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="770" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__display__cfg__t_1a5fceec79eea630e06758899b9727a197" prot="public" static="no" mutable="no">
+        <type>unsigned int</type>
+        <definition>unsigned int bsp_display_cfg_t::direct_mode</definition>
+        <argsstring></argsstring>
+        <name>direct_mode</name>
+        <qualifiedname>bsp_display_cfg_t::direct_mode</qualifiedname>
+        <bitfield> 1</bitfield>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Full-frame buffers, DIRECT render, per-cycle TE-gated band flush </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="771" column="22" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="771" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__display__cfg__t_1aec3090e361b5192d2e88c918793c91f0" prot="public" static="no" mutable="no">
+        <type>struct <ref refid="structbsp__display__cfg__t" kindref="compound">bsp_display_cfg_t</ref></type>
+        <definition>struct bsp_display_cfg_t bsp_display_cfg_t::flags</definition>
+        <argsstring></argsstring>
+        <name>flags</name>
+        <qualifiedname>bsp_display_cfg_t::flags</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="772" column="11"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="760" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="760" bodyend="773"/>
+    <listofallmembers>
+      <member refid="structbsp__display__cfg__t_1a3c212f07d5d4337a5cadf642b2790e51" prot="public" virt="non-virtual"><scope>bsp_display_cfg_t</scope><name>buff_dma</name></member>
+      <member refid="structbsp__display__cfg__t_1ae63a516e34101a45ef07c63519dba582" prot="public" virt="non-virtual"><scope>bsp_display_cfg_t</scope><name>buff_spiram</name></member>
+      <member refid="structbsp__display__cfg__t_1a5ca8835d65e0fc958726cbfb17861afb" prot="public" virt="non-virtual"><scope>bsp_display_cfg_t</scope><name>buffer_size</name></member>
+      <member refid="structbsp__display__cfg__t_1a5fceec79eea630e06758899b9727a197" prot="public" virt="non-virtual"><scope>bsp_display_cfg_t</scope><name>direct_mode</name></member>
+      <member refid="structbsp__display__cfg__t_1a9865134f79a455deb42ed07e52dc7d33" prot="public" virt="non-virtual"><scope>bsp_display_cfg_t</scope><name>double_buffer</name></member>
+      <member refid="structbsp__display__cfg__t_1aec3090e361b5192d2e88c918793c91f0" prot="public" virt="non-virtual"><scope>bsp_display_cfg_t</scope><name>flags</name></member>
+      <member refid="structbsp__display__cfg__t_1a3f8159130f2fcf0d4aab4b04febb5cf0" prot="public" virt="non-virtual"><scope>bsp_display_cfg_t</scope><name>sw_rotate</name></member>
+    </listofallmembers>
+  </compounddef>
+</doxygen>

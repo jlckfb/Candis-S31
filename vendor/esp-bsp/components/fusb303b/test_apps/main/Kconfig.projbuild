@@ -1,0 +1,19 @@
+menu "FUSB303B Test Configuration"
+
+    config FUSB303B_TEST_I2C_SCL
+        int "I2C SCL GPIO for the test bus"
+        default 33
+        help
+            The tests only create an I2C bus on these pins; no transfer is
+            started, so any existing GPIO works. Defaults match a Candis-S31
+            main I2C bus.
+
+    config FUSB303B_TEST_I2C_SDA
+        int "I2C SDA GPIO for the test bus"
+        default 34
+        help
+            The tests only create an I2C bus on these pins; no transfer is
+            started, so any existing GPIO works. Defaults match a Candis-S31
+            main I2C bus.
+
+endmenu

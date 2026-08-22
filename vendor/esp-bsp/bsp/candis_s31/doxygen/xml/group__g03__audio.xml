@@ -1,0 +1,280 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="group__g03__audio" kind="group">
+    <compoundname>g03_audio</compoundname>
+    <title>Audio</title>
+    <sectiondef kind="func">
+      <memberdef kind="function" id="group__g03__audio_1gafa64ce8ee16cae683e6e875f4fdc61bb" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_audio_init</definition>
+        <argsstring>(const i2s_std_config_t *i2s_config)</argsstring>
+        <name>bsp_audio_init</name>
+        <param>
+          <type>const i2s_std_config_t *</type>
+          <declname>i2s_config</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>I2S and ES8389 audio. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="732" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="732" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g03__audio_1ga299dfaf6a4351e3fa02a6e3495ca7920" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_audio_deinit</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_audio_deinit</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="733" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="733" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g03__audio_1gae4b89fc97eebedb191e6a831281fe113" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>const audio_codec_data_if_t *</type>
+        <definition>const audio_codec_data_if_t * bsp_audio_get_codec_itf</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_audio_get_codec_itf</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="734" column="29" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="734" declcolumn="29"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g03__audio_1ga8d613375571e64ce7e65c87997900752" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_codec_dev_handle_t</type>
+        <definition>esp_codec_dev_handle_t bsp_audio_codec_speaker_init</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_audio_codec_speaker_init</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="735" column="24" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="735" declcolumn="24"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g03__audio_1gad7ce449cdaa2fbac88496acc1770bb35" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_codec_dev_handle_t</type>
+        <definition>esp_codec_dev_handle_t bsp_audio_codec_microphone_init</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_audio_codec_microphone_init</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="736" column="24" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="736" declcolumn="24"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g03__audio_1ga7c8a335f27475238a2df0dae613b79c8" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_audio_codec_deinit</definition>
+        <argsstring>(esp_codec_dev_handle_t device)</argsstring>
+        <name>bsp_audio_codec_deinit</name>
+        <param>
+          <type>esp_codec_dev_handle_t</type>
+          <declname>device</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="737" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="737" declcolumn="11"/>
+      </memberdef>
+    </sectiondef>
+    <sectiondef kind="define">
+      <memberdef kind="define" id="group__g03__audio_1gabd842792bb3923c2f5e8f75fdbf46e5b" prot="public" static="no">
+        <name>BSP_I2S_SAMPLE_RATE</name>
+        <initializer>16000</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="194" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="194" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g03__audio_1ga9279083f286ae7508db8a914f63dbdcc" prot="public" static="no">
+        <name>BSP_I2S_SLOT_MODE</name>
+        <initializer>I2S_SLOT_MODE_STEREO</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="195" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="195" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g03__audio_1ga12c08152ef56162420f8949e99a8e30a" prot="public" static="no">
+        <name>BSP_AUDIO_SPEAKER_CODEC</name>
+        <initializer>ES8389</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="196" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="196" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g03__audio_1ga353af0c3437e703c5e7b01aedd3db4ca" prot="public" static="no">
+        <name>BSP_AUDIO_MIC_CODEC</name>
+        <initializer>ES8389</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="197" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="197" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g03__audio_1ga4c9175656d5ac9654ebe5630651323d4" prot="public" static="no">
+        <name>BSP_I2S_DOUT</name>
+        <initializer>GPIO_NUM_8</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="198" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="198" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g03__audio_1ga86a3bab1ccdaefd7926fe44a4187be29" prot="public" static="no">
+        <name>BSP_I2S_BCLK</name>
+        <initializer>GPIO_NUM_18</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="199" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="199" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g03__audio_1gacea3b3ed066dba20fcfbfa092cdf5409" prot="public" static="no">
+        <name>BSP_I2S_LRCLK</name>
+        <initializer>GPIO_NUM_19</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="200" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="200" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g03__audio_1gac87982f5780feb8b0ac8f6ad926ea7e5" prot="public" static="no">
+        <name>BSP_I2S_MCLK</name>
+        <initializer>GPIO_NUM_35</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="201" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="201" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g03__audio_1gaaa92f3e5ecd91eb3f2afadf8374c3293" prot="public" static="no">
+        <name>BSP_AUDIO_PA_EN</name>
+        <initializer>GPIO_NUM_42</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="202" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="202" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g03__audio_1ga946901e96c196d55e6b55d5ec874304c" prot="public" static="no">
+        <name>BSP_AUDIO_PA_EN_ACTIVE_LEVEL</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="203" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="203" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g03__audio_1ga15cf63213f951e3f8122faa4b3a6fca8" prot="public" static="no">
+        <name>BSP_I2S_DIN</name>
+        <initializer>GPIO_NUM_44</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="204" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="204" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g03__audio_1gaec5acd718d4fdbee097417496980369f" prot="public" static="no">
+        <name>BSP_I2S_SCLK</name>
+        <initializer>BSP_I2S_BCLK</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="205" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="205" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g03__audio_1ga5baaef0bb1e3fa60d1a2e41ce4fa19e0" prot="public" static="no">
+        <name>BSP_I2S_LCLK</name>
+        <initializer>BSP_I2S_LRCLK</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="206" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="206" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g03__audio_1gad06a790497cfb0a3e7f3e664ad79f712" prot="public" static="no">
+        <name>BSP_I2S_DSIN</name>
+        <initializer>BSP_I2S_DIN</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="207" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="207" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g03__audio_1gacc69fbb943e686b0bd9690b6ba08a39d" prot="public" static="no">
+        <name>BSP_POWER_AMP_IO</name>
+        <initializer>BSP_AUDIO_PA_EN</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="208" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="208" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+<para>I2S and ES8389 audio interface. </para>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+  </compounddef>
+</doxygen>

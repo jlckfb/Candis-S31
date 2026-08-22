@@ -1,0 +1,175 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="group__g06__led" kind="group">
+    <compoundname>g06_led</compoundname>
+    <title>LEDs</title>
+    <sectiondef kind="enum">
+      <memberdef kind="enum" id="group__g06__led_1ga48cf6095568094794d9adc1e95649ccc" prot="public" static="no" strong="no">
+        <type></type>
+        <name>bsp_led_t</name>
+        <enumvalue id="group__g06__led_1gga48cf6095568094794d9adc1e95649cccaace5198815db6bfdd1fe6410151c0031" prot="public">
+          <name>BSP_LED_1</name>
+          <initializer>= 0</initializer>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g06__led_1gga48cf6095568094794d9adc1e95649ccca3ea15fd44e54b3f77e7cd070b858912b" prot="public">
+          <name>BSP_LED_NUM</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="447" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="447" bodyend="450"/>
+      </memberdef>
+      <memberdef kind="enum" id="group__g06__led_1gacd8e580895e94bc1e219a78bad3143b9" prot="public" static="no" strong="no">
+        <type></type>
+        <name>bsp_led_effect_t</name>
+        <enumvalue id="group__g06__led_1ggacd8e580895e94bc1e219a78bad3143b9ab6e829a3aa11a27cbc255bb0e3134884" prot="public">
+          <name>BSP_LED_ON</name>
+          <initializer>= 0</initializer>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g06__led_1ggacd8e580895e94bc1e219a78bad3143b9acd0467da4c9254c05388dbb401474f7d" prot="public">
+          <name>BSP_LED_OFF</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g06__led_1ggacd8e580895e94bc1e219a78bad3143b9a1239efe6255dd93f1c21d456ba38a124" prot="public">
+          <name>BSP_LED_BLINK_FAST</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g06__led_1ggacd8e580895e94bc1e219a78bad3143b9a946e99f1489b931f84ad004d1cdd59d8" prot="public">
+          <name>BSP_LED_BLINK_SLOW</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g06__led_1ggacd8e580895e94bc1e219a78bad3143b9a657188b372bf636396c959691789c174" prot="public">
+          <name>BSP_LED_BREATHE_FAST</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g06__led_1ggacd8e580895e94bc1e219a78bad3143b9a6535d99a1dc4825f712b6e135ad003ef" prot="public">
+          <name>BSP_LED_BREATHE_SLOW</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g06__led_1ggacd8e580895e94bc1e219a78bad3143b9ac8f6c8b7fe5a15d27d6ecdc49b255497" prot="public">
+          <name>BSP_LED_MAX</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="452" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="452" bodyend="460"/>
+      </memberdef>
+    </sectiondef>
+    <sectiondef kind="func">
+      <memberdef kind="function" id="group__g06__led_1gade044685f5abc078703642e7e9a94e6b" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_led_indicator_create</definition>
+        <argsstring>(led_indicator_handle_t led_array[], int *led_cnt, int led_array_size)</argsstring>
+        <name>bsp_led_indicator_create</name>
+        <param>
+          <type>led_indicator_handle_t</type>
+          <declname>led_array</declname>
+          <array>[]</array>
+        </param>
+        <param>
+          <type>int *</type>
+          <declname>led_cnt</declname>
+        </param>
+        <param>
+          <type>int</type>
+          <declname>led_array_size</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Addressable RGB LED. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="752" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="752" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g06__led_1ga8174cd1f8a14cc1a6ac2a7b397a635e4" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_led_set</definition>
+        <argsstring>(led_indicator_handle_t handle, bool on)</argsstring>
+        <name>bsp_led_set</name>
+        <param>
+          <type>led_indicator_handle_t</type>
+          <declname>handle</declname>
+        </param>
+        <param>
+          <type>bool</type>
+          <declname>on</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="753" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="753" declcolumn="11"/>
+      </memberdef>
+    </sectiondef>
+    <sectiondef kind="define">
+      <memberdef kind="define" id="group__g06__led_1ga058dab90e389d6dcc7ec69dc7ec662b1" prot="public" static="no">
+        <name>BSP_LED_RGB_IO</name>
+        <initializer>GPIO_NUM_4</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="176" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="176" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g06__led_1gac16abe524725bfe8ca206915ddbd1f25" prot="public" static="no">
+        <name>BSP_LEDS_NUM</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="177" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="177" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+<para>Addressable RGB LED interface. </para>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+  </compounddef>
+</doxygen>

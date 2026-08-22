@@ -1,0 +1,1260 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="group__g09__battery" kind="group">
+    <compoundname>g09_battery</compoundname>
+    <title>Battery and Power</title>
+    <innerclass refid="structbsp__pmic__status__t" prot="public">bsp_pmic_status_t</innerclass>
+    <sectiondef kind="enum">
+      <memberdef kind="enum" id="group__g09__battery_1ga5929cf8913b89aa21ff1c45160893e9b" prot="public" static="no" strong="no">
+        <type></type>
+        <name>bsp_power_domain_t</name>
+        <enumvalue id="group__g09__battery_1gga5929cf8913b89aa21ff1c45160893e9ba3a8cf53c673f206ed5be303b678605db" prot="public">
+          <name>BSP_POWER_TYPE_C_CONTROL</name>
+          <initializer>= 0</initializer>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1gga5929cf8913b89aa21ff1c45160893e9bad698ec35287aee553fcb82dd9516226c" prot="public">
+          <name>BSP_POWER_DISPLAY_VBAT</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1gga5929cf8913b89aa21ff1c45160893e9ba7d99f8400e7a9420d0825f2f4aeb66ca" prot="public">
+          <name>BSP_POWER_SDCARD</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1gga5929cf8913b89aa21ff1c45160893e9ba0594672d83e7bd96cce9277c8e0a1803" prot="public">
+          <name>BSP_POWER_DISPLAY_VCI</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1gga5929cf8913b89aa21ff1c45160893e9baf251acd2f753ed9339a36d4e48e59735" prot="public">
+          <name>BSP_POWER_AUDIO_PA</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1gga5929cf8913b89aa21ff1c45160893e9ba45c9ef7a1c87c7baceaf37868ed541a5" prot="public">
+          <name>BSP_POWER_USB_OTG</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1gga5929cf8913b89aa21ff1c45160893e9ba5b2df1699327f2e2914651a3a79925b6" prot="public">
+          <name>BSP_POWER_DOMAIN_COUNT</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Directly controlled board power domains. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="266" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="266" bodyend="274"/>
+      </memberdef>
+      <memberdef kind="enum" id="group__g09__battery_1ga408de3110e2918554aa4d36ace442b8c" prot="public" static="no" strong="no">
+        <type></type>
+        <name>bsp_peripheral_t</name>
+        <enumvalue id="group__g09__battery_1gga408de3110e2918554aa4d36ace442b8caf6e93f7f9b578a769f715eeec52a489c" prot="public">
+          <name>BSP_PERIPHERAL_DISPLAY</name>
+          <initializer>= 0</initializer>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1gga408de3110e2918554aa4d36ace442b8cab4a17c480214482fd17dcb3cbd39050c" prot="public">
+          <name>BSP_PERIPHERAL_TOUCH</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1gga408de3110e2918554aa4d36ace442b8caded35b0b0a75dddf2c446b40538b60db" prot="public">
+          <name>BSP_PERIPHERAL_AUDIO</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1gga408de3110e2918554aa4d36ace442b8ca4578ffe8bcdd192fda4d888f00622eb9" prot="public">
+          <name>BSP_PERIPHERAL_CAMERA</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1gga408de3110e2918554aa4d36ace442b8cae21ef402cb42b28f38395bd1d97aba26" prot="public">
+          <name>BSP_PERIPHERAL_SDCARD</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1gga408de3110e2918554aa4d36ace442b8cae5b90c639515783b4a4462e73cbc97e5" prot="public">
+          <name>BSP_PERIPHERAL_EXTERNAL_3V3</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1gga408de3110e2918554aa4d36ace442b8caeb35b00b1eee655c3c4074e1eff3e44d" prot="public">
+          <name>BSP_PERIPHERAL_COUNT</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Board peripherals with a complete power sequence. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="277" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="277" bodyend="285"/>
+      </memberdef>
+      <memberdef kind="enum" id="group__g09__battery_1gaa353fa146bc1485b690ef9016bb1be41" prot="public" static="no" strong="no">
+        <type></type>
+        <name>bsp_pmic_regulator_t</name>
+        <enumvalue id="group__g09__battery_1ggaa353fa146bc1485b690ef9016bb1be41a557bcd1060c586b2a19523b47058a050" prot="public">
+          <name>BSP_PMIC_DCDC1</name>
+          <initializer>= 0</initializer>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggaa353fa146bc1485b690ef9016bb1be41a600d02f564f638dea6827c7faad369c1" prot="public">
+          <name>BSP_PMIC_DCDC2</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggaa353fa146bc1485b690ef9016bb1be41a0b6d8e7442e8f01237dbcb7853c199c9" prot="public">
+          <name>BSP_PMIC_DCDC3</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggaa353fa146bc1485b690ef9016bb1be41aefa5c975ee1ab3abac67cadc78bfd82c" prot="public">
+          <name>BSP_PMIC_DCDC4</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggaa353fa146bc1485b690ef9016bb1be41aab6bb48e878e8fdb093fef6463011d51" prot="public">
+          <name>BSP_PMIC_ALDO1</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggaa353fa146bc1485b690ef9016bb1be41a0faa2a077828f160ce2028b0a24d647a" prot="public">
+          <name>BSP_PMIC_ALDO2</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggaa353fa146bc1485b690ef9016bb1be41a70630e1391fcc277567cafa5ceb016f6" prot="public">
+          <name>BSP_PMIC_ALDO3</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggaa353fa146bc1485b690ef9016bb1be41a23ff2406f5674d8b3955998cd8fc35f8" prot="public">
+          <name>BSP_PMIC_ALDO4</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggaa353fa146bc1485b690ef9016bb1be41a6957ba6b177cba77f9dbbcb796b23590" prot="public">
+          <name>BSP_PMIC_BLDO1</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggaa353fa146bc1485b690ef9016bb1be41acfbbb1851fff0f26cc383da887a88375" prot="public">
+          <name>BSP_PMIC_BLDO2</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggaa353fa146bc1485b690ef9016bb1be41a21fe25fdbdad7be895f35b349b953631" prot="public">
+          <name>BSP_PMIC_CPUSLDO</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggaa353fa146bc1485b690ef9016bb1be41af889a17b89c733645ef5060c29a65d24" prot="public">
+          <name>BSP_PMIC_DLDO1</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+<para>DLDO1 pin. The TG28 OTP on this board straps it as the DC1SW load switch, so its voltage register is inert: use BSP_PMIC_SWITCH_DC1SW with <ref refid="group__g09__battery_1gaa94ef4fe16b2c167fa253102aa1ea514" kindref="member">bsp_pmic_switch_enable()</ref> instead of the regulator calls. </para>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggaa353fa146bc1485b690ef9016bb1be41a884b0bdd43809049a6ea7d9c0a7ab41c" prot="public">
+          <name>BSP_PMIC_DLDO2</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+<para>DLDO2 pin; unconnected spare, same OTP switch caveat (DC4SW). </para>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggaa353fa146bc1485b690ef9016bb1be41a31dadbb2ff11e5fe367b302a566f78cc" prot="public">
+          <name>BSP_PMIC_REGULATOR_COUNT</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>TG28_SW rails used by the board. Must stay aligned with tg28_sw_regulator_t. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="288" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="288" bodyend="307"/>
+      </memberdef>
+      <memberdef kind="enum" id="group__g09__battery_1gacf064b98544101023591b83a0071769e" prot="public" static="no" strong="no">
+        <type></type>
+        <name>bsp_pmic_switch_t</name>
+        <enumvalue id="group__g09__battery_1ggacf064b98544101023591b83a0071769eada5feb7066bc92b40f2ec9f4fbb367eb" prot="public">
+          <name>BSP_PMIC_SWITCH_DC1SW</name>
+          <initializer>= 0</initializer>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+<para>DLDO1 pin as a switch, input = DCDC1 </para>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggacf064b98544101023591b83a0071769ea7bdb45a24bafc4388ff21c3ac16ced04" prot="public">
+          <name>BSP_PMIC_SWITCH_DC4SW</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+<para>DLDO2 pin as a switch, input = DCDC4 </para>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggacf064b98544101023591b83a0071769ead48a30d54d225f97e3c8dbf5c0f2caf4" prot="public">
+          <name>BSP_PMIC_SWITCH_COUNT</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>TG28_SW load-switch outputs, mirroring tg28_sw_power_switch_t.</para>
+<para>A switch passes its input rail straight through, so no voltage programming applies. On Candis-S31 the TG28 OTP (TG28 confirmation sheet V1.3) straps the DLDO1 pin as DC1SW: its input is DCDC1 (3.3 V) and it feeds the WS2812B RGB LED. The rail is OFF after power-on and software must open it explicitly. DC4SW (DLDO2 pin) is an unconnected spare. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="318" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="318" bodyend="322"/>
+      </memberdef>
+      <memberdef kind="enum" id="group__g09__battery_1gac085a9cd0c93def85a85dad2282712d8" prot="public" static="no" strong="no">
+        <type></type>
+        <name>bsp_pmic_adc_channel_t</name>
+        <enumvalue id="group__g09__battery_1ggac085a9cd0c93def85a85dad2282712d8a0e0e5347a7c10aedeaec3c2b006996f5" prot="public">
+          <name>BSP_PMIC_ADC_VBAT</name>
+          <initializer>= 0</initializer>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggac085a9cd0c93def85a85dad2282712d8a8ad7924c91ea5b8dff2feafd1e7764c4" prot="public">
+          <name>BSP_PMIC_ADC_TS</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggac085a9cd0c93def85a85dad2282712d8aa5e8eefb8270140dd0bc33f02db65a97" prot="public">
+          <name>BSP_PMIC_ADC_VBUS</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggac085a9cd0c93def85a85dad2282712d8a6d0f5d1205e57be3c6f3f8d6338f01b3" prot="public">
+          <name>BSP_PMIC_ADC_VSYS</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggac085a9cd0c93def85a85dad2282712d8ae0759089380a63d87440e6206ba6e48b" prot="public">
+          <name>BSP_PMIC_ADC_TDIE</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggac085a9cd0c93def85a85dad2282712d8a6c4e95b37e54ddb3b1950bafca12e395" prot="public">
+          <name>BSP_PMIC_ADC_COUNT</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Channels of the TG28_SW SAR ADC, mirroring the driver channel list. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="348" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="348" bodyend="355"/>
+      </memberdef>
+    </sectiondef>
+    <sectiondef kind="typedef">
+      <memberdef kind="typedef" id="group__g09__battery_1gafc552cad10578b7be6e6bcf6b9f9df5c" prot="public" static="no">
+        <type>esp_err_t(*</type>
+        <definition>typedef esp_err_t(* bsp_power_safe_shutdown_cb_t) (void *user_ctx)</definition>
+        <argsstring>)(void *user_ctx)</argsstring>
+        <name>bsp_power_safe_shutdown_cb_t</name>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Application-owned protocol teardown invoked by <ref refid="group__g09__battery_1ga6b469c2a77aa6b0c0bfc0a583d0cdd7c" kindref="member">bsp_power_safe_state()</ref> before any GPIO is parked or rail is removed. The callback must release active display/audio/camera/storage owners while their supplies are still present, must not call <ref refid="group__g09__battery_1ga6b469c2a77aa6b0c0bfc0a583d0cdd7c" kindref="member">bsp_power_safe_state()</ref> recursively, and should return its first teardown error after attempting all owned peripherals. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="526" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="526" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <sectiondef kind="func">
+      <memberdef kind="function" id="group__g09__battery_1ga306c58405c1071b25b65328676812a43" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_power_set_safe_shutdown_callback</definition>
+        <argsstring>(bsp_power_safe_shutdown_cb_t callback, void *user_ctx)</argsstring>
+        <name>bsp_power_set_safe_shutdown_callback</name>
+        <param>
+          <type><ref refid="group__g09__battery_1gafc552cad10578b7be6e6bcf6b9f9df5c" kindref="member">bsp_power_safe_shutdown_cb_t</ref></type>
+          <declname>callback</declname>
+        </param>
+        <param>
+          <type>void *</type>
+          <declname>user_ctx</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Install or clear (callback == NULL) the application shutdown callback. Configure it before tasks can call <ref refid="group__g09__battery_1ga6b469c2a77aa6b0c0bfc0a583d0cdd7c" kindref="member">bsp_power_safe_state()</ref>. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="529" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="529" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga6b469c2a77aa6b0c0bfc0a583d0cdd7c" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_power_safe_state</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_power_safe_state</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Best-effort low-level shutdown. The registered application callback runs first, then direct domains, optional TG28_SW rails, and back-feed-prone GPIOs are handled even when an earlier step fails. Returns the first error. Without a registered callback the application remains responsible for stopping every active protocol owner before entering this function. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="536" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="536" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga6815b434b3a8b8eb860940b14b860d21" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_power_domain_set</definition>
+        <argsstring>(bsp_power_domain_t domain, bool enable)</argsstring>
+        <name>bsp_power_domain_set</name>
+        <param>
+          <type><ref refid="group__g09__battery_1ga5929cf8913b89aa21ff1c45160893e9b" kindref="member">bsp_power_domain_t</ref></type>
+          <declname>domain</declname>
+        </param>
+        <param>
+          <type>bool</type>
+          <declname>enable</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="537" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="537" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga16fada7a8e906b1f2e9016e8794978c8" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_power_domain_get</definition>
+        <argsstring>(bsp_power_domain_t domain, bool *enabled)</argsstring>
+        <name>bsp_power_domain_get</name>
+        <param>
+          <type><ref refid="group__g09__battery_1ga5929cf8913b89aa21ff1c45160893e9b" kindref="member">bsp_power_domain_t</ref></type>
+          <declname>domain</declname>
+        </param>
+        <param>
+          <type>bool *</type>
+          <declname>enabled</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Return the last state successfully driven by bsp_power_domain_set(), or ESP_ERR_INVALID_STATE when this boot has not driven the domain yet. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="540" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="540" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1gaef0a60164e964ddeddc1001685289c85" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>const char *</type>
+        <definition>const char * bsp_power_domain_name</definition>
+        <argsstring>(bsp_power_domain_t domain)</argsstring>
+        <name>bsp_power_domain_name</name>
+        <param>
+          <type><ref refid="group__g09__battery_1ga5929cf8913b89aa21ff1c45160893e9b" kindref="member">bsp_power_domain_t</ref></type>
+          <declname>domain</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="541" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="541" declcolumn="12"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga7c60a9055e616ad51f86e907bf0317ae" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_peripheral_power_set</definition>
+        <argsstring>(bsp_peripheral_t peripheral, bool enable)</argsstring>
+        <name>bsp_peripheral_power_set</name>
+        <param>
+          <type><ref refid="group__g09__battery_1ga408de3110e2918554aa4d36ace442b8c" kindref="member">bsp_peripheral_t</ref></type>
+          <declname>peripheral</declname>
+        </param>
+        <param>
+          <type>bool</type>
+          <declname>enable</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Apply the board-defined sequence for one complete peripheral supply. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="544" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="544" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga1f4be05cf35cac6fee49c6b8ff7b4639" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>const char *</type>
+        <definition>const char * bsp_peripheral_name</definition>
+        <argsstring>(bsp_peripheral_t peripheral)</argsstring>
+        <name>bsp_peripheral_name</name>
+        <param>
+          <type><ref refid="group__g09__battery_1ga408de3110e2918554aa4d36ace442b8c" kindref="member">bsp_peripheral_t</ref></type>
+          <declname>peripheral</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="545" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="545" declcolumn="12"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1gad1caa4e50a16d2f324ac951bbeb42b19" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_init</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_pmic_init</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>TG28_SW access. Init preserves regulator voltage/enable OTP state for the boot snapshot but clamps REG16 input current from its 1500 mA POR value to BSP_PMIC_SAFE_INPUT_CURRENT_LIMIT_MA, forces the charge-profile baseline (REG62/64/61/63, see the BSP_PMIC_SAFE_* constants) with exact readback verification, and programs the built-in reference battery model best-effort. Runtime requests above the input-limit default are accepted only from callers that have independently verified the connected source. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="586" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="586" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1gaf1d78af64e7d062832e6c75b188153f0" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_deinit</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_pmic_deinit</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="587" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="587" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga30c586b6a0caea405a312fa1f59cf54e" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_get_status</definition>
+        <argsstring>(bsp_pmic_status_t *status)</argsstring>
+        <name>bsp_pmic_get_status</name>
+        <param>
+          <type><ref refid="structbsp__pmic__status__t" kindref="compound">bsp_pmic_status_t</ref> *</type>
+          <declname>status</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="588" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="588" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1gaeea872af43207493bf2d4b75bf045a9d" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_get_power_on_source</definition>
+        <argsstring>(uint8_t *source)</argsstring>
+        <name>bsp_pmic_get_power_on_source</name>
+        <param>
+          <type>uint8_t *</type>
+          <declname>source</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="589" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="589" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga9cdf624e0593e7a4582fc7f889011f91" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_set_precharge_current</definition>
+        <argsstring>(uint16_t milliamps)</argsstring>
+        <name>bsp_pmic_set_precharge_current</name>
+        <param>
+          <type>uint16_t</type>
+          <declname>milliamps</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Set the REG61 precharge current (0-200 mA, 25 mA steps). </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="592" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="592" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1gac0ec6d23ad992978a64d4bc3d0249c5b" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_get_precharge_current</definition>
+        <argsstring>(uint16_t *milliamps)</argsstring>
+        <name>bsp_pmic_get_precharge_current</name>
+        <param>
+          <type>uint16_t *</type>
+          <declname>milliamps</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="593" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="593" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1gaddeaae34102244adeb9e7e015c2af622" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_set_termination_current</definition>
+        <argsstring>(uint16_t milliamps, bool enable)</argsstring>
+        <name>bsp_pmic_set_termination_current</name>
+        <param>
+          <type>uint16_t</type>
+          <declname>milliamps</declname>
+        </param>
+        <param>
+          <type>bool</type>
+          <declname>enable</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Set the REG63 termination current (0-200 mA, 25 mA steps) and the termination-enable bit; disabling keeps the current code. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="596" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="596" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga81a2d77795ddd9b3ec58bb1dddfebdc5" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_get_termination_current</definition>
+        <argsstring>(uint16_t *milliamps, bool *enabled)</argsstring>
+        <name>bsp_pmic_get_termination_current</name>
+        <param>
+          <type>uint16_t *</type>
+          <declname>milliamps</declname>
+        </param>
+        <param>
+          <type>bool *</type>
+          <declname>enabled</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="597" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="597" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga3ad2aaf4f775ed125c3e9dd0482f9a42" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_get_power_off_source</definition>
+        <argsstring>(uint8_t *source)</argsstring>
+        <name>bsp_pmic_get_power_off_source</name>
+        <param>
+          <type>uint8_t *</type>
+          <declname>source</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Read the TG28_SW REG21 power-off-source latch. The register survives while the TG28 stays supplied (VBUS or battery), so after an unexpected system power cut the SoC must be revived with the PWRON key WITHOUT unplugging VBUS, then this read reveals whether the TG28 itself commanded the off. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="603" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="603" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga7a408f6424c743b98cd35d5552cd5b89" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_power_off</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_pmic_power_off</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Power off the board through the TG28_SW soft-PWROFF command (REG10 bit0). The PMU enters its off state as soon as the write is acknowledged: every rail but the RTCLDO shuts down, the board loses power, and the call does not return in practice. Flush any pending log output before calling. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="609" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="609" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga3fd886b8835e5fe365fa8ea9e1a371e5" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_set_charge_current</definition>
+        <argsstring>(uint16_t milliamps)</argsstring>
+        <name>bsp_pmic_set_charge_current</name>
+        <param>
+          <type>uint16_t</type>
+          <declname>milliamps</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="611" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="611" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1gaad14fadbcaa174a90bb12cffa8eed4ea" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_get_charge_current</definition>
+        <argsstring>(uint16_t *milliamps)</argsstring>
+        <name>bsp_pmic_get_charge_current</name>
+        <param>
+          <type>uint16_t *</type>
+          <declname>milliamps</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="612" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="612" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga2e5fdaad56894e867a7d2810e88c2e04" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_set_input_current_limit</definition>
+        <argsstring>(uint16_t milliamps)</argsstring>
+        <name>bsp_pmic_set_input_current_limit</name>
+        <param>
+          <type>uint16_t</type>
+          <declname>milliamps</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="613" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="613" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1gafa3ee604e4347a08ba2f5554c55641c3" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_get_input_current_limit</definition>
+        <argsstring>(uint16_t *milliamps)</argsstring>
+        <name>bsp_pmic_get_input_current_limit</name>
+        <param>
+          <type>uint16_t *</type>
+          <declname>milliamps</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="614" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="614" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga5f091e7407afbd8a7735ea42946c74df" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_set_vindpm</definition>
+        <argsstring>(uint16_t millivolts)</argsstring>
+        <name>bsp_pmic_set_vindpm</name>
+        <param>
+          <type>uint16_t</type>
+          <declname>millivolts</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="615" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="615" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga9fddd2e9e7c050fad35a4af0704334d8" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_get_vindpm</definition>
+        <argsstring>(uint16_t *millivolts)</argsstring>
+        <name>bsp_pmic_get_vindpm</name>
+        <param>
+          <type>uint16_t *</type>
+          <declname>millivolts</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="616" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="616" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga64af40e3cab3917d20f3a438477de3c0" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_set_charge_voltage</definition>
+        <argsstring>(uint16_t millivolts)</argsstring>
+        <name>bsp_pmic_set_charge_voltage</name>
+        <param>
+          <type>uint16_t</type>
+          <declname>millivolts</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="617" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="617" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga662d8d0510d4c47af1a6449446f85669" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_get_charge_voltage</definition>
+        <argsstring>(uint16_t *millivolts)</argsstring>
+        <name>bsp_pmic_get_charge_voltage</name>
+        <param>
+          <type>uint16_t *</type>
+          <declname>millivolts</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="618" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="618" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga601acfd1dbccacae4c9ecae64261892d" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_read_registers</definition>
+        <argsstring>(uint8_t register_address, uint8_t *values, size_t count)</argsstring>
+        <name>bsp_pmic_read_registers</name>
+        <param>
+          <type>uint8_t</type>
+          <declname>register_address</declname>
+        </param>
+        <param>
+          <type>uint8_t *</type>
+          <declname>values</declname>
+        </param>
+        <param>
+          <type>size_t</type>
+          <declname>count</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="619" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="619" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga2a7d58647b9731c1fed6e1fccc307e23" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_read_battery_model</definition>
+        <argsstring>(bool from_sram, uint8_t *model, size_t size)</argsstring>
+        <name>bsp_pmic_read_battery_model</name>
+        <param>
+          <type>bool</type>
+          <declname>from_sram</declname>
+        </param>
+        <param>
+          <type>uint8_t *</type>
+          <declname>model</declname>
+        </param>
+        <param>
+          <type>size_t</type>
+          <declname>size</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Dump the TG28 fuel-gauge battery model area (128 bytes) into model. from_sram selects the programmed/learned SRAM area, false the factory ROM area. See tg28_sw_read_battery_model() for the procedure and the EVT open questions. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="625" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="625" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1gabc606e9b3bb7f32ac13ec9704adc8b51" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_program_battery_model</definition>
+        <argsstring>(const uint8_t *model, size_t size)</argsstring>
+        <name>bsp_pmic_program_battery_model</name>
+        <param>
+          <type>const uint8_t *</type>
+          <declname>model</declname>
+        </param>
+        <param>
+          <type>size_t</type>
+          <declname>size</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="627" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="627" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga0eee43ecb6d40d4427affc1ec8405a23" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_regulator_set_voltage</definition>
+        <argsstring>(bsp_pmic_regulator_t regulator, uint16_t millivolts)</argsstring>
+        <name>bsp_pmic_regulator_set_voltage</name>
+        <param>
+          <type><ref refid="group__g09__battery_1gaa353fa146bc1485b690ef9016bb1be41" kindref="member">bsp_pmic_regulator_t</ref></type>
+          <declname>regulator</declname>
+        </param>
+        <param>
+          <type>uint16_t</type>
+          <declname>millivolts</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="628" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="628" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1gad7026a90e7848837e8a91fffc5f5fb46" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_regulator_get_voltage</definition>
+        <argsstring>(bsp_pmic_regulator_t regulator, uint16_t *millivolts)</argsstring>
+        <name>bsp_pmic_regulator_get_voltage</name>
+        <param>
+          <type><ref refid="group__g09__battery_1gaa353fa146bc1485b690ef9016bb1be41" kindref="member">bsp_pmic_regulator_t</ref></type>
+          <declname>regulator</declname>
+        </param>
+        <param>
+          <type>uint16_t *</type>
+          <declname>millivolts</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="629" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="629" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga3f47f2e32d1d454e40bf597adf3c6906" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_regulator_enable</definition>
+        <argsstring>(bsp_pmic_regulator_t regulator, bool enable)</argsstring>
+        <name>bsp_pmic_regulator_enable</name>
+        <param>
+          <type><ref refid="group__g09__battery_1gaa353fa146bc1485b690ef9016bb1be41" kindref="member">bsp_pmic_regulator_t</ref></type>
+          <declname>regulator</declname>
+        </param>
+        <param>
+          <type>bool</type>
+          <declname>enable</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="630" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="630" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga0dd9e40de8aa13aad08e907845ebf6e1" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_regulator_is_enabled</definition>
+        <argsstring>(bsp_pmic_regulator_t regulator, bool *enabled)</argsstring>
+        <name>bsp_pmic_regulator_is_enabled</name>
+        <param>
+          <type><ref refid="group__g09__battery_1gaa353fa146bc1485b690ef9016bb1be41" kindref="member">bsp_pmic_regulator_t</ref></type>
+          <declname>regulator</declname>
+        </param>
+        <param>
+          <type>bool *</type>
+          <declname>enabled</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="631" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="631" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1gaa94ef4fe16b2c167fa253102aa1ea514" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_switch_enable</definition>
+        <argsstring>(bsp_pmic_switch_t sw, bool enable)</argsstring>
+        <name>bsp_pmic_switch_enable</name>
+        <param>
+          <type><ref refid="group__g09__battery_1gacf064b98544101023591b83a0071769e" kindref="member">bsp_pmic_switch_t</ref></type>
+          <declname>sw</declname>
+        </param>
+        <param>
+          <type>bool</type>
+          <declname>enable</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Open or close a TG28_SW load-switch output (see <ref refid="group__g09__battery_1gacf064b98544101023591b83a0071769e" kindref="member">bsp_pmic_switch_t</ref>). No voltage programming applies in switch mode; the switch passes its input rail straight through. BSP_PMIC_SWITCH_DC1SW powers the RGB LED on this board and is OFF after power-on. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="637" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="637" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga2c626ec2f50e48dd505b7fed215c73b5" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_switch_is_enabled</definition>
+        <argsstring>(bsp_pmic_switch_t sw, bool *enabled)</argsstring>
+        <name>bsp_pmic_switch_is_enabled</name>
+        <param>
+          <type><ref refid="group__g09__battery_1gacf064b98544101023591b83a0071769e" kindref="member">bsp_pmic_switch_t</ref></type>
+          <declname>sw</declname>
+        </param>
+        <param>
+          <type>bool *</type>
+          <declname>enabled</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="638" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="638" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga56a2fb03598dc4a732478c2c3c381c61" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>const char *</type>
+        <definition>const char * bsp_pmic_switch_name</definition>
+        <argsstring>(bsp_pmic_switch_t sw)</argsstring>
+        <name>bsp_pmic_switch_name</name>
+        <param>
+          <type><ref refid="group__g09__battery_1gacf064b98544101023591b83a0071769e" kindref="member">bsp_pmic_switch_t</ref></type>
+          <declname>sw</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="639" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="639" declcolumn="12"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1gaff505337d71d51f74aa5ae6eede3c5c9" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_get_and_clear_interrupts</definition>
+        <argsstring>(uint8_t status[3])</argsstring>
+        <name>bsp_pmic_get_and_clear_interrupts</name>
+        <param>
+          <type>uint8_t</type>
+          <declname>status</declname>
+          <array>[3]</array>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="641" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="641" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga1490945aa7172ca14c858343e5eb7c1d" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_get_boot_irq_snapshot</definition>
+        <argsstring>(uint8_t status[3], bool *valid)</argsstring>
+        <name>bsp_pmic_get_boot_irq_snapshot</name>
+        <param>
+          <type>uint8_t</type>
+          <declname>status</declname>
+          <array>[3]</array>
+        </param>
+        <param>
+          <type>bool *</type>
+          <declname>valid</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Copy the IRQ status snapshot captured at <ref refid="group__g09__battery_1gad1caa4e50a16d2f324ac951bbeb42b19" kindref="member">bsp_pmic_init()</ref> time, before the init-time clear. This preserves events latched across an SoC power collapse (e.g. a regulator over-current lockout that killed 3V3 while the TG28 stayed alive on VBUS). *valid is false if the snapshot was never captured. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="648" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="648" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1gaa44b7d74a92cd2310fbbc2fd65706376" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>const char *</type>
+        <definition>const char * bsp_pmic_regulator_name</definition>
+        <argsstring>(bsp_pmic_regulator_t regulator)</argsstring>
+        <name>bsp_pmic_regulator_name</name>
+        <param>
+          <type><ref refid="group__g09__battery_1gaa353fa146bc1485b690ef9016bb1be41" kindref="member">bsp_pmic_regulator_t</ref></type>
+          <declname>regulator</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="649" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="649" declcolumn="12"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga85117edc3eb1227d64acbff80e325a70" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_read_adc_mv</definition>
+        <argsstring>(bsp_pmic_adc_channel_t channel, uint16_t *millivolts)</argsstring>
+        <name>bsp_pmic_read_adc_mv</name>
+        <param>
+          <type><ref refid="group__g09__battery_1gac085a9cd0c93def85a85dad2282712d8" kindref="member">bsp_pmic_adc_channel_t</ref></type>
+          <declname>channel</declname>
+        </param>
+        <param>
+          <type>uint16_t *</type>
+          <declname>millivolts</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Read one TG28_SW ADC channel in millivolts. The TDIE channel reports the die-temperature sensor voltage, not a temperature; the TS channel reads the fixed external input fitted on this board (no battery NTC). A channel disabled at the OTP level is enabled for the measurement and restored afterwards. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="656" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="656" declcolumn="11"/>
+      </memberdef>
+    </sectiondef>
+    <sectiondef kind="define">
+      <memberdef kind="define" id="group__g09__battery_1ga5cb9164521a5b736382a6735bf31c1e3" prot="public" static="no">
+        <name>BSP_TYPE_C_CTRL_EN</name>
+        <initializer>GPIO_NUM_1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="121" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="121" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g09__battery_1gae5c55fbf60d3de397a98cddaa5db08a4" prot="public" static="no">
+        <name>BSP_TYPE_C_CTRL_EN_ACTIVE_LEVEL</name>
+        <initializer>0</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="122" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="122" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g09__battery_1ga7ec40f88a88b8281b9afed76edf5b756" prot="public" static="no">
+        <name>BSP_PMIC_RTC_INT</name>
+        <initializer>GPIO_NUM_2</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="123" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="123" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g09__battery_1ga255f9d97a2ebeba85a8ac7864cac41c7" prot="public" static="no">
+        <name>BSP_PMIC_RTC_INT_ACTIVE_LEVEL</name>
+        <initializer>0</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="124" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="124" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g09__battery_1ga1c12b2f2757df5a367e5e232067a80d7" prot="public" static="no">
+        <name>BSP_TYPE_C_INT</name>
+        <initializer>GPIO_NUM_43</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="125" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="125" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g09__battery_1gaf564eb55b21649ebce2864b912372a85" prot="public" static="no">
+        <name>BSP_TYPE_C_INT_ACTIVE_LEVEL</name>
+        <initializer>0</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="126" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="126" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g09__battery_1gaded0793ed03c28a2c3ce78c7530a4e8f" prot="public" static="no">
+        <name>BSP_USB_OTG_EN</name>
+        <initializer>GPIO_NUM_45</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="127" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="127" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g09__battery_1ga80e48d261694bf597b60a5ede1165912" prot="public" static="no">
+        <name>BSP_USB_OTG_EN_ACTIVE_LEVEL</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="128" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="128" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g09__battery_1ga473c8b8ab4b9775468e305f849136224" prot="public" static="no">
+        <name>BSP_PMIC_SAFE_CHARGE_CURRENT_MA</name>
+        <initializer>50</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Safe charge-current default (REG62). The register outlives an ESP-only reset - the TG28 only resets when it loses both VBUS and battery - so <ref refid="group__g09__battery_1gad1caa4e50a16d2f324ac951bbeb42b19" kindref="member">bsp_pmic_init()</ref> forces this value with a verified readback to collapse any target a previous session raised. Raising the target afterwards is the application charge controller&apos;s decision. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="553" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="553" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g09__battery_1ga1086e9aea588b000af5cb00e4e7102dc" prot="public" static="no">
+        <name>BSP_PMIC_SAFE_CHARGE_VOLTAGE_MV</name>
+        <initializer>4200</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Charge-profile baseline forced (with exact readback verification) by <ref refid="group__g09__battery_1gad1caa4e50a16d2f324ac951bbeb42b19" kindref="member">bsp_pmic_init()</ref>; a mismatch aborts the init. The values follow the vendor EVB recipe (manual section 4.5 step 5: 61H=0x02, 63H=0x01, 64H=0x03) and the Linux reference default: REG61 precharge 50 mA, REG63 termination 25 mA with termination enabled, REG64 charge voltage 4200 mV. The FAQ requires the charge-voltage register to match the fuel-gauge model CV (the built-in reference model is a 4.2 V-class profile) or the reported SOC jumps. REG64 POR is not specified, hence the deterministic program. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="564" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="564" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g09__battery_1ga31745caedc1b93d5f1db332af4c2b74e" prot="public" static="no">
+        <name>BSP_PMIC_SAFE_PRECHARGE_CURRENT_MA</name>
+        <initializer>50</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="565" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="565" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g09__battery_1ga4e0e2a289c1fa202a64fba8ae054ffa2" prot="public" static="no">
+        <name>BSP_PMIC_SAFE_TERMINATION_CURRENT_MA</name>
+        <initializer>25</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="566" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="566" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g09__battery_1ga334d73a23b278a2378637ebac0750d5e" prot="public" static="no">
+        <name>BSP_PMIC_SAFE_INPUT_CURRENT_LIMIT_MA</name>
+        <initializer>2000</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Board default input-current limit (REG16), applied and exact-readback verified at every <ref refid="group__g09__battery_1gad1caa4e50a16d2f324ac951bbeb42b19" kindref="member">bsp_pmic_init()</ref>. Relaxed to 2000 mA and aligned with the Factory diagnostic image (2026-08-21 user decision). This is a register ceiling, not a source capability claim: the TG28 backs the actual charge current off under this input limit/VINDPM while the system load keeps priority, and firmware cannot classify the C1 source - PC-port current budgets are NOT guaranteed. PC protection lives in the application charge controller&apos;s 200 mA default REG62 ceiling (see the demo svc_power policy). </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="577" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="577" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+<para>TG28_SW battery, regulator, and board power interface. </para>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+  </compounddef>
+</doxygen>

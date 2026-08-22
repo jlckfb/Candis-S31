@@ -1,0 +1,38 @@
+menu "TG28 SW test app"
+
+    config TG28_SW_TEST_WITH_HARDWARE
+        bool "Build the on-hardware TG28 tests instead of the pure logic tests"
+        default n
+        help
+            When disabled (default) the test app builds test_tg28_sw.c, which
+            exercises only the pure conversion logic and needs no PMIC. When
+            enabled the app builds test_tg28_sw_hw.c, which talks to a real
+            TG28 over I2C.
+
+    menu "Hardware test wiring"
+        visible if TG28_SW_TEST_WITH_HARDWARE
+
+        config TG28_SW_TEST_I2C_SCL
+            int "I2C SCL GPIO"
+            default 33
+        config TG28_SW_TEST_I2C_SDA
+            int "I2C SDA GPIO"
+            default 34
+        config TG28_SW_TEST_PMIC_IRQ
+            int "PMIC IRQ GPIO"
+            default 2
+        config TG28_SW_TEST_I2C_ADDRESS
+            hex "TG28 I2C address"
+            default 0x34
+        config TG28_SW_TEST_OTP_BASELINE
+            bool "Assert the Candis-S31 OTP baseline (customer confirmation sheet V1.3)"
+            default y
+            help
+                The H1 baseline asserts OTP-strapped power-on states (DLDO1/2
+                off, DCDC1/DCDC4 auto-start, 4200 mV CV). These hold only for
+                the Candis-S31 customer-confirmed OTP; disable for other
+                boards or TG28 EVMs.
+
+    endmenu
+
+endmenu

@@ -1,0 +1,60 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="structbsp__lcd__handles__t" kind="struct" language="C++" prot="public">
+    <compoundname>bsp_lcd_handles_t</compoundname>
+    <sectiondef kind="public-attrib">
+      <memberdef kind="variable" id="structbsp__lcd__handles__t_1adbdb94dd358f816f931e4b4a4a2fd298" prot="public" static="no" mutable="no">
+        <type>esp_lcd_panel_io_handle_t</type>
+        <definition>esp_lcd_panel_io_handle_t bsp_lcd_handles_t::io</definition>
+        <argsstring></argsstring>
+        <name>io</name>
+        <qualifiedname>bsp_lcd_handles_t::io</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="35" column="31" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="35" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__lcd__handles__t_1aa72daaaf4952867a0a78db38e959a8a1" prot="public" static="no" mutable="no">
+        <type>esp_lcd_panel_handle_t</type>
+        <definition>esp_lcd_panel_handle_t bsp_lcd_handles_t::panel</definition>
+        <argsstring></argsstring>
+        <name>panel</name>
+        <qualifiedname>bsp_lcd_handles_t::panel</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="36" column="28" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="36" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__lcd__handles__t_1afb72bab61b124bc127bce75ea08ee37c" prot="public" static="no" mutable="no">
+        <type>esp_lcd_panel_handle_t</type>
+        <definition>esp_lcd_panel_handle_t bsp_lcd_handles_t::control</definition>
+        <argsstring></argsstring>
+        <name>control</name>
+        <qualifiedname>bsp_lcd_handles_t::control</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="37" column="28" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="37" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <location file="bsp/candis_s31/include/bsp/display.h" line="34" column="1" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="34" bodyend="38"/>
+    <listofallmembers>
+      <member refid="structbsp__lcd__handles__t_1afb72bab61b124bc127bce75ea08ee37c" prot="public" virt="non-virtual"><scope>bsp_lcd_handles_t</scope><name>control</name></member>
+      <member refid="structbsp__lcd__handles__t_1adbdb94dd358f816f931e4b4a4a2fd298" prot="public" virt="non-virtual"><scope>bsp_lcd_handles_t</scope><name>io</name></member>
+      <member refid="structbsp__lcd__handles__t_1aa72daaaf4952867a0a78db38e959a8a1" prot="public" virt="non-virtual"><scope>bsp_lcd_handles_t</scope><name>panel</name></member>
+    </listofallmembers>
+  </compounddef>
+</doxygen>

@@ -1,0 +1,213 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="display_8h" kind="file" language="C++">
+    <compoundname>display.h</compoundname>
+    <includes local="yes">esp_err.h</includes>
+    <includes local="yes">esp_lcd_types.h</includes>
+    <includedby refid="candis__s31_8h" local="yes">bsp/candis_s31/include/bsp/candis_s31.h</includedby>
+    <incdepgraph>
+      <node id="1">
+        <label>bsp/candis_s31/include/bsp/display.h</label>
+        <link refid="display_8h"/>
+        <childnode refid="2" relation="include">
+        </childnode>
+        <childnode refid="3" relation="include">
+        </childnode>
+      </node>
+      <node id="2">
+        <label>esp_err.h</label>
+      </node>
+      <node id="3">
+        <label>esp_lcd_types.h</label>
+      </node>
+    </incdepgraph>
+    <invincdepgraph>
+      <node id="2">
+        <label>bsp/candis_s31/include/bsp/candis_s31.h</label>
+        <link refid="candis__s31_8h"/>
+      </node>
+      <node id="1">
+        <label>bsp/candis_s31/include/bsp/display.h</label>
+        <link refid="display_8h"/>
+        <childnode refid="2" relation="include">
+        </childnode>
+      </node>
+    </invincdepgraph>
+    <innerclass refid="structbsp__display__config__t" prot="public">bsp_display_config_t</innerclass>
+    <innerclass refid="structbsp__lcd__handles__t" prot="public">bsp_lcd_handles_t</innerclass>
+    <sectiondef kind="define">
+      <memberdef kind="define" id="display_8h_1a91bb847e26e03878b8bf20e017a8ac65" prot="public" static="no">
+        <name>ESP_LCD_COLOR_FORMAT_RGB565</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="12" column="9" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="12" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="display_8h_1a0a39f81d5fc06f5bfb663d17f7d412c8" prot="public" static="no">
+        <name>ESP_LCD_COLOR_FORMAT_RGB888</name>
+        <initializer>2</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="13" column="9" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="13" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="display_8h_1a823422998ccec62281f70e0a3d254730" prot="public" static="no">
+        <name>BSP_LCD_COLOR_FORMAT</name>
+        <initializer>ESP_LCD_COLOR_FORMAT_RGB565</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="14" column="9" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="14" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="display_8h_1a56e41e34289dd93656ab986e19b33f4c" prot="public" static="no">
+        <name>BSP_LCD_BIGENDIAN</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="20" column="9" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="20" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="display_8h_1a7ed87df7a8f2988bfc6bd2b2523313a0" prot="public" static="no">
+        <name>BSP_LCD_INVERT_COLORS</name>
+        <initializer>0</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="21" column="9" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="21" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="display_8h_1aa3c7147da347c6abcd08150af1d9519c" prot="public" static="no">
+        <name>BSP_LCD_BITS_PER_PIXEL</name>
+        <initializer>16</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="22" column="9" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="22" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="display_8h_1a4c811f05b6d6834452c81d9383a9decf" prot="public" static="no">
+        <name>BSP_LCD_COLOR_SPACE</name>
+        <initializer>LCD_RGB_ELEMENT_ORDER_RGB</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="23" column="9" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="23" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="display_8h_1a4dd6cff9fefdb3dfc4cc99e723412852" prot="public" static="no">
+        <name>BSP_LCD_H_RES</name>
+        <initializer>460</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="24" column="9" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="24" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="display_8h_1adb1bc561c984969a7633be9173ff8d1a" prot="public" static="no">
+        <name>BSP_LCD_V_RES</name>
+        <initializer>460</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="25" column="9" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="25" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <sectiondef kind="func">
+      <member refid="group__g04__display_1ga351d7157db337483dafe16ea3cf67969" kind="function"><name>bsp_display_new</name></member>
+      <member refid="group__g04__display_1ga5ac200b0ba5d6613a994410bb936410e" kind="function"><name>bsp_display_new_with_handles</name></member>
+      <member refid="group__g04__display_1gae3c41ec26043f11aa620c6aa4dd2a36b" kind="function"><name>bsp_display_delete</name></member>
+      <member refid="group__g04__display_1gaa917c022925dd941b2fd68cac525a309" kind="function"><name>bsp_display_brightness_init</name></member>
+      <member refid="group__g04__display_1gaee9fb8561a97b0758d15eb04ba738a93" kind="function"><name>bsp_display_brightness_deinit</name></member>
+      <member refid="group__g04__display_1ga12c7b53be5b337029f2d1aacce916d1c" kind="function"><name>bsp_display_brightness_set</name></member>
+      <member refid="group__g04__display_1ga17e487e96d85995e5de4aab309d290b2" kind="function"><name>bsp_display_backlight_on</name></member>
+      <member refid="group__g04__display_1gaa09e452cc60dcb24bb2ba980669610de" kind="function"><name>bsp_display_backlight_off</name></member>
+    </sectiondef>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <programlisting>
+<codeline lineno="1"><highlight class="comment">/*</highlight></codeline>
+<codeline lineno="2"><highlight class="comment"><sp/>*<sp/>SPDX-FileCopyrightText:<sp/>2026<sp/>Espressif<sp/>Systems<sp/>(Shanghai)<sp/>CO<sp/>LTD</highlight></codeline>
+<codeline lineno="3"><highlight class="comment"><sp/>*</highlight></codeline>
+<codeline lineno="4"><highlight class="comment"><sp/>*<sp/>SPDX-License-Identifier:<sp/>Apache-2.0</highlight></codeline>
+<codeline lineno="5"><highlight class="comment"><sp/>*/</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="6"><highlight class="normal"></highlight></codeline>
+<codeline lineno="7"><highlight class="normal"></highlight><highlight class="preprocessor">#pragma<sp/>once</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="8"><highlight class="normal"></highlight></codeline>
+<codeline lineno="9"><highlight class="normal"></highlight><highlight class="preprocessor">#include<sp/>&quot;esp_err.h&quot;</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="10"><highlight class="normal"></highlight><highlight class="preprocessor">#include<sp/>&quot;esp_lcd_types.h&quot;</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="11"><highlight class="normal"></highlight></codeline>
+<codeline lineno="12"><highlight class="normal"></highlight><highlight class="preprocessor">#define<sp/>ESP_LCD_COLOR_FORMAT_RGB565<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>1</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="13"><highlight class="normal"></highlight><highlight class="preprocessor">#define<sp/>ESP_LCD_COLOR_FORMAT_RGB888<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>2</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="14"><highlight class="normal"></highlight><highlight class="preprocessor">#define<sp/>BSP_LCD_COLOR_FORMAT<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>ESP_LCD_COLOR_FORMAT_RGB565</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="15"><highlight class="normal"></highlight><highlight class="comment">/*<sp/>CO5300<sp/>expects<sp/>RGB565<sp/>MSB-first<sp/>on<sp/>the<sp/>wire.<sp/>The<sp/>LVGL<sp/>path<sp/>selects</highlight></codeline>
+<codeline lineno="16"><highlight class="comment"><sp/>*<sp/>RGB565_SWAPPED<sp/>so<sp/>its<sp/>renderer<sp/>writes<sp/>that<sp/>byte<sp/>order<sp/>directly<sp/>instead<sp/>of</highlight></codeline>
+<codeline lineno="17"><highlight class="comment"><sp/>*<sp/>swapping<sp/>each<sp/>flushed<sp/>block<sp/>in<sp/>esp_lvgl_port.<sp/>The<sp/>NoGLIB<sp/>direct-draw<sp/>path</highlight></codeline>
+<codeline lineno="18"><highlight class="comment"><sp/>*<sp/>sends<sp/>framebuffer<sp/>bytes<sp/>as-is,<sp/>so<sp/>NoGLIB<sp/>users<sp/>must<sp/>likewise<sp/>provide</highlight></codeline>
+<codeline lineno="19"><highlight class="comment"><sp/>*<sp/>big-endian<sp/>RGB565<sp/>buffers.<sp/>*/</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="20"><highlight class="normal"></highlight><highlight class="preprocessor">#define<sp/>BSP_LCD_BIGENDIAN<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>1</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="21"><highlight class="normal"></highlight><highlight class="preprocessor">#define<sp/>BSP_LCD_INVERT_COLORS<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>0</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="22"><highlight class="normal"></highlight><highlight class="preprocessor">#define<sp/>BSP_LCD_BITS_PER_PIXEL<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>16</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="23"><highlight class="normal"></highlight><highlight class="preprocessor">#define<sp/>BSP_LCD_COLOR_SPACE<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>LCD_RGB_ELEMENT_ORDER_RGB</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="24"><highlight class="normal"></highlight><highlight class="preprocessor">#define<sp/>BSP_LCD_H_RES<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>460</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="25"><highlight class="normal"></highlight><highlight class="preprocessor">#define<sp/>BSP_LCD_V_RES<sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>460</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="26"><highlight class="normal"></highlight></codeline>
+<codeline lineno="30" refid="structbsp__display__config__t" refkind="compound"><highlight class="normal"></highlight><highlight class="keyword">typedef</highlight><highlight class="normal"><sp/></highlight><highlight class="keyword">struct<sp/></highlight><highlight class="normal">{</highlight></codeline>
+<codeline lineno="31"><highlight class="normal"><sp/><sp/><sp/><sp/></highlight><highlight class="keywordtype">int</highlight><highlight class="normal"><sp/>max_transfer_sz;</highlight></codeline>
+<codeline lineno="32"><highlight class="normal">}<sp/><ref refid="structbsp__display__config__t" kindref="compound">bsp_display_config_t</ref>;</highlight></codeline>
+<codeline lineno="33"><highlight class="normal"></highlight></codeline>
+<codeline lineno="34" refid="structbsp__lcd__handles__t" refkind="compound"><highlight class="normal"></highlight><highlight class="keyword">typedef</highlight><highlight class="normal"><sp/></highlight><highlight class="keyword">struct<sp/></highlight><highlight class="normal">{</highlight></codeline>
+<codeline lineno="35"><highlight class="normal"><sp/><sp/><sp/><sp/>esp_lcd_panel_io_handle_t<sp/>io;</highlight></codeline>
+<codeline lineno="36"><highlight class="normal"><sp/><sp/><sp/><sp/>esp_lcd_panel_handle_t<sp/>panel;</highlight></codeline>
+<codeline lineno="37"><highlight class="normal"><sp/><sp/><sp/><sp/>esp_lcd_panel_handle_t<sp/>control;</highlight></codeline>
+<codeline lineno="38"><highlight class="normal">}<sp/><ref refid="structbsp__lcd__handles__t" kindref="compound">bsp_lcd_handles_t</ref>;</highlight></codeline>
+<codeline lineno="39"><highlight class="normal"></highlight></codeline>
+<codeline lineno="40"><highlight class="normal"></highlight><highlight class="preprocessor">#ifdef<sp/>__cplusplus</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="41"><highlight class="normal"></highlight><highlight class="keyword">extern</highlight><highlight class="normal"><sp/></highlight><highlight class="stringliteral">&quot;C&quot;</highlight><highlight class="normal"><sp/>{</highlight></codeline>
+<codeline lineno="42"><highlight class="normal"></highlight><highlight class="preprocessor">#endif</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="43"><highlight class="normal"></highlight></codeline>
+<codeline lineno="44"><highlight class="normal">esp_err_t<sp/>bsp_display_new(</highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/><ref refid="structbsp__display__config__t" kindref="compound">bsp_display_config_t</ref><sp/>*config,</highlight></codeline>
+<codeline lineno="45"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>esp_lcd_panel_handle_t<sp/>*ret_panel,</highlight></codeline>
+<codeline lineno="46"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/>esp_lcd_panel_io_handle_t<sp/>*ret_io);</highlight></codeline>
+<codeline lineno="47"><highlight class="normal">esp_err_t<sp/>bsp_display_new_with_handles(</highlight><highlight class="keyword">const</highlight><highlight class="normal"><sp/><ref refid="structbsp__display__config__t" kindref="compound">bsp_display_config_t</ref><sp/>*config,</highlight></codeline>
+<codeline lineno="48"><highlight class="normal"><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><sp/><ref refid="structbsp__lcd__handles__t" kindref="compound">bsp_lcd_handles_t</ref><sp/>*ret_handles);</highlight></codeline>
+<codeline lineno="49"><highlight class="normal"></highlight><highlight class="keywordtype">void</highlight><highlight class="normal"><sp/>bsp_display_delete(</highlight><highlight class="keywordtype">void</highlight><highlight class="normal">);</highlight></codeline>
+<codeline lineno="50"><highlight class="normal"></highlight></codeline>
+<codeline lineno="51"><highlight class="normal">esp_err_t<sp/>bsp_display_brightness_init(</highlight><highlight class="keywordtype">void</highlight><highlight class="normal">);</highlight></codeline>
+<codeline lineno="52"><highlight class="normal">esp_err_t<sp/>bsp_display_brightness_deinit(</highlight><highlight class="keywordtype">void</highlight><highlight class="normal">);</highlight></codeline>
+<codeline lineno="53"><highlight class="normal">esp_err_t<sp/>bsp_display_brightness_set(</highlight><highlight class="keywordtype">int</highlight><highlight class="normal"><sp/>brightness_percent);</highlight></codeline>
+<codeline lineno="54"><highlight class="normal">esp_err_t<sp/>bsp_display_backlight_on(</highlight><highlight class="keywordtype">void</highlight><highlight class="normal">);</highlight></codeline>
+<codeline lineno="55"><highlight class="normal">esp_err_t<sp/>bsp_display_backlight_off(</highlight><highlight class="keywordtype">void</highlight><highlight class="normal">);</highlight></codeline>
+<codeline lineno="57"><highlight class="normal"></highlight></codeline>
+<codeline lineno="58"><highlight class="normal"></highlight><highlight class="preprocessor">#ifdef<sp/>__cplusplus</highlight><highlight class="normal"></highlight></codeline>
+<codeline lineno="59"><highlight class="normal">}</highlight></codeline>
+<codeline lineno="60"><highlight class="normal"></highlight><highlight class="preprocessor">#endif</highlight></codeline>
+    </programlisting>
+    <location file="bsp/candis_s31/include/bsp/display.h"/>
+  </compounddef>
+</doxygen>

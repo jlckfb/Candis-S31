@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="dir_65027e072c99995c292d16efcbad771e" kind="dir">
+    <compoundname>bsp/candis_s31</compoundname>
+    <innerdir refid="dir_fe0022b1426fc47fbef78b30e054927b">bsp/candis_s31/include</innerdir>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <location file="bsp/candis_s31/"/>
+  </compounddef>
+</doxygen>

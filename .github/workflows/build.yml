@@ -15,9 +15,9 @@ env:
   # Update the tag and commit together after the new version passes validation.
   IDF_REF: v6.1-beta1
   IDF_COMMIT: b1d13e9fe441c4f75e240c98a26fd631b7b3232f
-  # BSP revision required by the Factory and low-power APIs. Push this BSP
-  # commit before the product commit so the public CI checkout remains exact.
-  ESP_BSP_COMMIT: 1d10b2b58b79b05faed0b44124578cb5fc7703da
+  # The BSP is vendored at vendor/esp-bsp (see vendor/esp-bsp/SOURCE_COMMIT);
+  # CI builds exactly what a plain clone contains. Maintainers refresh the
+  # snapshot with tools/sync_bsp.sh after esp-bsp changes land.
 
 jobs:
   getting-started:
@@ -37,10 +37,10 @@ jobs:
           idf.py --preview -C examples/esp-idf/getting-started set-target esp32s31
           idf.py --preview -C examples/esp-idf/getting-started build
 
-  # The four development drivers live in the ESP-BSP worktree, not in this
-  # repository. Their test apps are the acceptance gate for the components that
-  # bsp/candis_s31 and firmware/factory depend on, so CI compiles them with the
-  # same flags tools/build-all.sh uses locally.
+  # The four drivers are vendored at vendor/esp-bsp/components. Their test
+  # apps are the acceptance gate for the components that the BSP and
+  # firmware/factory depend on, so CI compiles them with the same flags
+  # tools/build-all.sh uses locally.
   drivers:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -67,12 +67,7 @@ jobs:
         if: steps.idf-cache.outputs.cache-hit == 'true'
         run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
 
-      - name: Fetch ESP-BSP (Candis-S31 drivers)
-        run: |
-          git clone https://github.com/LeenixP/esp-bsp.git "$RUNNER_TEMP/esp-bsp"
-          git -C "$RUNNER_TEMP/esp-bsp" checkout "$ESP_BSP_COMMIT"
-
-      - name: Build driver test apps
+      - name: Build driver test apps (vendored snapshot)
         run: |
           . ~/esp-idf/export.sh
           for app in \
@@ -81,7 +76,7 @@ jobs:
             components/fusb303b/test_apps \
             components/lcd_touch/esp_lcd_touch_cst820/test_apps; do
             echo "::group::$app"
-            ( cd "$RUNNER_TEMP/esp-bsp/$app" \
+            ( cd "vendor/esp-bsp/$app" \
               && idf.py --preview -B build_esp32s31 -D IDF_TARGET=esp32s31 build )
             echo "::endgroup::"
           done
@@ -112,17 +107,11 @@ jobs:
         if: steps.idf-cache.outputs.cache-hit == 'true'
         run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
 
-      - name: Fetch ESP-BSP (Candis-S31 BSP)
-        run: |
-          git clone https://github.com/LeenixP/esp-bsp.git "$RUNNER_TEMP/esp-bsp"
-          git -C "$RUNNER_TEMP/esp-bsp" checkout "$ESP_BSP_COMMIT"
-
       - name: Build low-power example
         run: |
           . ~/esp-idf/export.sh
-          CANDIS_S31_BSP_PATH="$RUNNER_TEMP/esp-bsp/bsp/candis_s31" \
-            idf.py --preview -C examples/esp-idf/low-power \
-              -D IDF_TARGET=esp32s31 build
+          idf.py --preview -C examples/esp-idf/low-power \
+            -D IDF_TARGET=esp32s31 build
 
   factory:
     runs-on: ubuntu-latest
@@ -150,12 +139,6 @@ jobs:
         if: steps.idf-cache.outputs.cache-hit == 'true'
         run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
 
-      - name: Fetch ESP-BSP (Candis-S31 BSP)
-        run: |
-          git clone https://github.com/LeenixP/esp-bsp.git "$RUNNER_TEMP/esp-bsp"
-          git -C "$RUNNER_TEMP/esp-bsp" checkout "$ESP_BSP_COMMIT"
-
-
       - name: Validate Factory host and Recovery tooling
         run: |
           python3 firmware/factory/host_tools/run_evt.py --self-test
@@ -164,8 +147,7 @@ jobs:
       - name: Build factory firmware
         run: |
           . ~/esp-idf/export.sh
-          CANDIS_S31_BSP_PATH="$RUNNER_TEMP/esp-bsp/bsp/candis_s31" \
-            idf.py --preview -C firmware/factory -D IDF_TARGET=esp32s31 build
+          idf.py --preview -C firmware/factory -D IDF_TARGET=esp32s31 build
           idf.py --preview -C firmware/factory merge-bin \
             --output candis_s31_factory_merged.bin --format raw
 
@@ -175,7 +157,7 @@ jobs:
       - name: Pack factory release (dry-run)
         run: |
           RELEASE_NAME="ci-${GITHUB_SHA}" \
-          CANDIS_S31_BSP_PATH="$RUNNER_TEMP/esp-bsp/bsp/candis_s31" \
+          CANDIS_S31_BSP_PATH="$GITHUB_WORKSPACE/vendor/esp-bsp/bsp/candis_s31" \
           IDF_PATH=~/esp-idf \
             tools/release/pack_factory_release.sh firmware/factory "$RUNNER_TEMP/factory-release"
           python3 -c 'from pathlib import Path; p=Path("'"$RUNNER_TEMP"'/factory-release/launchpad.toml"); s=p.read_text(); assert "ci-${{ github.sha }}" in s and "@" not in s and "<tag>" not in s'

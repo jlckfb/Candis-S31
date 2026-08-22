@@ -1,0 +1,185 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="structbsp__pmic__status__t" kind="struct" language="C++" prot="public">
+    <compoundname>bsp_pmic_status_t</compoundname>
+    <includes refid="candis__s31_8h" local="no">candis_s31.h</includes>
+    <sectiondef kind="public-attrib">
+      <memberdef kind="variable" id="structbsp__pmic__status__t_1a0fcb1d71ecc478956c8bbb214a84b31e" prot="public" static="no" mutable="no">
+        <type>uint8_t</type>
+        <definition>uint8_t bsp_pmic_status_t::chip_id</definition>
+        <argsstring></argsstring>
+        <name>chip_id</name>
+        <qualifiedname>bsp_pmic_status_t::chip_id</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="326" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="326" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__pmic__status__t_1a2f8a3753b7e8f31f62f32e52959823ec" prot="public" static="no" mutable="no">
+        <type>uint8_t</type>
+        <definition>uint8_t bsp_pmic_status_t::common_status0</definition>
+        <argsstring></argsstring>
+        <name>common_status0</name>
+        <qualifiedname>bsp_pmic_status_t::common_status0</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="327" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="327" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__pmic__status__t_1ac65ae97930bddc5cec0c2600cb3cdf35" prot="public" static="no" mutable="no">
+        <type>uint8_t</type>
+        <definition>uint8_t bsp_pmic_status_t::common_status1</definition>
+        <argsstring></argsstring>
+        <name>common_status1</name>
+        <qualifiedname>bsp_pmic_status_t::common_status1</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="328" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="328" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__pmic__status__t_1ac206390ffcf1dedd987afc2721692a1e" prot="public" static="no" mutable="no">
+        <type>uint16_t</type>
+        <definition>uint16_t bsp_pmic_status_t::battery_mv</definition>
+        <argsstring></argsstring>
+        <name>battery_mv</name>
+        <qualifiedname>bsp_pmic_status_t::battery_mv</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="329" column="14" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="329" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__pmic__status__t_1af73854ef3a8b3d0f7e884de67e792952" prot="public" static="no" mutable="no">
+        <type>uint8_t</type>
+        <definition>uint8_t bsp_pmic_status_t::battery_percent</definition>
+        <argsstring></argsstring>
+        <name>battery_percent</name>
+        <qualifiedname>bsp_pmic_status_t::battery_percent</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>TG28 SOC estimate; only meaningful when fuel_gauge_valid is true (a programmed battery model). Treat it as meaningless data otherwise - never convert battery_mv into a percentage instead. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="333" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="333" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__pmic__status__t_1a8aee4388b6b45214ac64e638a1dc1039" prot="public" static="no" mutable="no">
+        <type>bool</type>
+        <definition>bool bsp_pmic_status_t::fuel_gauge_valid</definition>
+        <argsstring></argsstring>
+        <name>fuel_gauge_valid</name>
+        <qualifiedname>bsp_pmic_status_t::fuel_gauge_valid</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>True only after a battery model was successfully programmed in this boot (BSP reference default or a runtime override). </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="336" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="336" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__pmic__status__t_1a6567ca964c84355db87f4bc9177dca93" prot="public" static="no" mutable="no">
+        <type>bool</type>
+        <definition>bool bsp_pmic_status_t::fuel_gauge_reference_model</definition>
+        <argsstring></argsstring>
+        <name>fuel_gauge_reference_model</name>
+        <qualifiedname>bsp_pmic_status_t::fuel_gauge_reference_model</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>True while the active valid model is the BSP reference default (vendor generic 4.2 V-class): SOC is reference accuracy, not per-battery calibrated. False means a custom model (or none). </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="340" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="340" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__pmic__status__t_1af3095905c7429bffc7d7566d02adbc3d" prot="public" static="no" mutable="no">
+        <type>bool</type>
+        <definition>bool bsp_pmic_status_t::battery_present</definition>
+        <argsstring></argsstring>
+        <name>battery_present</name>
+        <qualifiedname>bsp_pmic_status_t::battery_present</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="341" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="341" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__pmic__status__t_1a46490d22619692da673079e0b413a23e" prot="public" static="no" mutable="no">
+        <type>bool</type>
+        <definition>bool bsp_pmic_status_t::vbus_present</definition>
+        <argsstring></argsstring>
+        <name>vbus_present</name>
+        <qualifiedname>bsp_pmic_status_t::vbus_present</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="342" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="342" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__pmic__status__t_1ac3f67eba274a0173c51e5882262ec3d8" prot="public" static="no" mutable="no">
+        <type>bool</type>
+        <definition>bool bsp_pmic_status_t::charging</definition>
+        <argsstring></argsstring>
+        <name>charging</name>
+        <qualifiedname>bsp_pmic_status_t::charging</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="343" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="343" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structbsp__pmic__status__t_1aca0cccd55b3551197c9a493db7b74386" prot="public" static="no" mutable="no">
+        <type>bool</type>
+        <definition>bool bsp_pmic_status_t::charge_done</definition>
+        <argsstring></argsstring>
+        <name>charge_done</name>
+        <qualifiedname>bsp_pmic_status_t::charge_done</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="344" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="344" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+<para>Read-only TG28_SW power and battery snapshot. </para>
+    </detaileddescription>
+    <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="325" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="325" bodyend="345"/>
+    <listofallmembers>
+      <member refid="structbsp__pmic__status__t_1ac206390ffcf1dedd987afc2721692a1e" prot="public" virt="non-virtual"><scope>bsp_pmic_status_t</scope><name>battery_mv</name></member>
+      <member refid="structbsp__pmic__status__t_1af73854ef3a8b3d0f7e884de67e792952" prot="public" virt="non-virtual"><scope>bsp_pmic_status_t</scope><name>battery_percent</name></member>
+      <member refid="structbsp__pmic__status__t_1af3095905c7429bffc7d7566d02adbc3d" prot="public" virt="non-virtual"><scope>bsp_pmic_status_t</scope><name>battery_present</name></member>
+      <member refid="structbsp__pmic__status__t_1aca0cccd55b3551197c9a493db7b74386" prot="public" virt="non-virtual"><scope>bsp_pmic_status_t</scope><name>charge_done</name></member>
+      <member refid="structbsp__pmic__status__t_1ac3f67eba274a0173c51e5882262ec3d8" prot="public" virt="non-virtual"><scope>bsp_pmic_status_t</scope><name>charging</name></member>
+      <member refid="structbsp__pmic__status__t_1a0fcb1d71ecc478956c8bbb214a84b31e" prot="public" virt="non-virtual"><scope>bsp_pmic_status_t</scope><name>chip_id</name></member>
+      <member refid="structbsp__pmic__status__t_1a2f8a3753b7e8f31f62f32e52959823ec" prot="public" virt="non-virtual"><scope>bsp_pmic_status_t</scope><name>common_status0</name></member>
+      <member refid="structbsp__pmic__status__t_1ac65ae97930bddc5cec0c2600cb3cdf35" prot="public" virt="non-virtual"><scope>bsp_pmic_status_t</scope><name>common_status1</name></member>
+      <member refid="structbsp__pmic__status__t_1a6567ca964c84355db87f4bc9177dca93" prot="public" virt="non-virtual"><scope>bsp_pmic_status_t</scope><name>fuel_gauge_reference_model</name></member>
+      <member refid="structbsp__pmic__status__t_1a8aee4388b6b45214ac64e638a1dc1039" prot="public" virt="non-virtual"><scope>bsp_pmic_status_t</scope><name>fuel_gauge_valid</name></member>
+      <member refid="structbsp__pmic__status__t_1a46490d22619692da673079e0b413a23e" prot="public" virt="non-virtual"><scope>bsp_pmic_status_t</scope><name>vbus_present</name></member>
+    </listofallmembers>
+  </compounddef>
+</doxygen>

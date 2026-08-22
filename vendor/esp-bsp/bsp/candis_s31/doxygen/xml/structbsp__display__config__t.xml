@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="structbsp__display__config__t" kind="struct" language="C++" prot="public">
+    <compoundname>bsp_display_config_t</compoundname>
+    <sectiondef kind="public-attrib">
+      <memberdef kind="variable" id="structbsp__display__config__t_1a0d3f31290063548337bb519672e8dd04" prot="public" static="no" mutable="no">
+        <type>int</type>
+        <definition>int bsp_display_config_t::max_transfer_sz</definition>
+        <argsstring></argsstring>
+        <name>max_transfer_sz</name>
+        <qualifiedname>bsp_display_config_t::max_transfer_sz</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="31" column="9" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="31" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <location file="bsp/candis_s31/include/bsp/display.h" line="30" column="1" bodyfile="bsp/candis_s31/include/bsp/display.h" bodystart="30" bodyend="32"/>
+    <listofallmembers>
+      <member refid="structbsp__display__config__t_1a0d3f31290063548337bb519672e8dd04" prot="public" virt="non-virtual"><scope>bsp_display_config_t</scope><name>max_transfer_sz</name></member>
+    </listofallmembers>
+  </compounddef>
+</doxygen>

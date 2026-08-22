@@ -1,0 +1,708 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="group__g04__display" kind="group">
+    <compoundname>g04_display</compoundname>
+    <title>Display and Touch</title>
+    <innerclass refid="structbsp__display__cfg__t" prot="public">bsp_display_cfg_t</innerclass>
+    <innerclass refid="structbsp__display__config__t" prot="public">bsp_display_config_t</innerclass>
+    <innerclass refid="structbsp__lcd__handles__t" prot="public">bsp_lcd_handles_t</innerclass>
+    <innerclass refid="structbsp__touch__config__t" prot="public">bsp_touch_config_t</innerclass>
+    <sectiondef kind="func">
+      <memberdef kind="function" id="group__g04__display_1gae4275824d225d70a382b86178f39450c" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>lv_display_t *</type>
+        <definition>lv_display_t * bsp_display_start</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_start</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="775" column="14" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="775" declcolumn="14"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1gaff98dc9c5df3ce94267754f35face5d2" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>lv_display_t *</type>
+        <definition>lv_display_t * bsp_display_start_with_config</definition>
+        <argsstring>(const bsp_display_cfg_t *cfg)</argsstring>
+        <name>bsp_display_start_with_config</name>
+        <param>
+          <type>const <ref refid="structbsp__display__cfg__t" kindref="compound">bsp_display_cfg_t</ref> *</type>
+          <declname>cfg</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="776" column="14" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="776" declcolumn="14"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1gab8fd25dcfa6e359bc8be86607f3b2f47" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_display_stop</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_stop</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Terminal LVGL teardown: even if an LVGL remove operation fails, all BSP handles are invalidated and panel/touch pins and rails are made safe. A failed return therefore requires a reboot, not a retry with old handles. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="780" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="780" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1gaa358520a1c77dbf054e73757e48dea9a" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>lv_indev_t *</type>
+        <definition>lv_indev_t * bsp_display_get_input_dev</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_get_input_dev</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="781" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="781" declcolumn="12"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1ga8f9276ddd28d9427995f513d36aed139" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>bool</type>
+        <definition>bool bsp_display_lock</definition>
+        <argsstring>(uint32_t timeout_ms)</argsstring>
+        <name>bsp_display_lock</name>
+        <param>
+          <type>uint32_t</type>
+          <declname>timeout_ms</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="782" column="6" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="782" declcolumn="6"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1gac08779b1b61a813af6d9c96a4b54740d" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>void</type>
+        <definition>void bsp_display_unlock</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_unlock</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="783" column="6" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="783" declcolumn="6"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1ga6dfbbc4674136c9d37bc28fc6eee2662" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>void</type>
+        <definition>void bsp_display_rotate</definition>
+        <argsstring>(lv_display_t *display, lv_display_rotation_t rotation)</argsstring>
+        <name>bsp_display_rotate</name>
+        <param>
+          <type>lv_display_t *</type>
+          <declname>display</declname>
+        </param>
+        <param>
+          <type>lv_display_rotation_t</type>
+          <declname>rotation</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="784" column="6" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="784" declcolumn="6"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1ga4bb816859abde4dcf196ca41b380a94a" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_display_enter_sleep</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_enter_sleep</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="785" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="785" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1ga4528c90bb660dfe358849b9c379d7ca9" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_display_exit_sleep</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_exit_sleep</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="786" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="786" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1ga09de1a5b49f1651ce50467cffdd25590" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_display_enter_sleep_panel</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_enter_sleep_panel</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Panel-only variants: sleep the CO5300 (TE gate, backlight, SLPIN/SLPOUT) without touching the CST820. Use these for screen-off paths that must keep the touch controller responsive (its auto-standby keeps INT wake alive); the full variants above deep-sleep the touch controller and hard-reset it on exit, which a touch-wake design cannot use. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="792" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="792" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1ga6f84800bb405d51d01f7a7be2ba68092" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_display_exit_sleep_panel</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_exit_sleep_panel</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="793" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="793" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1ga6a5dff2d5fa31f65d083e173ae5a73f9" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_display_enter_deep_standby</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_enter_deep_standby</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="794" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="794" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1ga22b7af91da70df12626c81fb6297b418" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_display_exit_deep_standby</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_exit_deep_standby</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="795" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="795" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1ga351d7157db337483dafe16ea3cf67969" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_display_new</definition>
+        <argsstring>(const bsp_display_config_t *config, esp_lcd_panel_handle_t *ret_panel, esp_lcd_panel_io_handle_t *ret_io)</argsstring>
+        <name>bsp_display_new</name>
+        <param>
+          <type>const <ref refid="structbsp__display__config__t" kindref="compound">bsp_display_config_t</ref> *</type>
+          <declname>config</declname>
+        </param>
+        <param>
+          <type>esp_lcd_panel_handle_t *</type>
+          <declname>ret_panel</declname>
+        </param>
+        <param>
+          <type>esp_lcd_panel_io_handle_t *</type>
+          <declname>ret_io</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="44" column="11" declfile="bsp/candis_s31/include/bsp/display.h" declline="44" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1ga5ac200b0ba5d6613a994410bb936410e" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_display_new_with_handles</definition>
+        <argsstring>(const bsp_display_config_t *config, bsp_lcd_handles_t *ret_handles)</argsstring>
+        <name>bsp_display_new_with_handles</name>
+        <param>
+          <type>const <ref refid="structbsp__display__config__t" kindref="compound">bsp_display_config_t</ref> *</type>
+          <declname>config</declname>
+        </param>
+        <param>
+          <type><ref refid="structbsp__lcd__handles__t" kindref="compound">bsp_lcd_handles_t</ref> *</type>
+          <declname>ret_handles</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="47" column="11" declfile="bsp/candis_s31/include/bsp/display.h" declline="47" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1gae3c41ec26043f11aa620c6aa4dd2a36b" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>void</type>
+        <definition>void bsp_display_delete</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_delete</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="49" column="6" declfile="bsp/candis_s31/include/bsp/display.h" declline="49" declcolumn="6"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1gaa917c022925dd941b2fd68cac525a309" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_display_brightness_init</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_brightness_init</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="51" column="11" declfile="bsp/candis_s31/include/bsp/display.h" declline="51" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1gaee9fb8561a97b0758d15eb04ba738a93" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_display_brightness_deinit</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_brightness_deinit</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="52" column="11" declfile="bsp/candis_s31/include/bsp/display.h" declline="52" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1ga12c7b53be5b337029f2d1aacce916d1c" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_display_brightness_set</definition>
+        <argsstring>(int brightness_percent)</argsstring>
+        <name>bsp_display_brightness_set</name>
+        <param>
+          <type>int</type>
+          <declname>brightness_percent</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="53" column="11" declfile="bsp/candis_s31/include/bsp/display.h" declline="53" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1ga17e487e96d85995e5de4aab309d290b2" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_display_backlight_on</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_backlight_on</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="54" column="11" declfile="bsp/candis_s31/include/bsp/display.h" declline="54" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1gaa09e452cc60dcb24bb2ba980669610de" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_display_backlight_off</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_display_backlight_off</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/display.h" line="55" column="11" declfile="bsp/candis_s31/include/bsp/display.h" declline="55" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1ga4f2a60cbdb3279f6c82f1809ba3773b7" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_touch_new</definition>
+        <argsstring>(const bsp_touch_config_t *config, esp_lcd_touch_handle_t *ret_touch)</argsstring>
+        <name>bsp_touch_new</name>
+        <param>
+          <type>const <ref refid="structbsp__touch__config__t" kindref="compound">bsp_touch_config_t</ref> *</type>
+          <declname>config</declname>
+        </param>
+        <param>
+          <type>esp_lcd_touch_handle_t *</type>
+          <declname>ret_touch</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/touch.h" line="32" column="11" declfile="bsp/candis_s31/include/bsp/touch.h" declline="32" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1gae6862debe96c29cda0673637a42d1af3" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_lcd_touch_handle_t</type>
+        <definition>esp_lcd_touch_handle_t bsp_touch_get_handle</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_touch_get_handle</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/touch.h" line="34" column="24" declfile="bsp/candis_s31/include/bsp/touch.h" declline="34" declcolumn="24"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g04__display_1ga8ee1436e8924e75177171ed4f3d36f36" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_touch_delete</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_touch_delete</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/touch.h" line="35" column="11" declfile="bsp/candis_s31/include/bsp/touch.h" declline="35" declcolumn="11"/>
+      </memberdef>
+    </sectiondef>
+    <sectiondef kind="define">
+      <memberdef kind="define" id="group__g04__display_1gaf4c1f12787f3469f1e4c549a861c211e" prot="public" static="no">
+        <name>BSP_TOUCH_INT</name>
+        <initializer>GPIO_NUM_3</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="146" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="146" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1ga639fc427661e93e741b334fd6c35047a" prot="public" static="no">
+        <name>BSP_TOUCH_RST</name>
+        <initializer>GPIO_NUM_17</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="147" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="147" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1gab558d70a7b47c2bcc23c1072533b39e6" prot="public" static="no">
+        <name>BSP_LCD_TOUCH_INT</name>
+        <initializer>BSP_TOUCH_INT</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="148" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="148" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1gaea1f2cda7698f12153ff451643d1cf1b" prot="public" static="no">
+        <name>BSP_LCD_TOUCH_RST</name>
+        <initializer>BSP_TOUCH_RST</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="149" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="149" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1ga1e3426da61c81537fd5196334af8037a" prot="public" static="no">
+        <name>BSP_LCD_VBAT_EN</name>
+        <initializer>GPIO_NUM_5</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="150" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="150" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1ga5f16d8b4679ee4ac4190e57e6eea9cf5" prot="public" static="no">
+        <name>BSP_LCD_VBAT_EN_ACTIVE_LEVEL</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="151" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="151" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1ga07b260fe35bcd9c416f14c40559ae949" prot="public" static="no">
+        <name>BSP_LCD_CS</name>
+        <initializer>GPIO_NUM_10</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="152" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="152" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1gae25ab440c1860bcc21ed994114d9c56e" prot="public" static="no">
+        <name>BSP_LCD_RST</name>
+        <initializer>GPIO_NUM_15</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="153" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="153" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1gaab65f1b352f164252898c26061755560" prot="public" static="no">
+        <name>BSP_LCD_TE</name>
+        <initializer>GPIO_NUM_16</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="154" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="154" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1gaef86ec47b28b5f3a61b9441994ec2e67" prot="public" static="no">
+        <name>BSP_LCD_QSPI_CLK</name>
+        <initializer>GPIO_NUM_12</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="155" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="155" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1ga01edbfad317f4270fa073e4ed1055342" prot="public" static="no">
+        <name>BSP_LCD_QSPI_DATA0</name>
+        <initializer>GPIO_NUM_11</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="156" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="156" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1gab8fe0f482f3ee555ca30657db76e55e1" prot="public" static="no">
+        <name>BSP_LCD_QSPI_DATA1</name>
+        <initializer>GPIO_NUM_13</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="157" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="157" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1ga014d2e4291a5ffefbedc7fbd0d6ed2e7" prot="public" static="no">
+        <name>BSP_LCD_QSPI_DATA2</name>
+        <initializer>GPIO_NUM_14</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="158" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="158" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1ga956bd3cfce772a056bacb048ed1a0e18" prot="public" static="no">
+        <name>BSP_LCD_QSPI_DATA3</name>
+        <initializer>GPIO_NUM_9</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="159" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="159" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1ga6e804c690a1234b4838ca7a92f587bb6" prot="public" static="no">
+        <name>BSP_LCD_PCLK</name>
+        <initializer>BSP_LCD_QSPI_CLK</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="160" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="160" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1gaaa2d28b309a03c13bd464650fd40999c" prot="public" static="no">
+        <name>BSP_LCD_DATA0</name>
+        <initializer>BSP_LCD_QSPI_DATA0</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="161" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="161" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1ga8943d6ccc58b57f47cdce88f6f409c9d" prot="public" static="no">
+        <name>BSP_LCD_DATA1</name>
+        <initializer>BSP_LCD_QSPI_DATA1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="162" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="162" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1ga22b2bb188963e6d26d87166faf86f4cc" prot="public" static="no">
+        <name>BSP_LCD_DATA2</name>
+        <initializer>BSP_LCD_QSPI_DATA2</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="163" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="163" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1ga93528e40bbe50a24294dc7e72c7e8f6c" prot="public" static="no">
+        <name>BSP_LCD_DATA3</name>
+        <initializer>BSP_LCD_QSPI_DATA3</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="164" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="164" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1gafae21b4772c64c083668f7e79853f4ee" prot="public" static="no">
+        <name>BSP_LCD_VCI_EN</name>
+        <initializer>GPIO_NUM_38</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="165" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="165" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1gaf84c459e4c8053a737470be682de47c2" prot="public" static="no">
+        <name>BSP_LCD_VCI_EN_ACTIVE_LEVEL</name>
+        <initializer>1</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="166" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="166" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1ga36f8a7c7ff061c8fb80096eee581200c" prot="public" static="no">
+        <name>BSP_LCD_SPI_NUM</name>
+        <initializer>SPI2_HOST</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="167" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="167" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1ga96deef22e8868d28956349a7532a451a" prot="public" static="no">
+        <name>BSP_LCD_PIXEL_CLOCK_HZ</name>
+        <initializer>(CONFIG_BSP_LCD_PIXEL_CLOCK_MHZ * 1000 * 1000)</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="168" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="168" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1gab6a94e43e1db53903ac137da64988169" prot="public" static="no">
+        <name>BSP_LCD_X_GAP</name>
+        <initializer>10</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="169" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="169" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g04__display_1ga7b027815688dc2509a752da643252e23" prot="public" static="no">
+        <name>BSP_LCD_Y_GAP</name>
+        <initializer>0</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="170" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="170" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+<para>AMOLED, touch, and LVGL interface. </para>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+  </compounddef>
+</doxygen>

@@ -1,0 +1,355 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.15.0" xml:lang="en-US">
+  <compounddef id="group__g02__storage" kind="group">
+    <compoundname>g02_storage</compoundname>
+    <title>SD Card and SPIFFS</title>
+    <innerclass refid="structbsp__sdcard__cfg__t" prot="public">bsp_sdcard_cfg_t</innerclass>
+    <sectiondef kind="func">
+      <memberdef kind="function" id="group__g02__storage_1ga682fef10a7a0ba2e05a263a26bfbbfe1" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>bool</type>
+        <definition>bool bsp_sdcard_is_inserted</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_sdcard_is_inserted</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>SDMMC storage. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="713" column="6" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="713" declcolumn="6"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g02__storage_1ga49592d668aff7d48e2f771dfda9d9cd2" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>void</type>
+        <definition>void bsp_sdcard_get_sdmmc_host</definition>
+        <argsstring>(int slot, sdmmc_host_t *config)</argsstring>
+        <name>bsp_sdcard_get_sdmmc_host</name>
+        <param>
+          <type>int</type>
+          <declname>slot</declname>
+        </param>
+        <param>
+          <type>sdmmc_host_t *</type>
+          <declname>config</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="714" column="6" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="714" declcolumn="6"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g02__storage_1ga091a385bcc41930b172d7b3df7910bce" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>void</type>
+        <definition>void bsp_sdcard_sdmmc_get_slot</definition>
+        <argsstring>(int slot, sdmmc_slot_config_t *config)</argsstring>
+        <name>bsp_sdcard_sdmmc_get_slot</name>
+        <param>
+          <type>int</type>
+          <declname>slot</declname>
+        </param>
+        <param>
+          <type>sdmmc_slot_config_t *</type>
+          <declname>config</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="715" column="6" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="715" declcolumn="6"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g02__storage_1gab6e5499a715ec9e46ba71b683c7a616e" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>void</type>
+        <definition>void bsp_sdcard_sdspi_get_slot</definition>
+        <argsstring>(spi_host_device_t spi_host, sdspi_device_config_t *config)</argsstring>
+        <name>bsp_sdcard_sdspi_get_slot</name>
+        <param>
+          <type>spi_host_device_t</type>
+          <declname>spi_host</declname>
+        </param>
+        <param>
+          <type>sdspi_device_config_t *</type>
+          <declname>config</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="716" column="6" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="716" declcolumn="6"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g02__storage_1gaa8a01e03e7801c3ba65dfd868c10a52f" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_sdcard_sdmmc_mount</definition>
+        <argsstring>(bsp_sdcard_cfg_t *cfg)</argsstring>
+        <name>bsp_sdcard_sdmmc_mount</name>
+        <param>
+          <type><ref refid="structbsp__sdcard__cfg__t" kindref="compound">bsp_sdcard_cfg_t</ref> *</type>
+          <declname>cfg</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="717" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="717" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g02__storage_1ga4a0df6fcd3272a1ca89206872d897142" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_sdcard_sdspi_mount</definition>
+        <argsstring>(bsp_sdcard_cfg_t *cfg)</argsstring>
+        <name>bsp_sdcard_sdspi_mount</name>
+        <param>
+          <type><ref refid="structbsp__sdcard__cfg__t" kindref="compound">bsp_sdcard_cfg_t</ref> *</type>
+          <declname>cfg</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="718" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="718" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g02__storage_1ga5560065f8b54fe0756b84b1e899e6377" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_sdcard_mount</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_sdcard_mount</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="719" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="719" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g02__storage_1gab22f98cd53a08f8d0713097bbed2d2c0" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_sdcard_unmount</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_sdcard_unmount</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="720" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="720" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g02__storage_1ga544da06689f3934a3235502772a8164c" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>sdmmc_card_t *</type>
+        <definition>sdmmc_card_t * bsp_sdcard_get_handle</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_sdcard_get_handle</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="721" column="14" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="721" declcolumn="14"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g02__storage_1gac9a93112f87090d2f5e2e11d24e93232" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_spiffs_mount</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_spiffs_mount</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>SPIFFS on the &quot;storage&quot; partition. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="724" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="724" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g02__storage_1ga0c392bdd27b40fb9de95391d9063325c" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_spiffs_unmount</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_spiffs_unmount</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="725" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="725" declcolumn="11"/>
+      </memberdef>
+    </sectiondef>
+    <sectiondef kind="define">
+      <memberdef kind="define" id="group__g02__storage_1gabf3b7b7976f2ace3c05582c650a6a15d" prot="public" static="no">
+        <name>BSP_SD_DET</name>
+        <initializer>GPIO_NUM_0</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="103" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="103" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g02__storage_1ga69148dcbfa8a6ed320879b395d8d238b" prot="public" static="no">
+        <name>BSP_SD_DET_ACTIVE_LEVEL</name>
+        <initializer>0</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="104" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="104" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g02__storage_1gab09257cafdfb516962f4f1976175f58c" prot="public" static="no">
+        <name>BSP_SD_D0</name>
+        <initializer>GPIO_NUM_20</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="105" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="105" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g02__storage_1ga9dcc2109b20c3c18b2459a6fca8e31fc" prot="public" static="no">
+        <name>BSP_SD_D1</name>
+        <initializer>GPIO_NUM_21</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="106" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="106" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g02__storage_1gafde4a6bea5dd6d76b91d425333ba776e" prot="public" static="no">
+        <name>BSP_SD_D2</name>
+        <initializer>GPIO_NUM_22</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="107" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="107" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g02__storage_1ga64d8ab0f51532e2d8009766ab6e71c42" prot="public" static="no">
+        <name>BSP_SD_D3</name>
+        <initializer>GPIO_NUM_23</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="108" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="108" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g02__storage_1ga9b2f67dbe6e1c9c3a1e252847778c93c" prot="public" static="no">
+        <name>BSP_SD_CLK</name>
+        <initializer>GPIO_NUM_24</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="109" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="109" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g02__storage_1ga9628c257bf4118d66bf869b252532088" prot="public" static="no">
+        <name>BSP_SD_CMD</name>
+        <initializer>GPIO_NUM_25</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="110" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="110" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g02__storage_1ga9c2c2fbaad942c676d40f3420fd85bc4" prot="public" static="no">
+        <name>BSP_SD_POWER_EN</name>
+        <initializer>GPIO_NUM_36</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="111" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="111" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g02__storage_1ga864a57b5a01e5d35012d045e56419232" prot="public" static="no">
+        <name>BSP_SD_POWER_EN_ACTIVE_LEVEL</name>
+        <initializer>0</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="112" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="112" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g02__storage_1ga3adf49be105ed8c1bc2a2338e7976b56" prot="public" static="no">
+        <name>BSP_SD_EN</name>
+        <initializer>BSP_SD_POWER_EN</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="113" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="113" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g02__storage_1gac25b02b46a9070f161b83dd42ce5e552" prot="public" static="no">
+        <name>BSP_SD_MOUNT_POINT</name>
+        <initializer>CONFIG_BSP_SD_MOUNT_POINT</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="114" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="114" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="define" id="group__g02__storage_1ga183706ece1b79bb571cfae1cb5082b39" prot="public" static="no">
+        <name>BSP_SPIFFS_MOUNT_POINT</name>
+        <initializer>CONFIG_BSP_SPIFFS_MOUNT_POINT</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="115" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="115" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+<para>SDMMC storage and SPIFFS interfaces. </para>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+  </compounddef>
+</doxygen>

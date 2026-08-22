@@ -1,0 +1,152 @@
+menu "Board Support Package (Candis-S31)"
+
+    config BSP_ERROR_CHECK
+        bool "Enable error check in BSP"
+        default y
+        help
+            Abort on BSP initialization errors. Disable this option when the
+            application needs to handle and report initialization failures.
+
+    menu "I2C"
+        config BSP_I2C_NUM
+            int "Main I2C controller"
+            default 0
+            range 0 2
+            help
+                Controller used by the main bus on GPIO33 and GPIO34.
+
+        config BSP_LP_I2C_NUM
+            int "Low-power I2C controller"
+            default 1
+            range 0 2
+            help
+                Controller used by TG28_SW and RX8130CE on GPIO6 and GPIO7.
+
+        config BSP_I2C_INTERNAL_PULLUPS
+            bool "Enable internal I2C pull-ups"
+            default n
+            help
+                External pull-ups are fitted on the board. Enable this only
+                for controlled diagnostics.
+    endmenu
+
+    menu "Display"
+        config BSP_LCD_PIXEL_CLOCK_MHZ
+            int "CO5300 QSPI clock (MHz)"
+            default 48
+            range 10 50
+            help
+                CO5300 datasheet limits the 4-wire QSPI write clock to 50 MHz.
+                48 MHz is the highest frequency the ESP32-S31 SPI clock
+                generator produces exactly (BBPLL 480 MHz / 10) within that
+                limit. Values above 40 MHz route over the GPIO matrix on
+                this pinout; validate signal integrity on new board spins.
+
+        config BSP_LCD_TE_SYNC
+            bool "Synchronize LVGL flushes with the panel TE signal"
+            default y
+            help
+                Registers the CO5300 tearing-effect edge (GPIO16) with the
+                esp_lvgl_adapter TE_SYNC path. The adapter uses this profile
+                in LVGL RENDER_MODE_FULL: each TE-gated flush transfers the
+                whole frame. Disabling this removes TE gating entirely (the
+                adapter falls back to unsynchronized flushes).
+
+        config BSP_LCD_DRAW_BUF_HEIGHT
+            int "Display transfer buffer height (lines)"
+            default 80
+            range 10 460
+            help
+                With esp_lvgl_adapter the draw buffers are owned by the
+                adapter, so this value only sizes the QSPI bus
+                max_transfer_sz (460 x HEIGHT x 2 bytes of internal DMA).
+
+        config BSP_LCD_DRAW_BUF_DOUBLE
+            bool "Use two LVGL draw buffers"
+            default y
+            help
+                Vestigial on the esp_lvgl_adapter path: the TE_SYNC profile
+                always uses a single full-frame PSRAM buffer. Kept so
+                existing sdkconfig files keep parsing.
+
+        config BSP_LCD_DIRECT_MODE
+            bool "Full-frame PSRAM DIRECT rendering with per-cycle TE-gated flush"
+            default n
+            help
+                Historical esp_lvgl_port option. The current esp_lvgl_adapter
+                path ignores the DIRECT profile flags and always runs the
+                TE_SYNC full-frame pipeline; leave disabled.
+    endmenu
+
+    menu "Storage"
+        config BSP_SD_FORMAT_ON_MOUNT_FAIL
+            bool "Format SD card when mounting fails"
+            default n
+
+        config BSP_SD_MOUNT_POINT
+            string "SD card mount point"
+            default "/sdcard"
+
+        config BSP_SPIFFS_FORMAT_ON_MOUNT_FAIL
+            bool "Format SPIFFS when mounting fails"
+            default n
+
+        config BSP_SPIFFS_MOUNT_POINT
+            string "SPIFFS mount point"
+            default "/spiffs"
+
+        config BSP_SPIFFS_PARTITION_LABEL
+            string "Partition label of SPIFFS"
+            default "storage"
+
+        config BSP_SPIFFS_MAX_FILES
+            int "Max files supported for SPIFFS VFS"
+            default 5
+    endmenu
+
+    menu "Audio"
+        config BSP_I2S_NUM
+            int "I2S controller"
+            default 0
+            range 0 2
+            help
+                Controller used by the ES8389 codec interface.
+    endmenu
+
+    menu "Camera"
+        config BSP_CAMERA_XCLK_USE_LEDC
+            bool "Generate the camera XCLK with LEDC"
+            default n
+            help
+                Leave this disabled. The ESP32-S31 CAM controller derives XCLK
+                itself from PLL_F160M and drives it on the pin passed as
+                dvp_pin.xclk_io, which esp_video does whenever xclk_io >= 0 and
+                xclk_freq > 0 (esp_cam_ctlr_dvp_output_clock in
+                esp_video_init.c). An extra LEDC channel on the same GPIO is
+                redundant: the GPIO output matrix only keeps the signal
+                attached last, so the LEDC output is disconnected anyway and
+                merely occupies a LEDC timer and channel. Enable this only to
+                drive XCLK from LEDC for a diagnostic experiment.
+
+        config BSP_CAMERA_XCLK_LEDC_CH
+            int "LEDC channel used for camera XCLK"
+            default 2
+            range 0 7
+            help
+                Only used when BSP_CAMERA_XCLK_USE_LEDC is enabled.
+    endmenu
+
+    menu "RGB LED"
+        choice BSP_LED_RGB_BACKEND
+            prompt "LED strip backend"
+            default BSP_LED_RGB_BACKEND_RMT
+
+            config BSP_LED_RGB_BACKEND_RMT
+                bool "RMT"
+
+            config BSP_LED_RGB_BACKEND_SPI
+                bool "SPI"
+        endchoice
+    endmenu
+
+endmenu
