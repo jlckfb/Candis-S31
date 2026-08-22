@@ -1,0 +1,16 @@
+{
+  "name": "candis-s31-font-tools",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pinned tooling for regenerating the Candis-S31 LVGL UI fonts",
+  "devDependencies": {
+    "argparse": "2.0.1",
+    "bit-buffer": "0.2.5",
+    "debug": "4.4.3",
+    "lv_font_conv": "https://github.com/lvgl/lv_font_conv/archive/c968ed42ebbba96b5bbfbc4ebbc60d1c51a79c45.tar.gz",
+    "make-error": "1.3.6",
+    "mkdirp": "1.0.4",
+    "opentype.js": "1.3.4",
+    "pngjs": "6.0.0"
+  }
+}
