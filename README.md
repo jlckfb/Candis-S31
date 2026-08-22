@@ -4,7 +4,17 @@
 
 Candis-S31 is a compact ESP32-S31 development board built around a square 2.0-inch 460 × 460 AMOLED. It also includes touch, battery charging and power management, RTC, two USB Type-C ports, audio, a DVP camera connector, a TF card slot, buttons, and one RGB LED.
 
-> **Hardware status:** EVT1 (schematic v0.5) went to fabrication on 2026-08-03 as `v0.5_260803_1544`; the boards have not arrived yet. The ESP-IDF starter, Factory Bring-up, and low-power projects are compile-tested, but no board function has been verified on Candis-S31 hardware.
+> **Hardware status:** EVT1 (schematic v0.5, fabricated 2026-08-03 as
+> `v0.5_260803_1544`) is in hand and bring-up is well advanced. Validated on
+> physical boards: AMOLED display (460 × 460 QSPI with TE-synchronized LVGL
+> pipeline), capacitive touch, audio output (speaker) and input (dual
+> microphones), microSD, USB Type-C2 host and device roles, Wi-Fi, BLE, RTC,
+> and the PMIC/battery-charging domain (including a watch-style LVGL demo
+> with 17 applications). The camera waits for a corrected FPC adapter board;
+> long-run soak and the low-power budget characterization are pending.
+>
+> **Beta testers:** see [BETA.md](BETA.md)（中文内测指南）— every firmware
+> project builds after a plain clone with only an ESP-IDF environment.
 
 > **VDD_SPI strap:** GPIO36 is the VDD_SPI voltage strap (datasheet
 > Table 3-4) and also the active-low TF-card power enable. The board uses
@@ -36,27 +46,30 @@ The current baseline is ESP-IDF `v6.1-beta1`. Installation Manager (EIM), the of
 
 Arduino and PlatformIO projects will be added only after they build with their normal public tools. A board variant or JSON manifest cannot add a new SoC by itself. This repository does not provide a private ESP-IDF fork, patched framework, or copied third-party libraries.
 
-### Build verification — 2026-08-11
+### Build verification — 2026-08-22
 
-Baseline: ESP-IDF `v6.1-beta1`, target `esp32s31` (preview). `tools/build-all.sh` compiles the fifteen targets below serially; the complete 2026-08-11 regression passed 15/15. "Compiles" means exactly a successful compile — **no target has run on hardware; every board function is pending EVT measurement**.
+Baseline: ESP-IDF `v6.1-beta1`, target `esp32s31` (preview). `tools/build-all.sh` compiles the fourteen targets below serially; the complete 2026-08-22 regression passed 14/14. The `display_usb_hid` example is not part of the matrix: it drives HID inputs through `esp_lvgl_port` helpers that this `esp_lvgl_adapter`-based BSP does not use.
 
-| Target (`tools/build-all.sh --list`) | Source | Status (2026-08-11) |
+| Target (`tools/build-all.sh --list`) | Source | Status (2026-08-22) |
 |---|---|---|
-| `example:display` | esp-bsp worktree `examples/display` | Compiles; pending EVT hardware test |
-| `example:display_camera_video` | esp-bsp worktree `examples/display_camera_video` | Compiles; pending EVT hardware test |
-| `example:display_lvgl_demos` | esp-bsp worktree `examples/display_lvgl_demos` | Compiles; pending EVT hardware test |
-| `example:display_lvgl_benchmark` | esp-bsp worktree `examples/display_lvgl_benchmark` | Compiles; pending EVT hardware test |
-| `example:display_sdcard` | esp-bsp worktree `examples/display_sdcard` | Compiles; pending EVT hardware test |
-| `example:display_usb_hid` | esp-bsp worktree `examples/display_usb_hid` | Compiles; pending EVT hardware test |
-| `example:audio` | esp-bsp worktree `examples/audio` | Compiles; pending EVT hardware test |
-| `example:display_audio_photo` | esp-bsp worktree `examples/display_audio_photo` | Compiles; pending EVT hardware test |
-| `testapp:tg28_sw` | esp-bsp worktree `components/tg28_sw/test_apps` | Compiles; pending EVT hardware test |
-| `testapp:rx8130ce` | esp-bsp worktree `components/rx8130ce/test_apps` | Compiles; pending EVT hardware test |
-| `testapp:fusb303b` | esp-bsp worktree `components/fusb303b/test_apps` | Compiles; pending EVT hardware test |
-| `testapp:cst820` | esp-bsp worktree `components/lcd_touch/esp_lcd_touch_cst820/test_apps` | Compiles; pending EVT hardware test |
-| `factory` | `firmware/factory` (with `CANDIS_S31_BSP_PATH`) | Compiles; pending EVT hardware test |
-| `getting-started` | `examples/esp-idf/getting-started` | Compiles; pending EVT hardware test |
-| `low-power` | `examples/esp-idf/low-power` (with `CANDIS_S31_BSP_PATH`) | Compiles; pending EVT hardware test |
+| `example:display` | esp-bsp `examples/display` | Compiles |
+| `example:display_camera_video` | esp-bsp `examples/display_camera_video` | Compiles |
+| `example:display_lvgl_demos` | esp-bsp `examples/display_lvgl_demos` | Compiles |
+| `example:display_lvgl_benchmark` | esp-bsp `examples/display_lvgl_benchmark` | Compiles |
+| `example:display_sdcard` | esp-bsp `examples/display_sdcard` | Compiles |
+| `example:audio` | esp-bsp `examples/audio` | Compiles |
+| `example:display_audio_photo` | esp-bsp `examples/display_audio_photo` | Compiles |
+| `testapp:tg28_sw` | esp-bsp `components/tg28_sw/test_apps` | Compiles |
+| `testapp:rx8130ce` | esp-bsp `components/rx8130ce/test_apps` | Compiles |
+| `testapp:fusb303b` | esp-bsp `components/fusb303b/test_apps` | Compiles |
+| `testapp:cst820` | esp-bsp `components/lcd_touch/esp_lcd_touch_cst820/test_apps` | Compiles |
+| `factory` | `firmware/factory` | Compiles |
+| `getting-started` | `examples/esp-idf/getting-started` | Compiles |
+| `low-power` | `examples/esp-idf/low-power` | Compiles |
+
+All firmware targets build against the vendored BSP snapshot in
+[`vendor/esp-bsp/`](vendor/esp-bsp/README.md), so a plain clone compiles
+without extra checkouts or environment variables.
 
 ## Repository layout
 
@@ -93,17 +106,17 @@ Do not enable display bias, USB OTG, or other switched rails before the EVT1 pow
 
 Candis-S31 support is split by ownership:
 
-- a Candis-S31 BSP is developed in an `esp-bsp` worktree and validated by the Factory project before any upstream proposal;
+- the Candis-S31 BSP and the reusable TG28_SW / RX8130CE / FUSB303B / CST820 drivers live in the public [`LeenixP/esp-bsp`](https://github.com/LeenixP/esp-bsp) fork (branch `feat/candis-s31`; per-driver PR branches `pr/*` are staged for upstream submission) — this repository vendors a build-ready snapshot at [`vendor/esp-bsp/`](vendor/esp-bsp/README.md) so every firmware project compiles from a plain clone;
 - the complete ESP-IDF board definition belongs in ESP Board Manager's [`espressif/esp_friends_boards`](https://components.espressif.com/components/espressif/esp_friends_boards) collection;
 - reusable device drivers belong in their component source repositories and the [ESP Component Registry](https://components.espressif.com/);
 - the Arduino board entry and variant belong in [Arduino-ESP32](https://github.com/espressif/arduino-esp32), after its ESP32-S31 core is available;
 - the board manifest belongs in [PlatformIO Espressif32](https://github.com/platformio/platform-espressif32), after that platform supports ESP32-S31.
 
-Generic ESP32-S31 fixes belong in ESP-IDF itself. Board pin assignments and device choices do not normally require changes to the ESP-IDF core repository. The local BSP follows ESP-BSP APIs so Factory firmware and upstream examples exercise the same implementation. A complete ESP-BSP contribution is proposed only after EVT validation and maintainer agreement; the Board Manager definition remains a separate integration.
+Generic ESP32-S31 fixes belong in ESP-IDF itself. Board pin assignments and device choices do not normally require changes to the ESP-IDF core repository. The BSP follows ESP-BSP APIs so Factory firmware and upstream examples exercise the same implementation. The driver components are submitted to ESP-BSP upstream after maintainer discussion; the Board Manager definition remains a separate integration.
 
-The BSP implementation is not mirrored back into this repository. During development, Factory firmware loads it from a separate checkout through `CANDIS_S31_BSP_PATH`; public examples consume released support. See [Upstream ownership](UPSTREAM.md) for the repository-by-repository contribution map.
+For BSP development, point `CANDIS_S31_BSP_PATH` at a live esp-bsp checkout and the build uses it instead of the vendored snapshot; maintainers refresh the snapshot with `tools/sync_bsp.sh`. See [Upstream ownership](UPSTREAM.md) for the repository-by-repository contribution map.
 
-The local BSP covers display and touch, TG28_SW power management, RX8130CE RTC, FUSB303B and USB Host, SDMMC, ES8389 audio, the DVP camera pipeline, and the RGB LED. The Board Manager definition generates and compiles against the development components but intentionally omits the Type-C controller and OTG GPIO: its current model cannot atomically enforce Source-before-boost and this board's 500 mA-only policy, so Type-C2 USB Host must use the BSP API. This is an implementation milestone, not a hardware qualification result; every EVT result stays `NOT_RUN` until measured on a physical board.
+The BSP covers display and touch, TG28_SW power management, RX8130CE RTC, FUSB303B and USB Host, SDMMC, ES8389 audio, the DVP camera pipeline, and the RGB LED. The Board Manager definition generates and compiles against the development components but intentionally omits the Type-C controller and OTG GPIO: its current model cannot atomically enforce Source-before-boost and this board's 500 mA-only policy, so Type-C2 USB Host must use the BSP API.
 
 ## License
 

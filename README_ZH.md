@@ -4,7 +4,9 @@
 
 Candis-S31 是一块围绕 ESP32-S31 和 2.0 英寸 460 × 460 方形 AMOLED 设计的开发板。板上还包含触摸、充电与电源管理、RTC、双 USB Type-C、音频、DVP 摄像头接口、TF 卡、按键和一颗 RGB LED。
 
-> **硬件状态：** EVT1（原理图 v0.5）已于 2026-08-03 投板打样（`v0.5_260803_1544`），板子尚未回板。ESP-IDF 入门工程、Factory Bring-up 与低功耗示例均已通过编译，但开发板功能还没有在 Candis-S31 实物上验证过。
+> **硬件状态：** EVT1（原理图 v0.5，2026-08-03 投板 `v0.5_260803_1544`）已回板，点亮工作已大部分完成。实物已验证：AMOLED 显示（460×460 QSPI，TE 同步 LVGL 管线）、电容触摸、音频输出（扬声器）与输入（双麦克风）、microSD、USB Type-C2 Host 与 Device 角色、Wi-Fi、BLE、RTC、PMIC/电池充电域（含 17 个应用的手表形态 LVGL 综合演示）。相机等待修正版 FPC 转接板；长时老化与低功耗功耗表征未开始。
+>
+> **内测用户：** 见 [BETA.md](BETA.md)——装好 ESP-IDF 环境后克隆本仓库即可直接编译全部固件工程。
 
 > **VDD_SPI 绑带：** GPIO36 是 VDD_SPI 电压绑带（数据手册 Table 3-4），兼作 TF 卡低有效电源使能。本板 Flash 为外置 W25Q128（3.3V），故 VDD_SPI=3.3V；R6（10kΩ 上拉至 3.3V）正确地在复位时拉高 GPIO36，符合 ESP32-S31 v0.0 勘误 SPI-855（1.8V VDD_SPI 无法启动）。无需处理 R6，切勿拆除。
 
@@ -25,33 +27,34 @@ idf.py --preview -p PORT flash monitor
 
 | 开发环境 | 当前状态 |
 |---|---|
-| ESP-IDF | 入门工程、Factory、本地完整 BSP 和本地 Board Manager 定义均使用 `v6.1-beta1` 编译通过；仍需硬件验证和上游发布 |
+| ESP-IDF | 入门工程、Factory、低功耗示例以及 BSP 与 Board Manager 定义均使用 `v6.1-beta1` 编译通过；核心外设已在 EVT1 实物上验证（见上方硬件状态） |
 | Arduino | 等待 ESP32-S31 Core，再提交 Candis-S31 board 与 variant |
 | PlatformIO | 等待 ESP32-S31 平台、工具和框架支持，再增加 board manifest |
 
 Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会加入。单独的 variant 或 board JSON 不能带来一个新 SoC 的支持。本仓库不提供私有 ESP-IDF 分叉、修改版框架或复制的第三方库。
 
-### 构建验证 — 2026-08-11
+### 构建验证 — 2026-08-22
 
-基线：ESP-IDF `v6.1-beta1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 15 个目标；2026-08-11 完整回归为 15/15 通过。「编译通过」仅表示编译成功——**所有目标都还没有在硬件上运行过，每一项板载功能都待 EVT 实测**。
+基线：ESP-IDF `v6.1-beta1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 14 个目标；2026-08-22 完整回归 14/14 通过。`display_usb_hid` 示例不在矩阵内：它通过 `esp_lvgl_port` 助手驱动 HID 输入，而本板 BSP 使用 `esp_lvgl_adapter`。
 
-| 目标（`tools/build-all.sh --list`） | 源码位置 | 状态（2026-08-11） |
+| 目标（`tools/build-all.sh --list`） | 源码位置 | 状态（2026-08-22） |
 |---|---|---|
-| `example:display` | esp-bsp 工作区 `examples/display` | 编译通过；待 EVT 实测 |
-| `example:display_camera_video` | esp-bsp 工作区 `examples/display_camera_video` | 编译通过；待 EVT 实测 |
-| `example:display_lvgl_demos` | esp-bsp 工作区 `examples/display_lvgl_demos` | 编译通过；待 EVT 实测 |
-| `example:display_lvgl_benchmark` | esp-bsp 工作区 `examples/display_lvgl_benchmark` | 编译通过；待 EVT 实测 |
-| `example:display_sdcard` | esp-bsp 工作区 `examples/display_sdcard` | 编译通过；待 EVT 实测 |
-| `example:display_usb_hid` | esp-bsp 工作区 `examples/display_usb_hid` | 编译通过；待 EVT 实测 |
-| `example:audio` | esp-bsp 工作区 `examples/audio` | 编译通过；待 EVT 实测 |
-| `example:display_audio_photo` | esp-bsp 工作区 `examples/display_audio_photo` | 编译通过；待 EVT 实测 |
-| `testapp:tg28_sw` | esp-bsp 工作区 `components/tg28_sw/test_apps` | 编译通过；待 EVT 实测 |
-| `testapp:rx8130ce` | esp-bsp 工作区 `components/rx8130ce/test_apps` | 编译通过；待 EVT 实测 |
-| `testapp:fusb303b` | esp-bsp 工作区 `components/fusb303b/test_apps` | 编译通过；待 EVT 实测 |
-| `testapp:cst820` | esp-bsp 工作区 `components/lcd_touch/esp_lcd_touch_cst820/test_apps` | 编译通过；待 EVT 实测 |
-| `factory` | `firmware/factory`（经 `CANDIS_S31_BSP_PATH`） | 编译通过；待 EVT 实测 |
-| `getting-started` | `examples/esp-idf/getting-started` | 编译通过；待 EVT 实测 |
-| `low-power` | `examples/esp-idf/low-power`（经 `CANDIS_S31_BSP_PATH`） | 编译通过；待 EVT 实测 |
+| `example:display` | esp-bsp `examples/display` | 编译通过 |
+| `example:display_camera_video` | esp-bsp `examples/display_camera_video` | 编译通过 |
+| `example:display_lvgl_demos` | esp-bsp `examples/display_lvgl_demos` | 编译通过 |
+| `example:display_lvgl_benchmark` | esp-bsp `examples/display_lvgl_benchmark` | 编译通过 |
+| `example:display_sdcard` | esp-bsp `examples/display_sdcard` | 编译通过 |
+| `example:audio` | esp-bsp `examples/audio` | 编译通过 |
+| `example:display_audio_photo` | esp-bsp `examples/display_audio_photo` | 编译通过 |
+| `testapp:tg28_sw` | esp-bsp `components/tg28_sw/test_apps` | 编译通过 |
+| `testapp:rx8130ce` | esp-bsp `components/rx8130ce/test_apps` | 编译通过 |
+| `testapp:fusb303b` | esp-bsp `components/fusb303b/test_apps` | 编译通过 |
+| `testapp:cst820` | esp-bsp `components/lcd_touch/esp_lcd_touch_cst820/test_apps` | 编译通过 |
+| `factory` | `firmware/factory` | 编译通过 |
+| `getting-started` | `examples/esp-idf/getting-started` | 编译通过 |
+| `low-power` | `examples/esp-idf/low-power` | 编译通过 |
+
+全部固件目标基于仓内 [`vendor/esp-bsp/`](vendor/esp-bsp/README.md) 的内置 BSP 快照构建，普通克隆即可编译，无需额外出库或环境变量。
 
 ## 仓库目录
 
@@ -86,17 +89,17 @@ Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会
 
 Candis-S31 按照代码职责分别提交到对应上游：
 
-- 在独立的 `esp-bsp` 工作区开发 Candis-S31 BSP，先由 Factory 工程验证，再决定上游提交；
+- Candis-S31 BSP 与可复用的 TG28_SW / RX8130CE / FUSB303B / CST820 驱动托管在公开的 [`LeenixP/esp-bsp`](https://github.com/LeenixP/esp-bsp) fork（`feat/candis-s31` 分支；各驱动组件的 `pr/*` 分支已按上游提交备好）——本仓库在 [`vendor/esp-bsp/`](vendor/esp-bsp/README.md) 内置了可直接编译的 BSP 快照，普通克隆即可编译全部固件；
 - 完整 ESP-IDF 板级定义进入 ESP Board Manager 的 [`espressif/esp_friends_boards`](https://components.espressif.com/components/espressif/esp_friends_boards)；
 - 可复用器件驱动进入各自源码仓库并发布到 [ESP Component Registry](https://components.espressif.com/)；
 - Arduino-ESP32 具备 ESP32-S31 Core 后，再向 [Arduino-ESP32](https://github.com/espressif/arduino-esp32) 提交 board 与 variant；
 - PlatformIO Espressif32 具备 ESP32-S31 平台支持后，再向 [platform-espressif32](https://github.com/platformio/platform-espressif32) 提交 board manifest。
 
-ESP32-S31 的通用问题才需要修改 ESP-IDF 本身。Candis-S31 的引脚分配和器件选择通常不需要进入 ESP-IDF 核心仓库。本地 BSP 遵循 ESP-BSP 公共 API，让 Factory 固件和上游示例验证同一份实现。完整 BSP 只有在 EVT 实测并与维护方确认接收范围后才提交；Board Manager 定义仍然单独维护。
+ESP32-S31 的通用问题才需要修改 ESP-IDF 本身。Candis-S31 的引脚分配和器件选择通常不需要进入 ESP-IDF 核心仓库。BSP 遵循 ESP-BSP 公共 API，让 Factory 固件和上游示例验证同一份实现。驱动组件经维护方讨论后提交 ESP-BSP 上游；Board Manager 定义单独维护。
 
-BSP 源码不会复制回本仓库。开发阶段 Factory 通过 `CANDIS_S31_BSP_PATH` 加载独立工作区，公开示例只依赖正式发布的能力。逐仓库的提交范围见[上游归属和贡献路径](UPSTREAM.md)。
+BSP 开发时把 `CANDIS_S31_BSP_PATH` 指向活的 esp-bsp 工作区即可覆盖内置快照；维护者用 `tools/sync_bsp.sh` 刷新快照。逐仓库的提交范围见[上游归属和贡献路径](UPSTREAM.md)。
 
-本地 BSP 已覆盖显示与触摸、TG28_SW 电源管理、RX8130CE RTC、FUSB303B 与 USB Host、SDMMC、ES8389 音频、DVP 摄像头链路和 RGB LED。Board Manager 定义已使用开发组件完成生成和编译，但刻意不暴露 Type-C 控制器和 OTG GPIO：其当前模型无法原子保证“先 Source、后升压”和仅 500 mA 的板级约束；Type-C2 USB Host 必须使用 BSP API。这只是软件实现完成，不代表硬件验证完成；在实板测量前，EVT 结果仍统一记录为 `NOT_RUN`。
+BSP 已覆盖显示与触摸、TG28_SW 电源管理、RX8130CE RTC、FUSB303B 与 USB Host、SDMMC、ES8389 音频、DVP 摄像头链路和 RGB LED。Board Manager 定义已使用开发组件完成生成和编译，但刻意不暴露 Type-C 控制器和 OTG GPIO：其当前模型无法原子保证"先 Source、后升压"和仅 500 mA 的板级约束；Type-C2 USB Host 必须使用 BSP API。
 
 ## 许可
 

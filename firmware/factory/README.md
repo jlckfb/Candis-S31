@@ -23,8 +23,10 @@ The application and the board implementation are deliberately separate:
 - reusable chip drivers remain independent components instead of being copied
   into either project.
 
-The firmware requires `CANDIS_S31_BSP_PATH` at configure time. No personal
-absolute path is stored in the repository.
+The firmware builds out of the box against the vendored BSP snapshot in
+`vendor/esp-bsp/`; setting `CANDIS_S31_BSP_PATH` to a live esp-bsp checkout
+overrides the snapshot for BSP development. No personal absolute path is
+stored in the repository.
 
 ## Current command set
 
@@ -229,12 +231,10 @@ register encoding.
 ## Build
 
 Use an official ESP-IDF environment with ESP32-S31 preview-target support.
-Point the project at the local BSP checkout and build this directory, not the
-repository root:
+Build this directory, not the repository root:
 
 ```bash
 cd firmware/factory
-export CANDIS_S31_BSP_PATH=/path/to/esp-bsp/bsp/candis_s31
 idf.py --preview set-target esp32s31
 idf.py --preview build
 ```

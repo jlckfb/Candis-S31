@@ -77,38 +77,35 @@ Keep each upstream pull request focused on one independently reviewable concern.
 
 ## Local verification
 
-Temporary upstream worktrees may live beside this repository, but they are not nested inside it and are never committed here. Build, flash, monitor, and recovery checks use the existing `idf` tmux session and its isolated official environment without modifying the SDK installation.
+The firmware projects in this repository build against the vendored BSP
+snapshot at `vendor/esp-bsp/` (snapshot metadata in `vendor/esp-bsp/SOURCE_COMMIT`),
+so a plain clone compiles with only an ESP-IDF environment. For BSP
+development, `CANDIS_S31_BSP_PATH` points the build at a live esp-bsp
+checkout instead; maintainers refresh the snapshot with `tools/sync_bsp.sh`.
+No absolute local path is committed to the project.
 
-During local Bring-up development, `firmware/factory` loads
-`esp-bsp/bsp/candis_s31` through `CANDIS_S31_BSP_PATH`. The build records the
-BSP Git revision and marks a modified checkout as dirty. No absolute local path
-is committed to the project.
-
-As of 2026-08-05 the local verification environment is ESP-IDF `v6.1-beta1`
-(commit `b1d13e9f`, checked out at `.tools/esp-idf` in the workspace root, two
-levels above this repository) plus the local ESP-BSP worktree (commit
-`f3d40203`, clean). All fifteen `tools/build-all.sh` targets pass in this
-combination as of 2026-08-06 (incremental re-verification over build trees
-that match the current sources), and the Factory project compiled and merged
-successfully on 2026-07-31 (merged image about
-1.9 MB against the 4 MB factory partition), and the Board Manager definition
-in `esp_friends_boards/candis_s31` generated and compiled an isolated ESP-IDF
-application. None of this represents a hardware result.
+As of 2026-08-22 the verification environment is ESP-IDF `v6.1-beta1` and
+the vendored snapshot of esp-bsp `feat/candis-s31` (commit `1d10b2b5`).
+All fourteen `tools/build-all.sh` targets pass in this combination, and the
+core peripheral domains (display, touch, audio, microSD, USB host/device,
+Wi-Fi, BLE, RTC, PMIC) are validated on EVT1 hardware; the camera waits for
+a corrected FPC adapter board.
 
 The current compatibility baseline is:
 
 | Item | Version | Validation |
 |---|---|---|
-| ESP-IDF | `v6.1-beta1` | Getting-started and Factory compile only |
-| Local Candis-S31 BSP | `1.2.0` development component | Factory and eight upstream ESP-BSP examples compile; hardware not run |
-| Local TG28_SW driver | `0.3.0` development component | Standalone component and BSP integration compile; hardware not run |
-| Local RX8130CE driver | `0.3.0` development component | Standalone component and BSP integration compile; hardware not run |
-| Local FUSB303B driver | `0.2.0` development component | Standalone component and BSP integration compile; hardware not run |
-| Local CST820 touch driver | `1.1.1` development component | Standalone component and BSP integration compile; hardware not run |
-| Factory Bring-up firmware | Development source | Full peripheral command set compile-tested; no image released |
-| Candis-S31 hardware | EVT1 schematic revision 0.5 (fab `v0.5_260803_1544`) | Fabricated 2026-08-03; EVT measurement pending |
-| ESP Friends Boards definition | `candis_s31` development definition | Board generation and an isolated ESP-IDF application compile; not released and hardware not run |
+| ESP-IDF | `v6.1-beta1` | All fourteen build targets pass; core domains hardware-validated |
+| Candis-S31 BSP | `1.2.0` | BSP integration and examples pass; hardware-validated domains as noted |
+| TG28_SW driver | `0.4.0` | Component test app passes; BSP integration hardware-validated |
+| RX8130CE driver | `0.4.0` | Component test app passes; BSP integration hardware-validated |
+| FUSB303B driver | `0.2.0` | Component test app passes; BSP integration hardware-validated |
+| CST820 touch driver | `1.2.0` | Component test app passes; BSP integration hardware-validated |
+| esp_lvgl_port (vendored for Factory TE diagnostics) | `2.9.0` | Factory display/TE commands compile and link |
+| Factory Bring-up firmware | Development source | Full peripheral command set exercised on EVT1 hardware |
+| Candis-S31 hardware | EVT1 schematic revision 0.5 (fab `v0.5_260803_1544`) | Bring-up largely closed; camera pending FPC adapter |
+| ESP Friends Boards definition | `candis_s31` development definition | Board generation and an isolated ESP-IDF application compile; not released |
 | Arduino ESP32-S31 core and Candis board | Not released | Not available |
 | PlatformIO ESP32-S31 platform and Candis board | Not released | Not available |
 
-Local rows record worktree validation only. Public support is claimed only after the corresponding artifact can be installed and tested through its normal channel. A compile result is not recorded as hardware validation.
+Local rows record snapshot validation. Public support is claimed only after the corresponding artifact can be installed and tested through its normal channel.

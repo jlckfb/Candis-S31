@@ -63,14 +63,16 @@ UI 显示的是**已验证的目标档位**（REG62 上限），实际电流可�
 
 ## 构建与烧录
 
-与 factory 相同的契约,需要 `CANDIS_S31_BSP_PATH` 指向本地 BSP:
+克隆后开箱即编（默认使用仓内 `vendor/esp-bsp/` BSP 快照）:
 
 ```sh
 cd firmware/demo
-export CANDIS_S31_BSP_PATH=<esp-bsp>/bsp/candis_s31
-idf.py build
+idf.py --preview set-target esp32s31
+idf.py --preview build
 idf.py --preview flash   # 板子经 /dev/ttyACM0 连接时
 ```
+
+BSP 开发时可设 `CANDIS_S31_BSP_PATH=<esp-bsp>/bsp/candis_s31` 覆盖快照。
 
 ## 架构速览
 

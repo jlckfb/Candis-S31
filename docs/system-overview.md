@@ -47,9 +47,9 @@ definition, a separate integration from the BSP
 
 - Components are chip drivers. They must not encode Candis-S31 pin choices.
 - The BSP owns every board decision: GPIO map, rail control, reset and
-  interrupt wiring, device probe order. Factory firmware and examples load it
-  through `CANDIS_S31_BSP_PATH` / `ESP_BSP_ROOT`; it is not mirrored into this
-  repository.
+  interrupt wiring, device probe order. Firmware builds against the vendored
+  snapshot in `vendor/esp-bsp/` by default; set `CANDIS_S31_BSP_PATH` to a
+  live esp-bsp checkout for BSP development.
 - The Board Manager definition is a parallel, declarative integration. It
   intentionally omits the Type-C controller and OTG GPIO because its current
   model cannot atomically enforce Source-before-boost and the 500 mA-only

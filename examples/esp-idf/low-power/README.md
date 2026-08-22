@@ -189,12 +189,12 @@ low-power/
 BSP 不在本仓库内，位置经环境变量注入（与 `firmware/factory` 同一套约定）：
 
 ```bash
-export CANDIS_S31_BSP_PATH=/path/to/esp-bsp/bsp/candis_s31
 idf.py --preview set-target esp32s31
 idf.py --preview build
 ```
 
-未设 `CANDIS_S31_BSP_PATH` 时 CMake 会直接报错并说明原因。
+默认使用仓内 `vendor/esp-bsp/` 的 BSP 快照，无需任何环境变量。BSP 开发时可设
+`CANDIS_S31_BSP_PATH` 指向活的 esp-bsp 工作区覆盖快照。
 
 ## 未完成项
 
