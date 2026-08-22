@@ -139,6 +139,19 @@ jobs:
         if: steps.idf-cache.outputs.cache-hit == 'true'
         run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
 
+      # v6.1-beta1 does not ship librfate.a for esp32s31 while esp_phy's
+      # CMake links it when ESP_PHY_ENABLE_CERT_TEST is on (Factory RF
+      # diagnostics). Guard the link until upstream ships the library.
+      # Idempotent against the cached toolchain tree.
+      - name: Patch ESP-IDF esp_phy librfate link guard
+        run: |
+          PATCH="$GITHUB_WORKSPACE/tools/ci/esp-idf-v6.1-beta1-esp_phy-librfate-guard.patch"
+          if git -C ~/esp-idf apply -R --check "$PATCH" 2>/dev/null; then
+            echo "guard already present in the cached ESP-IDF"
+          else
+            git -C ~/esp-idf apply "$PATCH"
+          fi
+
       - name: Validate Factory host and Recovery tooling
         run: |
           python3 firmware/factory/host_tools/run_evt.py --self-test
