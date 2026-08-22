@@ -84,7 +84,7 @@ development, `CANDIS_S31_BSP_PATH` points the build at a live esp-bsp
 checkout instead; maintainers refresh the snapshot with `tools/sync_bsp.sh`.
 No absolute local path is committed to the project.
 
-As of 2026-08-22 the verification environment is ESP-IDF `v6.1-beta1` and
+As of 2026-08-22 the verification environment is ESP-IDF `v6.1-rc1` and
 the vendored snapshot of esp-bsp `feat/candis-s31` (commit `1d10b2b5`).
 All fourteen `tools/build-all.sh` targets pass in this combination, and the
 core peripheral domains (display, touch, audio, microSD, USB host/device,
@@ -95,7 +95,7 @@ The current compatibility baseline is:
 
 | Item | Version | Validation |
 |---|---|---|
-| ESP-IDF | `v6.1-beta1` | All fourteen build targets pass; core domains hardware-validated |
+| ESP-IDF | `v6.1-rc1` | All fourteen build targets pass; core domains hardware-validated |
 | Candis-S31 BSP | `1.2.0` | BSP integration and examples pass; hardware-validated domains as noted |
 | TG28_SW driver | `0.4.0` | Component test app passes; BSP integration hardware-validated |
 | RX8130CE driver | `0.4.0` | Component test app passes; BSP integration hardware-validated |

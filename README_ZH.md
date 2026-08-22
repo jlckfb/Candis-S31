@@ -21,13 +21,13 @@ idf.py --preview build
 idf.py --preview -p PORT flash monitor
 ```
 
-当前基线是 ESP-IDF `v6.1-beta1`。使用 EIM、官方 VS Code 插件或命令行都打开同一个工程。构建前请阅读[示例说明](examples/esp-idf/getting-started/README.md)。
+当前基线是 ESP-IDF `v6.1-rc1`。使用 EIM、官方 VS Code 插件或命令行都打开同一个工程。构建前请阅读[示例说明](examples/esp-idf/getting-started/README.md)。
 
 ## 支持状态
 
 | 开发环境 | 当前状态 |
 |---|---|
-| ESP-IDF | 入门工程、Factory、低功耗示例以及 BSP 与 Board Manager 定义均使用 `v6.1-beta1` 编译通过；核心外设已在 EVT1 实物上验证（见上方硬件状态） |
+| ESP-IDF | 入门工程、Factory、低功耗示例以及 BSP 与 Board Manager 定义均使用 `v6.1-rc1` 编译通过；核心外设已在 EVT1 实物上验证（见上方硬件状态） |
 | Arduino | 等待 ESP32-S31 Core，再提交 Candis-S31 board 与 variant |
 | PlatformIO | 等待 ESP32-S31 平台、工具和框架支持，再增加 board manifest |
 
@@ -35,7 +35,7 @@ Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会
 
 ### 构建验证 — 2026-08-22
 
-基线：ESP-IDF `v6.1-beta1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 14 个目标；2026-08-22 完整回归 14/14 通过。`display_usb_hid` 示例不在矩阵内：它通过 `esp_lvgl_port` 助手驱动 HID 输入，而本板 BSP 使用 `esp_lvgl_adapter`。
+基线：ESP-IDF `v6.1-rc1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 14 个目标；2026-08-22 完整回归 14/14 通过。`display_usb_hid` 示例不在矩阵内：它通过 `esp_lvgl_port` 助手驱动 HID 输入，而本板 BSP 使用 `esp_lvgl_adapter`。
 
 | 目标（`tools/build-all.sh --list`） | 源码位置 | 状态（2026-08-22） |
 |---|---|---|

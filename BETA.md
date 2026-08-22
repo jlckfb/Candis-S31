@@ -10,12 +10,12 @@ Candis-S31 是围绕 ESP32-S31 与 2.0 英寸 460×460 方形 AMOLED 设计的�
 
 ## 2. 环境准备（唯一前置条件）
 
-安装 **ESP-IDF `v6.1-beta1`** 或更新版本。任选一种官方方式：
+安装 **ESP-IDF `v6.1-rc1`** 或更新版本。任选一种官方方式：
 
-- **EIM（ESP-IDF Installation Manager）**：按官方指引选择 v6.1-beta1 安装；
+- **EIM（ESP-IDF Installation Manager）**：按官方指引选择 v6.1-rc1 安装；
 - **命令行**：
   ```bash
-  git clone -b v6.1-beta1 --recursive https://github.com/espressif/esp-idf.git
+  git clone -b v6.1-rc1 --recursive https://github.com/espressif/esp-idf.git
   cd esp-idf && ./install.sh esp32s31 && . ./export.sh
   ```
 

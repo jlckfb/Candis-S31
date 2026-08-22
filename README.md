@@ -34,13 +34,13 @@ idf.py --preview build
 idf.py --preview -p PORT flash monitor
 ```
 
-The current baseline is ESP-IDF `v6.1-beta1`. Installation Manager (EIM), the official VS Code extension, and the command line all use the same project. Read the [example guide](examples/esp-idf/getting-started/README.md) before building.
+The current baseline is ESP-IDF `v6.1-rc1`. Installation Manager (EIM), the official VS Code extension, and the command line all use the same project. Read the [example guide](examples/esp-idf/getting-started/README.md) before building.
 
 ## Support status
 
 | Environment | Status |
 |---|---|
-| ESP-IDF | Starter, Factory, the complete local BSP, and the local Board Manager definition compile with `v6.1-beta1`; hardware validation and upstream release are pending |
+| ESP-IDF | Starter, Factory, the complete local BSP, and the local Board Manager definition compile with `v6.1-rc1`; hardware validation and upstream release are pending |
 | Arduino | Waiting for the ESP32-S31 core, followed by the Candis-S31 board and variant |
 | PlatformIO | Waiting for ESP32-S31 platform, tool, and framework support before adding a board manifest |
 
@@ -48,7 +48,7 @@ Arduino and PlatformIO projects will be added only after they build with their n
 
 ### Build verification — 2026-08-22
 
-Baseline: ESP-IDF `v6.1-beta1`, target `esp32s31` (preview). `tools/build-all.sh` compiles the fourteen targets below serially; the complete 2026-08-22 regression passed 14/14. The `display_usb_hid` example is not part of the matrix: it drives HID inputs through `esp_lvgl_port` helpers that this `esp_lvgl_adapter`-based BSP does not use.
+Baseline: ESP-IDF `v6.1-rc1`, target `esp32s31` (preview). `tools/build-all.sh` compiles the fourteen targets below serially; the complete 2026-08-22 regression passed 14/14. The `display_usb_hid` example is not part of the matrix: it drives HID inputs through `esp_lvgl_port` helpers that this `esp_lvgl_adapter`-based BSP does not use.
 
 | Target (`tools/build-all.sh --list`) | Source | Status (2026-08-22) |
 |---|---|---|
