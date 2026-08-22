@@ -11,6 +11,7 @@
 #include "driver/gpio.h"
 #include "esp_check.h"
 #include "esp_console.h"
+#include "esp_lvgl_port_disp.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
