@@ -14,7 +14,7 @@
 lv_obj_t *app_camera_create(void)
 {
     lv_obj_t *content = NULL;
-    lv_obj_t *root = ui_app_scaffold("相机", &content);
+    lv_obj_t *root = ui_app_scaffold("Camera", &content);
 
     lv_obj_t *icon = lv_label_create(content);
     lv_label_set_text(icon, LV_SYMBOL_IMAGE);
@@ -23,7 +23,8 @@ lv_obj_t *app_camera_create(void)
     lv_obj_align(icon, LV_ALIGN_CENTER, 0, -46);
 
     lv_obj_t *text = lv_label_create(content);
-    lv_label_set_text(text, "EVT1 摄像头等 FPC 线序转接板,本期不启用");
+    lv_label_set_text(text, "EVT1 camera waits for FPC adapter, disabled this build");
+    lv_obj_set_style_text_font(text, ui_font_body(), 0);
     lv_obj_set_width(text, 320);
     lv_label_set_long_mode(text, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(text, LV_TEXT_ALIGN_CENTER, 0);
@@ -31,7 +32,8 @@ lv_obj_t *app_camera_create(void)
     lv_obj_align(text, LV_ALIGN_CENTER, 0, 20);
 
     lv_obj_t *hint = lv_label_create(content);
-    lv_label_set_text(hint, "转接板到位后再开放预览与拍照");
+    lv_label_set_text(hint, "Preview and capture open after the adapter arrives");
+    lv_obj_set_style_text_font(hint, ui_font_body(), 0);
     lv_obj_set_width(hint, 320);
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);

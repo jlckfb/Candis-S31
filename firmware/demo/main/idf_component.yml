@@ -1,3 +1,9 @@
 dependencies:
-  idf: ">=5.3"
-  espressif/usb_host_msc: "^1.1.4"
+  idf: '>=5.3'
+  espressif/usb_host_msc: ^1.1.4
+  espressif/esp_lvgl_adapter: ^0.5.2
+  # USB Device (CDC) mode for the OTG app. Version constraint mirrors
+  # firmware/usb_cdc_device, the board-validated TinyUSB CDC image
+  # (lock resolves esp_tinyusb 2.2.1 + tinyusb 0.21.0~1, esp32s31 in
+  # both target lists).
+  espressif/esp_tinyusb: "^2.0.1~1"

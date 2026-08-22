@@ -4,7 +4,7 @@
  * Static facts (chip, IDF/BSP revision, flash, PSRAM total) are rendered
  * once; free memory, uptime, battery voltage and the FreeRTOS task table
  * refresh every second from an lv_timer (LVGL thread only, no extra task).
- * Task rows use a monospaced face so the stack high-water marks line up.
+ * Task rows use the bundled 16 px text face for readable diagnostics.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -28,7 +28,7 @@
 #include "services/svc_power.h"
 #include "ui/ui_manager.h"
 
-#define SYSINFO_ROW_WIDTH   436
+#define SYSINFO_ROW_WIDTH   428
 #define SYSINFO_MAX_ROWS    48
 #define SYSINFO_REFRESH_MS  1000
 
@@ -118,8 +118,15 @@ static void sysinfo_update_tasks(void)
         }
         s.task_cap = count;
     }
+    if (s.task_buf == NULL || s.task_cap == 0) {
+        return; /* allocation failed this cycle: skip, never query NULL */
+    }
     const UBaseType_t got = uxTaskGetSystemState(s.task_buf, s.task_cap, NULL);
-    const int rows = got < SYSINFO_MAX_ROWS ? (int)got : SYSINFO_MAX_ROWS;
+    /* Clamp to the rows actually built at page entry. */
+    int rows = (int)got;
+    if (rows > s.task_row_count) {
+        rows = s.task_row_count;
+    }
     for (int i = 0; i < rows; ++i) {
         const TaskStatus_t *t = &s.task_buf[i];
         lv_label_set_text_fmt(s.task_row[i], "%-16.16s %6u B",
@@ -184,7 +191,7 @@ lv_obj_t *app_sysinfo_create(void)
     s = (sysinfo_state_t){ .active = true };
 
     lv_obj_t *content = NULL;
-    lv_obj_t *root = ui_app_scaffold("系统信息", &content);
+    lv_obj_t *root = ui_app_scaffold("System info", &content);
     lv_obj_add_event_cb(root, sysinfo_root_delete_cb, LV_EVENT_DELETE, NULL);
 
     lv_obj_set_layout(content, LV_LAYOUT_FLEX);
@@ -195,10 +202,10 @@ lv_obj_t *app_sysinfo_create(void)
 
     esp_chip_info_t chip;
     esp_chip_info(&chip);
-    info_row_fixed(content, "芯片", "%s · %d 核",
+    info_row_fixed(content, "Chip", "%s - %d cores",
                    chip_model_name(chip.model), chip.cores);
-    info_row_fixed(content, "IDF 版本", "%s", esp_get_idf_version());
-    info_row_fixed(content, "BSP 版本", "%s", CANDIS_S31_BSP_GIT_REV);
+    info_row_fixed(content, "IDF version", "%s", esp_get_idf_version());
+    info_row_fixed(content, "BSP version", "%s", CANDIS_S31_BSP_GIT_REV);
 
     uint32_t flash_bytes = 0;
     if (esp_flash_get_size(NULL, &flash_bytes) == ESP_OK) {
@@ -207,29 +214,36 @@ lv_obj_t *app_sysinfo_create(void)
     } else {
         info_row_fixed(content, "Flash", "--");
     }
-    info_row_fixed(content, "PSRAM 总量", "%u KB",
+    info_row_fixed(content, "PSRAM total", "%u KB",
                    (unsigned)(heap_caps_get_total_size(MALLOC_CAP_SPIRAM) / 1024));
 
-    info_row(content, "内部 RAM 空闲", &s.lbl_ram_free);
-    info_row(content, "PSRAM 空闲", &s.lbl_psram_free);
-    info_row(content, "运行时长", &s.lbl_uptime);
-    info_row(content, "电池电压", &s.lbl_battery);
+    info_row(content, "Internal RAM free", &s.lbl_ram_free);
+    info_row(content, "PSRAM free", &s.lbl_psram_free);
+    info_row(content, "Uptime", &s.lbl_uptime);
+    info_row(content, "Battery voltage", &s.lbl_battery);
 
     lv_obj_t *head = lv_label_create(content);
-    lv_label_set_text(head, "任务栈高水位(空闲字节)");
+    lv_label_set_text(head, "Task stack high-water (bytes free)");
     lv_obj_set_style_text_color(head, lv_color_hex(UI_COLOR_ACCENT), 0);
     lv_obj_set_style_pad_left(head, 8, 0);
     lv_obj_set_style_pad_top(head, 8, 0);
 
-    for (int i = 0; i < SYSINFO_MAX_ROWS; ++i) {
+    /* Create exactly as many rows as there are tasks right now (capped),
+     * instead of a fixed 48 that mostly sit hidden: fewer widgets to lay
+     * out and no hidden-row churn on every refresh. A task created after
+     * entry simply has no row - the page is a point-in-time snapshot. */
+    const UBaseType_t live_tasks = uxTaskGetNumberOfTasks();
+    const int rows = live_tasks < SYSINFO_MAX_ROWS ?
+                     (int)live_tasks : SYSINFO_MAX_ROWS;
+    for (int i = 0; i < rows; ++i) {
         lv_obj_t *row = lv_label_create(content);
         lv_obj_set_width(row, SYSINFO_ROW_WIDTH);
         lv_label_set_text(row, "--");
-        lv_obj_set_style_text_font(row, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(row, ui_font_text(), 0);
         lv_obj_set_style_pad_left(row, 8, 0);
         s.task_row[i] = row;
     }
-    s.task_row_count = SYSINFO_MAX_ROWS;
+    s.task_row_count = rows;
 
     s.timer = lv_timer_create(sysinfo_timer_cb, SYSINFO_REFRESH_MS, NULL);
     sysinfo_timer_cb(s.timer); /* first paint without waiting a second */

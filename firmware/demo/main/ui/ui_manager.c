@@ -7,19 +7,31 @@
 
 #include "ui_manager.h"
 
+#include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "bsp/esp-bsp.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
+#include "freertos/queue.h"
 
 #include "services/svc_power.h"
+#include "fonts/candis_ui_fonts.h"
 #include "ui_menu.h"
 #include "ui_watchface.h"
 
 #define UI_MAX_APPS 24
 #define UI_NAV_DEPTH 8
 #define UI_TOAST_MS 2000
-#define UI_ANIM_MS 150
+#define UI_ANIM_MS 0
+#define UI_ASYNC_QUEUE_DEPTH 32
+#define UI_ASYNC_DRAIN_BUDGET 16
+#define UI_ASYNC_POLL_MS 5
+#define UI_NAV_QUEUE_DEPTH 16
 
 static const ui_app_t *s_apps[UI_MAX_APPS];
 static int s_app_count;
@@ -36,13 +48,6 @@ static lv_obj_t *s_lbl_ble;
 static lv_obj_t *s_lbl_sd;
 static lv_obj_t *s_lbl_usb;
 
-/* Shared pressed-state transition (scale + colors). */
-static const lv_style_prop_t s_press_trans_props[] = {
-    LV_STYLE_TRANSFORM_SCALE_X, LV_STYLE_TRANSFORM_SCALE_Y,
-    LV_STYLE_BORDER_COLOR, LV_STYLE_BG_COLOR,
-    LV_STYLE_PROP_INV,
-};
-static lv_style_transition_dsc_t s_press_trans;
 static bool s_styles_ready;
 
 /* ------------------------------------------------------------------ */
@@ -64,29 +69,108 @@ typedef struct {
     void *arg;
 } ui_async_call_t;
 
-static void ui_async_trampoline(void *ptr)
+static StaticQueue_t s_async_queue_state;
+static uint8_t s_async_queue_storage[
+    UI_ASYNC_QUEUE_DEPTH * sizeof(ui_async_call_t)];
+static QueueHandle_t s_async_queue;
+static lv_timer_t *s_async_timer;
+static lv_timer_t *s_clock_timer;
+
+static StaticQueue_t s_nav_queue_state;
+static uint8_t s_nav_queue_storage[
+    UI_NAV_QUEUE_DEPTH * sizeof(ui_nav_request_t)];
+static QueueHandle_t s_nav_queue;
+static portMUX_TYPE s_nav_fallback_lock = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t s_nav_fallback;
+
+static void status_flush_pending(void);
+
+static void nav_request_apply(ui_nav_request_t request)
 {
-    ui_async_call_t *call = ptr;
-    call->fn(call->arg);
-    lv_free(call);
+    switch (request) {
+    case UI_NAV_REQUEST_BACK_OR_MENU:
+        /* BOOT: back anywhere below the root; menu entry on the watchface. */
+        if (ui_nav_at_home()) {
+            ui_nav_open_menu();
+        } else {
+            ui_nav_back();
+        }
+        break;
+    case UI_NAV_REQUEST_HOME:
+        ui_nav_home();
+        break;
+    default:
+        break;
+    }
 }
 
-void ui_async(void (*fn)(void *), void *arg)
+static void nav_flush_pending(void)
 {
-    ui_async_call_t *call = lv_malloc(sizeof(*call));
-    if (!call) {
-        return;
+    ui_nav_request_t request;
+    while (xQueueReceive(s_nav_queue, &request, 0) == pdTRUE) {
+        nav_request_apply(request);
     }
-    call->fn = fn;
-    call->arg = arg;
-    if (ui_lock()) {
-        if (lv_async_call(ui_async_trampoline, call) != LV_RESULT_OK) {
-            lv_free(call);
+
+    uint32_t fallback;
+    portENTER_CRITICAL(&s_nav_fallback_lock);
+    fallback = s_nav_fallback;
+    s_nav_fallback = 0;
+    portEXIT_CRITICAL(&s_nav_fallback_lock);
+
+    if ((fallback & (UINT32_C(1) << UI_NAV_REQUEST_BACK_OR_MENU)) != 0) {
+        nav_request_apply(UI_NAV_REQUEST_BACK_OR_MENU);
+    }
+    /* HOME is deliberately applied last: under pathological key pressure,
+     * the safe deterministic outcome is the watchface, not a deeper page. */
+    if ((fallback & (UINT32_C(1) << UI_NAV_REQUEST_HOME)) != 0) {
+        nav_request_apply(UI_NAV_REQUEST_HOME);
+    }
+}
+
+static void ui_async_drain(lv_timer_t *timer)
+{
+    (void)timer;
+    nav_flush_pending();
+    ui_async_call_t call;
+    for (int count = 0; count < UI_ASYNC_DRAIN_BUDGET; ++count) {
+        if (xQueueReceive(s_async_queue, &call, 0) != pdTRUE) {
+            break;
         }
-        ui_unlock();
-    } else {
-        lv_free(call);
+        call.fn(call.arg);
     }
+    /* Status indicators use a fixed last-value mailbox. Poll it from the
+     * LVGL timer so queue pressure can delay, but never permanently lose,
+     * an SD/USB/wireless state transition. */
+    status_flush_pending();
+}
+
+bool ui_async(void (*fn)(void *), void *arg)
+{
+    if (fn == NULL || s_async_queue == NULL || s_async_timer == NULL) {
+        return false;
+    }
+    const ui_async_call_t call = {
+        .fn = fn,
+        .arg = arg,
+    };
+    return xQueueSend(s_async_queue, &call, 0) == pdTRUE;
+}
+
+bool ui_nav_request(ui_nav_request_t request)
+{
+    if (s_nav_queue == NULL || s_async_timer == NULL ||
+        request < UI_NAV_REQUEST_BACK_OR_MENU ||
+        request > UI_NAV_REQUEST_HOME) {
+        return false;
+    }
+    if (xQueueSend(s_nav_queue, &request, 0) == pdTRUE) {
+        return true;
+    }
+
+    portENTER_CRITICAL(&s_nav_fallback_lock);
+    s_nav_fallback |= UINT32_C(1) << request;
+    portEXIT_CRITICAL(&s_nav_fallback_lock);
+    return true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -95,7 +179,33 @@ void ui_async(void (*fn)(void *), void *arg)
 
 const lv_font_t *ui_font_text(void)
 {
+    /* Compact 460x460 density hierarchy (DESIGN.md typography):
+     * text/subtitles/rows = 16 (CJK default font), body/buttons = 24
+     * Montserrat, large body = project CJK 20, titles = project CJK 24,
+     * mid/big Montserrat 32/48 for symbols and watchface digits. */
+    /* Must stay the full CJK default (Source Han Sans SC 16):
+     * screen-base text and the msgbox body carry arbitrary user strings,
+     * e.g. Chinese filenames - a latin-only font renders tofu. Symbols
+     * (FontAwesome) are set to Montserrat explicitly where needed. */
     return LV_FONT_DEFAULT;
+}
+
+const lv_font_t *ui_font_body(void)
+{
+    return &lv_font_montserrat_24;
+}
+
+const lv_font_t *ui_font_body_lg(void)
+{
+    /* Project Source Han Sans SC subset, 20 px; falls back to the bundled
+     * CJK 16 for glyphs outside the subset. */
+    return &candis_ui_20;
+}
+
+const lv_font_t *ui_font_title(void)
+{
+    /* Project Source Han Sans SC subset, 24 px; same CJK 16 fallback. */
+    return &candis_ui_24;
 }
 
 const lv_font_t *ui_font_mid(void)
@@ -113,8 +223,6 @@ static void ui_styles_ensure(void)
     if (s_styles_ready) {
         return;
     }
-    lv_style_transition_dsc_init(&s_press_trans, s_press_trans_props,
-                                 lv_anim_path_ease_out, 140, 0, NULL);
     s_styles_ready = true;
 }
 
@@ -149,6 +257,9 @@ static lv_obj_t *status_label(lv_obj_t *parent, const char *text)
 {
     lv_obj_t *label = lv_label_create(parent);
     lv_label_set_text(label, text);
+    /* Symbols need a font with the FontAwesome glyph range; the compact
+     * default (Montserrat16) covers it, the tiny default may not. */
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
     return label;
 }
@@ -177,44 +288,34 @@ static void status_bar_build(void)
     s_lbl_sd = status_label(s_status_bar, LV_SYMBOL_SD_CARD);
     s_lbl_batt = status_label(s_status_bar, "--%");
 
+    /* The battery slot must fit the worst case "CHARGE 100%" (~58 px);
+     * the icons keep their 38 px pitch and sit 6 px further left so the
+     * charging label no longer overlaps the SD glyph at 100%. */
     lv_obj_align(s_lbl_batt, LV_ALIGN_RIGHT_MID, -10, 0);
-    lv_obj_align(s_lbl_sd, LV_ALIGN_RIGHT_MID, -62, 0);
-    lv_obj_align(s_lbl_usb, LV_ALIGN_RIGHT_MID, -100, 0);
-    lv_obj_align(s_lbl_ble, LV_ALIGN_RIGHT_MID, -138, 0);
-    lv_obj_align(s_lbl_wifi, LV_ALIGN_RIGHT_MID, -176, 0);
+    lv_obj_align(s_lbl_sd, LV_ALIGN_RIGHT_MID, -68, 0);
+    lv_obj_align(s_lbl_usb, LV_ALIGN_RIGHT_MID, -106, 0);
+    lv_obj_align(s_lbl_ble, LV_ALIGN_RIGHT_MID, -144, 0);
+    lv_obj_align(s_lbl_wifi, LV_ALIGN_RIGHT_MID, -182, 0);
 }
 
-/* Charging indicator: blink the battery label (small dirty area). */
-static void charge_blink_cb(void *obj, int32_t v)
-{
-    lv_obj_set_style_opa(obj, (lv_opa_t)v, 0);
-}
+/* Last applied status-bar time: identical repeats are dropped before
+ * touching LVGL (same full-frame-redraw rationale as the battery state
+ * below). Pre-seeded with the normalized unknown post (0xFFFF, -1) so a
+ * boot-time RTC failure does not redraw the "--:--" placeholder. */
+static int s_time_last_hour = 0xFFFF;
+static int s_time_last_minute = -1;
 
-static void charge_blink_start(void)
-{
-    if (!s_lbl_batt) {
-        return;
-    }
-    lv_anim_delete(s_lbl_batt, charge_blink_cb);
-    lv_anim_t a;
-    lv_anim_init(&a);
-    lv_anim_set_var(&a, s_lbl_batt);
-    lv_anim_set_exec_cb(&a, charge_blink_cb);
-    lv_anim_set_values(&a, 255, 70);
-    lv_anim_set_duration(&a, 700);
-    lv_anim_set_reverse_duration(&a, 700);
-    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_start(&a);
-}
-
-static void charge_blink_stop(void)
-{
-    if (!s_lbl_batt) {
-        return;
-    }
-    lv_anim_delete(s_lbl_batt, charge_blink_cb);
-    lv_obj_set_style_opa(s_lbl_batt, LV_OPA_COVER, 0);
-}
+/* Last applied battery state. The PMIC polls every 2 s, so identical
+ * repeats are dropped before touching LVGL: under FULL render mode any
+ * label write merges into a full-frame redraw, and the old blinking
+ * charge animation was both a 0.7 s infinite-invalidate loop and got
+ * rebuilt on every poll (losing its phase). Charging is shown as a
+ * static charge glyph + green text instead, which stays readable
+ * without motion (DESIGN.md: charging must be understandable without
+ * blinking). */
+static int s_batt_last_percent = INT_MIN;
+static bool s_batt_last_charging;
+static bool s_batt_last_present;
 
 typedef struct {
     int a;
@@ -222,13 +323,23 @@ typedef struct {
     int c;
 } ui_status_msg_t;
 
-static void status_apply(void *ptr)
+#define UI_STATUS_KIND_COUNT 6
+
+static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
+static ui_status_msg_t s_status_pending[UI_STATUS_KIND_COUNT];
+static uint32_t s_status_dirty;
+
+static void status_apply_value(const ui_status_msg_t *msg)
 {
-    ui_status_msg_t *msg = ptr;
     int what = msg->a >> 16;
     int v0 = msg->a & 0xFFFF, v1 = msg->b, v2 = msg->c;
     switch (what) {
     case 0: { /* time */
+        if (v0 == s_time_last_hour && v1 == s_time_last_minute) {
+            break; /* unchanged since last apply: no LVGL write, no redraw */
+        }
+        s_time_last_hour = v0;
+        s_time_last_minute = v1;
         if (v0 == 0xFFFF) {
             lv_label_set_text(s_lbl_time, "--:--");
         } else {
@@ -236,8 +347,15 @@ static void status_apply(void *ptr)
         }
         break;
     }
-    case 1: /* battery: v0=percent v1=charging v2=present */
-        if (!v2) {
+    case 1: /* battery: v0=percent(-1 = absent or no valid model) v1=charging v2=present */
+        if (v0 == s_batt_last_percent && v1 == s_batt_last_charging &&
+            v2 == s_batt_last_present) {
+            break; /* unchanged since last apply: no LVGL write, no redraw */
+        }
+        s_batt_last_percent = v0;
+        s_batt_last_charging = v1;
+        s_batt_last_present = v2;
+        if (!v2 || v0 < 0) {
             lv_label_set_text(s_lbl_batt, "--");
         } else {
             lv_label_set_text_fmt(s_lbl_batt, "%s%d%%",
@@ -245,11 +363,7 @@ static void status_apply(void *ptr)
         }
         lv_obj_set_style_text_color(s_lbl_batt,
                                     lv_color_hex(v1 ? UI_COLOR_OK : UI_COLOR_TEXT), 0);
-        if (v1) {
-            charge_blink_start();
-        } else {
-            charge_blink_stop();
-        }
+        lv_obj_set_style_opa(s_lbl_batt, LV_OPA_COVER, 0);
         break;
     case 2: /* wifi */
         lv_obj_set_style_text_color(s_lbl_wifi,
@@ -271,19 +385,44 @@ static void status_apply(void *ptr)
     default:
         break;
     }
-    lv_free(msg);
+}
+
+static void status_flush_pending(void)
+{
+    ui_status_msg_t snapshot[UI_STATUS_KIND_COUNT];
+    uint32_t dirty = 0;
+
+    portENTER_CRITICAL(&s_status_lock);
+    dirty = s_status_dirty;
+    s_status_dirty = 0;
+    for (int what = 0; what < UI_STATUS_KIND_COUNT; ++what) {
+        if ((dirty & (UINT32_C(1) << what)) != 0) {
+            snapshot[what] = s_status_pending[what];
+        }
+    }
+    portEXIT_CRITICAL(&s_status_lock);
+
+    for (int what = 0; what < UI_STATUS_KIND_COUNT; ++what) {
+        if ((dirty & (UINT32_C(1) << what)) != 0) {
+            status_apply_value(&snapshot[what]);
+        }
+    }
 }
 
 static void status_post(int what, int v0, int v1, int v2)
 {
-    ui_status_msg_t *msg = lv_malloc(sizeof(*msg));
-    if (!msg) {
+    if (what < 0 || what >= UI_STATUS_KIND_COUNT) {
         return;
     }
-    msg->a = (what << 16) | (v0 & 0xFFFF);
-    msg->b = v1;
-    msg->c = v2;
-    ui_async(status_apply, msg);
+    const ui_status_msg_t msg = {
+        .a = (what << 16) | (v0 & 0xFFFF),
+        .b = v1,
+        .c = v2,
+    };
+    portENTER_CRITICAL(&s_status_lock);
+    s_status_pending[what] = msg;
+    s_status_dirty |= UINT32_C(1) << what;
+    portEXIT_CRITICAL(&s_status_lock);
 }
 
 void ui_status_set_time(int hour, int minute)
@@ -317,6 +456,41 @@ void ui_status_set_usb(int role)
 }
 
 /* ------------------------------------------------------------------ */
+/* Clock: single 1 s source for the status bar and the watchface       */
+/* ------------------------------------------------------------------ */
+
+/* Runs on the LVGL thread. bsp_rtc_get_time() is a short I2C read;
+ * demo_board and app_settings already issue it from LVGL context. */
+static void ui_clock_tick(lv_timer_t *timer)
+{
+    (void)timer;
+
+    /* Screen off: invalidation is disabled and nothing is visible, so
+     * skip the I2C read instead of polling once per second. */
+    if (svc_power_is_screen_off()) {
+        return;
+    }
+
+    bsp_rtc_time_t t;
+    bsp_rtc_status_t status;
+    const bool ok = (bsp_rtc_get_time(&t, &status) == ESP_OK) &&
+                    status.time_valid;
+
+    /* Status-bar time; value dedup lives in status_apply_value. A failed
+     * or invalid read reports unknown so a broken RTC shows "--:--",
+     * never stale digits. */
+    if (ok) {
+        ui_status_set_time(t.hour, t.minute);
+    } else {
+        ui_status_set_time(-1, -1);
+    }
+
+    /* Watchface widgets; the tick itself gates on the active screen, and
+     * a transient RTC failure keeps its last good rendering. */
+    ui_watchface_tick(ok ? &t : NULL);
+}
+
+/* ------------------------------------------------------------------ */
 /* Navigation                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -347,7 +521,11 @@ static void nav_push(lv_obj_t *screen, const ui_app_t *app)
     ++s_top;
     s_stack[s_top] = screen;
     s_stack_app[s_top] = app;
-    lv_scr_load_anim(screen, LV_SCR_LOAD_ANIM_FADE_IN, UI_ANIM_MS, 0, false);
+    /* Full-screen fades repeatedly invalidate the entire 460x460 panel. The
+     * CO5300 QSPI transfer is longer than one scan period, so transitions must
+     * be instantaneous; local widget animations remain tear-resistant under
+     * the TE-paced partial pipeline. */
+    lv_scr_load_anim(screen, LV_SCR_LOAD_ANIM_NONE, UI_ANIM_MS, 0, false);
     nav_apply_status_visibility();
 }
 
@@ -356,9 +534,13 @@ void ui_nav_back(void)
     if (s_top <= 0) {
         return;
     }
+    /* The persistent launcher menu (stack layer 1) survives its own pop;
+     * every app screen above it is deleted by auto_del. */
+    const bool popped_persistent = (s_top == 1);
     --s_top;
     /* auto_del deletes the screen being replaced (the one we just popped). */
-    lv_scr_load_anim(s_stack[s_top], LV_SCR_LOAD_ANIM_FADE_OUT, UI_ANIM_MS, 0, true);
+    lv_scr_load_anim(s_stack[s_top], LV_SCR_LOAD_ANIM_NONE, UI_ANIM_MS, 0,
+                     !popped_persistent);
     nav_apply_status_visibility();
 }
 
@@ -385,7 +567,14 @@ static void graveyard_reap(lv_timer_t *timer)
 
 static void graveyard_add(lv_obj_t *screen)
 {
-    if (!screen || s_graveyard_count >= UI_NAV_DEPTH) {
+    if (!screen) {
+        return;
+    }
+    if (s_graveyard_count >= UI_NAV_DEPTH) {
+        /* Graveyard full: delete the screen now instead of leaking it.
+         * The deferred reap is only a cosmetic grace period. */
+        ESP_LOGW("ui_manager", "graveyard overflow, deleting screen now");
+        lv_obj_delete(screen);
         return;
     }
     s_graveyard[s_graveyard_count++] = screen;
@@ -402,30 +591,47 @@ void ui_nav_home(void)
     if (s_top <= 0) {
         return;
     }
-    /* Intermediate screens go to the deferred graveyard; the active top
-     * screen is handed to LVGL via auto_del (deleted after the fade). */
-    for (int i = 1; i < s_top; ++i) {
+    /* App screens (layer >= 2) go to the deferred graveyard; the active
+     * top screen is handed to LVGL via auto_del (deleted after the fade)
+     * when it is itself an app screen. Layer 1 is the persistent launcher
+     * menu: it stays alive in s_stack[1] for the next open. */
+    for (int i = 2; i < s_top; ++i) {
         graveyard_add(s_stack[i]);
         s_stack[i] = NULL;
     }
+    const bool top_is_app = (s_top >= 2);
     s_top = 0;
-    lv_scr_load_anim(s_stack[0], LV_SCR_LOAD_ANIM_FADE_IN, UI_ANIM_MS, 0, true);
+    lv_scr_load_anim(s_stack[0], LV_SCR_LOAD_ANIM_NONE, UI_ANIM_MS, 0,
+                     top_is_app);
     nav_apply_status_visibility();
-}
-
-void ui_nav_open_menu(void)
-{
-    nav_push(ui_menu_create(), NULL);
 }
 
 void ui_nav_open(const char *app_id)
 {
     for (int i = 0; i < s_app_count; ++i) {
         if (strcmp(s_apps[i]->id, app_id) == 0) {
+            /* Apps always sit above the persistent menu: a push from the
+             * root would otherwise overwrite s_stack[1] (the launcher)
+             * and leak the object tree. */
+            if (s_top == 0) {
+                ui_nav_open_menu();
+            }
             nav_push(s_apps[i]->create(), s_apps[i]);
             return;
         }
     }
+}
+
+void ui_nav_open_menu(void)
+{
+    /* The launcher lives persistently at stack layer 1 and opens only
+     * from the watchface root; deeper pages reach it through back. */
+    if (s_top != 0 || s_stack[1] == NULL) {
+        return;
+    }
+    s_top = 1;
+    lv_scr_load_anim(s_stack[1], LV_SCR_LOAD_ANIM_NONE, UI_ANIM_MS, 0, false);
+    nav_apply_status_visibility();
 }
 
 bool ui_nav_at_home(void)
@@ -469,28 +675,26 @@ lv_obj_t *ui_app_scaffold(const char *title, lv_obj_t **content_out)
 
     /* Watch-style title row: rounded back key, accent tick, title. */
     lv_obj_t *back = lv_button_create(root);
-    lv_obj_set_size(back, 44, 40);
-    lv_obj_set_pos(back, 10, UI_CONTENT_Y + 4);
+    lv_obj_set_size(back, UI_TOUCH_MIN, UI_TOUCH_MIN);
+    lv_obj_set_pos(back, 8, UI_CONTENT_Y + 4);
     lv_obj_set_style_bg_color(back, lv_color_hex(UI_COLOR_SURFACE), 0);
     lv_obj_set_style_bg_opa(back, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(back, 14, 0);
     lv_obj_set_style_border_color(back, lv_color_hex(0x26262E), 0);
     lv_obj_set_style_border_width(back, 1, 0);
     lv_obj_set_style_shadow_width(back, 0, 0);
-    lv_obj_set_style_transform_scale(back, LV_SCALE_NONE, 0);
-    lv_obj_set_style_transition(back, &s_press_trans, 0);
-    lv_obj_set_style_transform_scale(back, 238, LV_STATE_PRESSED);
     lv_obj_set_style_border_color(back, lv_color_hex(UI_COLOR_ACCENT),
                                   LV_STATE_PRESSED);
     lv_obj_add_event_cb(back, scaffold_back_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *back_lbl = lv_label_create(back);
     lv_label_set_text(back_lbl, LV_SYMBOL_LEFT);
+    lv_obj_set_style_text_font(back_lbl, ui_font_mid(), 0);
     lv_obj_set_style_text_color(back_lbl, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_center(back_lbl);
 
     lv_obj_t *tick = lv_obj_create(root);
-    lv_obj_set_size(tick, 4, 22);
-    lv_obj_set_pos(tick, 62, UI_CONTENT_Y + 13);
+    lv_obj_set_size(tick, 5, 28);
+    lv_obj_set_pos(tick, 72, UI_CONTENT_Y + 18);
     lv_obj_set_style_bg_color(tick, lv_color_hex(UI_COLOR_ACCENT), 0);
     lv_obj_set_style_bg_opa(tick, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(tick, 2, 0);
@@ -499,17 +703,22 @@ lv_obj_t *ui_app_scaffold(const char *title, lv_obj_t **content_out)
 
     lv_obj_t *title_lbl = lv_label_create(root);
     lv_label_set_text(title_lbl, title);
-    lv_obj_set_style_text_font(title_lbl, ui_font_text(), 0);
+    lv_obj_set_style_text_font(title_lbl, ui_font_title(), 0);
     lv_obj_set_style_text_color(title_lbl, lv_color_hex(UI_COLOR_TEXT), 0);
-    lv_obj_set_pos(title_lbl, 74, UI_CONTENT_Y + 14);
+    /* 24 px project CJK title: line height 28 px, vertically centered in
+     * the fixed 64 px title row. */
+    lv_obj_set_pos(title_lbl, 88, UI_CONTENT_Y + 18);
 
     lv_obj_t *content = lv_obj_create(root);
-    lv_obj_set_size(content, 460, 460 - UI_CONTENT_Y - 48);
-    lv_obj_set_pos(content, 0, UI_CONTENT_Y + 48);
+    lv_obj_set_size(content, 460, 460 - UI_CONTENT_Y - UI_TITLE_ROW_HEIGHT);
+    lv_obj_set_pos(content, 0, UI_CONTENT_Y + UI_TITLE_ROW_HEIGHT);
     lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(content, 0, 0);
     lv_obj_set_style_radius(content, 0, 0);
-    lv_obj_set_style_pad_all(content, 8, 0);
+    lv_obj_set_style_pad_left(content, UI_SCREEN_PAD, 0);
+    lv_obj_set_style_pad_right(content, UI_SCREEN_PAD, 0);
+    lv_obj_set_style_pad_top(content, 8, 0);
+    lv_obj_set_style_pad_bottom(content, UI_SCREEN_PAD, 0);
     lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_AUTO);
     style_dark_scrollbar(content);
 
@@ -575,6 +784,7 @@ void ui_toast(const char *text)
 
     lv_obj_t *label = lv_label_create(toast);
     lv_label_set_text(label, text); /* lv_label copies the text */
+    lv_obj_set_style_text_font(label, ui_font_body(), 0);
     lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_center(label);
 
@@ -631,20 +841,18 @@ static lv_obj_t *msgbox_button_create(lv_obj_t *parent, const char *text,
                                       uint32_t bg_color)
 {
     lv_obj_t *btn = lv_button_create(parent);
-    lv_obj_set_size(btn, 136, 46);
+    lv_obj_set_size(btn, 136, UI_TOUCH_MIN);
     lv_obj_set_style_bg_color(btn, lv_color_hex(bg_color), 0);
     lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 14, 0);
     lv_obj_set_style_border_width(btn, 0, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
-    lv_obj_set_style_transform_scale(btn, LV_SCALE_NONE, 0);
-    lv_obj_set_style_transition(btn, &s_press_trans, 0);
-    lv_obj_set_style_transform_scale(btn, 244, LV_STATE_PRESSED);
     lv_obj_set_style_bg_color(btn, lv_color_hex(bg_color == UI_COLOR_ACCENT
                                                     ? 0x3A7FD0 : 0x2C2C34),
                               LV_STATE_PRESSED);
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, ui_font_body(), 0);
     lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_center(label);
     return btn;
@@ -682,13 +890,23 @@ void ui_msgbox(const char *title, const char *text,
 
     lv_obj_t *title_lbl = lv_label_create(box);
     lv_label_set_text(title_lbl, title);
-    lv_obj_set_style_text_font(title_lbl, ui_font_text(), 0);
+    /* Title at 24px (was 32 - overflowed the 330px box for long words)
+     * with a bounded slot + dot mode. */
+    lv_obj_set_style_text_font(title_lbl, ui_font_body(), 0);
     lv_obj_set_style_text_color(title_lbl, lv_color_hex(UI_COLOR_ACCENT), 0);
-    lv_obj_align(title_lbl, LV_ALIGN_TOP_MID, 0, 18);
+    lv_obj_set_width(title_lbl, 290);
+    lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(title_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(title_lbl, LV_ALIGN_TOP_MID, 0, 14);
 
     lv_obj_t *text_lbl = lv_label_create(box);
     lv_label_set_text(text_lbl, text);
+    /* Dense 16px wrapped body with a fixed-height scrollable slot: long
+     * filenames scroll instead of overflowing the box. */
+    lv_obj_set_style_text_font(text_lbl, ui_font_text(), 0);
     lv_obj_set_width(text_lbl, 284);
+    lv_obj_set_height(text_lbl, 100);
+    lv_label_set_long_mode(text_lbl, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_color(text_lbl, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_align(text_lbl, LV_ALIGN_CENTER, 0, -16);
 
@@ -701,12 +919,12 @@ void ui_msgbox(const char *title, const char *text,
     ctx->user = user;
     ctx->modal = modal;
 
-    lv_obj_t *cancel = msgbox_button_create(box, "取消", 0x232329);
+    lv_obj_t *cancel = msgbox_button_create(box, "Cancel", 0x232329);
     lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, 18, -14);
     lv_obj_set_user_data(cancel, NULL);
     lv_obj_add_event_cb(cancel, msgbox_click_cb, LV_EVENT_CLICKED, ctx);
 
-    lv_obj_t *ok = msgbox_button_create(box, "确定", UI_COLOR_ACCENT);
+    lv_obj_t *ok = msgbox_button_create(box, "OK", UI_COLOR_ACCENT);
     lv_obj_align(ok, LV_ALIGN_BOTTOM_RIGHT, -18, -14);
     lv_obj_set_user_data(ok, (void *)1); /* non-NULL = OK */
     lv_obj_add_event_cb(ok, msgbox_click_cb, LV_EVENT_CLICKED, ctx);
@@ -733,19 +951,54 @@ void ui_activity_ping(void)
 
 void ui_manager_init(void)
 {
+    if (s_async_queue == NULL) {
+        s_async_queue = xQueueCreateStatic(
+            UI_ASYNC_QUEUE_DEPTH, sizeof(ui_async_call_t),
+            s_async_queue_storage, &s_async_queue_state);
+    }
+    if (s_nav_queue == NULL) {
+        s_nav_queue = xQueueCreateStatic(
+            UI_NAV_QUEUE_DEPTH, sizeof(ui_nav_request_t),
+            s_nav_queue_storage, &s_nav_queue_state);
+    }
     if (!ui_lock()) {
         return;
+    }
+    if (s_async_queue != NULL && s_async_timer == NULL) {
+        s_async_timer = lv_timer_create(ui_async_drain, UI_ASYNC_POLL_MS,
+                                        NULL);
     }
     ui_styles_ensure();
     status_bar_build();
 
+    /* Navigation root is the watchface; the launcher menu is pre-created
+     * at persistent layer 1 and stays alive for the whole run. */
     s_top = 0;
     s_stack[0] = ui_watchface_create();
     s_stack_app[0] = NULL;
+    s_stack[1] = ui_menu_create();
+    s_stack_app[1] = NULL;
     lv_scr_load_anim(s_stack[0], LV_SCR_LOAD_ANIM_FADE_IN, UI_ANIM_MS, 0, false);
+
+    if (s_clock_timer == NULL) {
+        s_clock_timer = lv_timer_create(ui_clock_tick, 1000, NULL);
+    }
+    /* Populate time/battery immediately instead of waiting one tick. */
+    ui_clock_tick(NULL);
 
     lv_indev_t *indev = bsp_display_get_input_dev();
     if (indev) {
+        /* NOTE: with the current esp_lvgl_adapter this call is a no-op
+         * and is kept only for intent. The adapter already gates the
+         * touch reads: the CST820 INT ISR merely gives a semaphore
+         * (esp_lv_adapter_input_touch.c), and the read callback performs
+         * the I2C transfer only when that semaphore is set - I2C traffic
+         * therefore already happens strictly after real interrupts, not
+         * on every refresh tick. The 2026-08-21 taskLVGL CPU storm was
+         * caused by the scale press transitions (removed that day), not
+         * by the indev mode. Do not remove the call without
+         * re-verifying the adapter's read path. */
+        lv_indev_set_mode(indev, LV_INDEV_MODE_TIMER);
         lv_indev_add_event_cb(indev, indev_activity_cb, LV_EVENT_PRESSED, NULL);
     }
     ui_unlock();

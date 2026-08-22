@@ -2,8 +2,8 @@
  * Candis-S31 watch demo - modal on-screen keyboard.
  *
  * Full-screen modal (below the status bar, which stays visible) hosting a
- * one-line text area plus lv_keyboard. Confirm via the top-row "确定"
- * button or the keyboard's own OK key; cancel via "取消", the X button or
+ * one-line text area plus lv_keyboard. Confirm via the top-row "OK"
+ * button or the keyboard's own OK key; cancel via "Cancel", the X button or
  * the keyboard's own close key. Password mode masks input and offers an
  * eye toggle to peek at the plain text.
  *
@@ -35,23 +35,10 @@ typedef struct {
 
 static kb_ctx_t *s_ctx;
 
-/* Pressed transition for the modal's own buttons. */
-static const lv_style_prop_t s_kb_trans_props[] = {
-    LV_STYLE_TRANSFORM_SCALE_X, LV_STYLE_TRANSFORM_SCALE_Y,
-    LV_STYLE_BG_COLOR, LV_STYLE_PROP_INV,
-};
-static lv_style_transition_dsc_t s_kb_trans;
-static bool s_kb_style_ready;
-
-static void kb_styles_ensure(void)
-{
-    if (s_kb_style_ready) {
-        return;
-    }
-    lv_style_transition_dsc_init(&s_kb_trans, s_kb_trans_props,
-                                 lv_anim_path_ease_out, 130, 0, NULL);
-    s_kb_style_ready = true;
-}
+/* No transform_scale press transitions: they create layer-transform draw
+ * tasks that stalled lv_draw_dispatch() with zero progress and starved
+ * IDLE0 (see ui_menu.c, 2026-08-21). Pressed feedback is a plain color
+ * swap, matching the menu tiles. */
 
 /* ------------------------------------------------------------------ */
 /* Teardown / callbacks                                                */
@@ -160,20 +147,18 @@ static lv_obj_t *kb_button_create(lv_obj_t *parent, const char *text,
                                   uint32_t bg_color)
 {
     lv_obj_t *btn = lv_button_create(parent);
-    lv_obj_set_size(btn, 140, 44);
+    lv_obj_set_size(btn, 140, UI_TOUCH_MIN);
     lv_obj_set_style_bg_color(btn, lv_color_hex(bg_color), 0);
     lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 14, 0);
     lv_obj_set_style_border_width(btn, 0, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
-    lv_obj_set_style_transform_scale(btn, LV_SCALE_NONE, 0);
-    lv_obj_set_style_transition(btn, &s_kb_trans, 0);
-    lv_obj_set_style_transform_scale(btn, 242, LV_STATE_PRESSED);
     lv_obj_set_style_bg_color(btn, lv_color_hex(bg_color == UI_COLOR_ACCENT
                                                     ? 0x3A7FD0 : 0x2C2C34),
                               LV_STATE_PRESSED);
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, ui_font_body(), 0);
     lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_TEXT), 0);
     lv_obj_center(label);
     return btn;
@@ -192,7 +177,7 @@ static void kb_style_textarea(lv_obj_t *ta)
     lv_obj_set_style_pad_left(ta, 12, 0);
     lv_obj_set_style_pad_right(ta, 12, 0);
     lv_obj_set_style_text_color(ta, lv_color_hex(UI_COLOR_TEXT), 0);
-    lv_obj_set_style_text_font(ta, ui_font_text(), 0);
+    lv_obj_set_style_text_font(ta, ui_font_body(), 0);
     lv_obj_set_style_text_color(ta, lv_color_hex(UI_COLOR_TEXT_DIM),
                                 LV_PART_TEXTAREA_PLACEHOLDER);
 }
@@ -242,7 +227,6 @@ void ui_keyboard_open(const char *title, const char *initial,
     ctx->cb = cb;
     ctx->user = user;
     s_ctx = ctx;
-    kb_styles_ensure();
 
     /* Modal panel below the status bar so the bar stays visible. */
     lv_obj_t *modal = lv_obj_create(lv_layer_top());
@@ -258,13 +242,14 @@ void ui_keyboard_open(const char *title, const char *initial,
     lv_obj_add_event_cb(modal, kb_modal_delete_cb, LV_EVENT_DELETE, ctx);
 
     lv_obj_t *title_lbl = lv_label_create(modal);
-    lv_label_set_text(title_lbl, (title && title[0]) ? title : "输入");
+    lv_label_set_text(title_lbl, (title && title[0]) ? title : "Input");
+    lv_obj_set_style_text_font(title_lbl, ui_font_title(), 0);
     lv_obj_set_style_text_color(title_lbl, lv_color_hex(UI_COLOR_ACCENT), 0);
     lv_obj_set_pos(title_lbl, 18, 12);
 
     lv_obj_t *close_btn = lv_button_create(modal);
-    lv_obj_set_size(close_btn, 38, 32);
-    lv_obj_align(close_btn, LV_ALIGN_TOP_RIGHT, -12, 7);
+    lv_obj_set_size(close_btn, UI_TOUCH_MIN, UI_TOUCH_MIN);
+    lv_obj_align(close_btn, LV_ALIGN_TOP_RIGHT, -8, 4);
     lv_obj_set_style_bg_color(close_btn, lv_color_hex(UI_COLOR_SURFACE), 0);
     lv_obj_set_style_bg_opa(close_btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(close_btn, 10, 0);
@@ -281,9 +266,9 @@ void ui_keyboard_open(const char *title, const char *initial,
     ctx->ta = ta;
     lv_textarea_set_one_line(ta, true);
     lv_textarea_set_max_length(ta, KB_MAX_LEN);
-    lv_textarea_set_placeholder_text(ta, password_mode ? "请输入密码" : "请输入内容");
-    lv_obj_set_size(ta, password_mode ? 348 : 396, 48);
-    lv_obj_set_pos(ta, 16, 48);
+    lv_textarea_set_placeholder_text(ta, password_mode ? "Enter password" : "Enter text");
+    lv_obj_set_size(ta, password_mode ? 364 : 428, UI_TOUCH_MIN);
+    lv_obj_set_pos(ta, 16, 64);
     kb_style_textarea(ta);
     if (initial && initial[0]) {
         lv_textarea_set_text(ta, initial);
@@ -293,8 +278,8 @@ void ui_keyboard_open(const char *title, const char *initial,
     if (password_mode) {
         lv_textarea_set_password_mode(ta, true);
         lv_obj_t *peek = lv_button_create(modal);
-        lv_obj_set_size(peek, 44, 48);
-        lv_obj_set_pos(peek, 460 - 16 - 44, 48);
+        lv_obj_set_size(peek, UI_TOUCH_MIN, UI_TOUCH_MIN);
+        lv_obj_set_pos(peek, 460 - 16 - UI_TOUCH_MIN, 64);
         lv_obj_set_style_bg_color(peek, lv_color_hex(UI_COLOR_SURFACE), 0);
         lv_obj_set_style_bg_opa(peek, LV_OPA_COVER, 0);
         lv_obj_set_style_radius(peek, 12, 0);
@@ -308,18 +293,18 @@ void ui_keyboard_open(const char *title, const char *initial,
         lv_obj_center(ctx->peek_icon);
     }
 
-    lv_obj_t *cancel_btn = kb_button_create(modal, "取消", 0x232329);
-    lv_obj_set_pos(cancel_btn, 16, 108);
+    lv_obj_t *cancel_btn = kb_button_create(modal, "Cancel", 0x232329);
+    lv_obj_set_pos(cancel_btn, 16, 128);
     lv_obj_add_event_cb(cancel_btn, kb_cancel_cb, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *ok_btn = kb_button_create(modal, "确定", UI_COLOR_ACCENT);
-    lv_obj_align(ok_btn, LV_ALIGN_TOP_RIGHT, -16, 108);
+    lv_obj_t *ok_btn = kb_button_create(modal, "OK", UI_COLOR_ACCENT);
+    lv_obj_align(ok_btn, LV_ALIGN_TOP_RIGHT, -16, 128);
     lv_obj_add_event_cb(ok_btn, kb_confirm_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *kb = lv_keyboard_create(modal);
     lv_keyboard_set_textarea(kb, ta);
     lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_LOWER);
-    lv_obj_set_size(kb, 460, 272);
+    lv_obj_set_size(kb, 460, 238);
     lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
     kb_style_keyboard(kb);
     lv_obj_add_event_cb(kb, kb_widget_ready_cb, LV_EVENT_READY, NULL);

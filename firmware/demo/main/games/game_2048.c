@@ -4,7 +4,7 @@
  * Classic 4x4 board. Input: full-screen swipe (LV_EVENT_GESTURE, the basic
  * single-pointer gesture built into the LVGL indev) plus four virtual
  * direction keys. Only the board area is invalidated on a move; the board
- * is 366 px tall, inside the 430-row 60 fps budget. The best score is kept
+ * is 325 px tall, inside the local-update budget. The best score is kept
  * in a file-static so it survives leaving and re-entering the game.
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -15,18 +15,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "esp_timer.h"
+#include "esp_random.h"
 
 #include "demo_apps.h"
 #include "ui/ui_manager.h"
 
 #define G2048_SIZE      4
 #define G2048_CELLS     (G2048_SIZE * G2048_SIZE)
-#define G2048_CELL      84
-#define G2048_GAP       6
+#define G2048_CELL      75
+#define G2048_GAP       5
 #define G2048_BOARD_PX  (G2048_SIZE * G2048_CELL + (G2048_SIZE + 1) * G2048_GAP)
 #define G2048_BOARD_X   ((460 - G2048_BOARD_PX) / 2)
-#define G2048_BOARD_Y   52
+#define G2048_BOARD_Y   64
 #define G2048_WIN_EXP   11 /* 2^11 = 2048 */
 
 typedef struct {
@@ -122,11 +122,16 @@ static void g2048_render(void)
             const int ci = exp - 1 < G2048_WIN_EXP + 1 ? exp - 1 : G2048_WIN_EXP;
             lv_obj_set_style_bg_color(s.cell_bg[i],
                                       lv_color_hex(s_tile_color[ci]), 0);
+            const lv_font_t *font = exp <= 6 ? ui_font_mid() :
+                                    exp <= 11 ? ui_font_title() :
+                                    exp <= 14 ? ui_font_body() :
+                                                &lv_font_montserrat_16;
+            lv_obj_set_style_text_font(s.cell_lbl[i], font, 0);
             lv_label_set_text_fmt(s.cell_lbl[i], "%d", 1 << exp);
         }
     }
-    lv_label_set_text_fmt(s.lbl_score, "分数 %d", s.score);
-    lv_label_set_text_fmt(s.lbl_best, "最高 %d", s_best);
+    lv_label_set_text_fmt(s.lbl_score, "Score %d", s.score);
+    lv_label_set_text_fmt(s.lbl_best, "Best %d", s_best);
 }
 
 static bool g2048_move(lv_dir_t dir)
@@ -154,7 +159,7 @@ static bool g2048_move(lv_dir_t dir)
                 gained += 1 << vals[i];
                 if (vals[i] == G2048_WIN_EXP && !s.won_shown) {
                     s.won_shown = true;
-                    ui_toast("达成 2048!");
+                    ui_toast("2048 reached!");
                 }
                 for (int j = i + 1; j + 1 < n; ++j) {
                     vals[j] = vals[j + 1];
@@ -181,7 +186,7 @@ static bool g2048_move(lv_dir_t dir)
         if (g2048_is_over()) {
             s.over = true;
             char msg[48];
-            snprintf(msg, sizeof(msg), "游戏结束,得分 %d", s.score);
+            snprintf(msg, sizeof(msg), "Game over, score %d", s.score);
             ui_toast(msg);
         }
     }
@@ -256,7 +261,7 @@ static lv_obj_t *header_button(lv_obj_t *parent, const char *text,
                                lv_event_cb_t cb)
 {
     lv_obj_t *btn = lv_button_create(parent);
-    lv_obj_set_size(btn, width, 36);
+    lv_obj_set_size(btn, width, 56);
     lv_obj_set_pos(btn, x, 4);
     lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COLOR_SURFACE), 0);
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
@@ -268,8 +273,15 @@ static lv_obj_t *header_button(lv_obj_t *parent, const char *text,
 
 lv_obj_t *game_2048_create(void)
 {
+    static bool s_rng_seeded;
     s = (g2048_state_t){ .active = true };
-    srand((unsigned)(esp_timer_get_time() & 0x7fffffff));
+    if (!s_rng_seeded) {
+        /* Seed once per process from the hardware RNG; re-entries keep
+         * drawing from the same sequence (the old per-create timer seed
+         * was low entropy and restarted the sequence on every visit). */
+        s_rng_seeded = true;
+        srand((unsigned)esp_random());
+    }
 
     lv_obj_t *root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(root, lv_color_black(), 0);
@@ -280,13 +292,13 @@ lv_obj_t *game_2048_create(void)
     lv_obj_add_event_cb(root, g2048_root_delete_cb, LV_EVENT_DELETE, NULL);
     lv_obj_add_event_cb(root, g2048_gesture_cb, LV_EVENT_GESTURE, NULL);
 
-    header_button(root, LV_SYMBOL_LEFT, 6, 44, g2048_back_cb);
-    header_button(root, "新游戏", 368, 86, g2048_new_cb);
+    header_button(root, LV_SYMBOL_LEFT, 4, 56, g2048_back_cb);
+    header_button(root, "New game", 356, 100, g2048_new_cb);
 
     s.lbl_score = lv_label_create(root);
-    lv_obj_set_pos(s.lbl_score, 60, 6);
+    lv_obj_set_pos(s.lbl_score, 72, 8);
     s.lbl_best = lv_label_create(root);
-    lv_obj_set_pos(s.lbl_best, 60, 26);
+    lv_obj_set_pos(s.lbl_best, 72, 30);
     lv_obj_set_style_text_color(s.lbl_best, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
 
     lv_obj_t *board = lv_obj_create(root);
@@ -317,6 +329,9 @@ lv_obj_t *game_2048_create(void)
         lv_obj_t *label = lv_label_create(cell);
         lv_obj_set_style_text_font(label, ui_font_mid(), 0);
         lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_TEXT), 0);
+        lv_obj_set_width(label, G2048_CELL - 8);
+        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
         lv_obj_center(label);
         s.cell_lbl[i] = label;
     }
@@ -333,8 +348,8 @@ lv_obj_t *game_2048_create(void)
     };
     for (int i = 0; i < 4; ++i) {
         lv_obj_t *btn = lv_button_create(root);
-        lv_obj_set_size(btn, 56, 32);
-        lv_obj_set_pos(btn, 100 + i * 68, 424);
+        lv_obj_set_size(btn, 60, 56);
+        lv_obj_set_pos(btn, 98 + i * 68, 400);
         lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COLOR_SURFACE), 0);
         lv_obj_add_event_cb(btn, g2048_key_cb, LV_EVENT_CLICKED,
                             (void *)(intptr_t)keys[i].dir);

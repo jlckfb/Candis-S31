@@ -24,7 +24,7 @@
 #include "services/svc_power.h"
 #include "ui/ui_manager.h"
 
-#define SETTINGS_ROW_WIDTH  436
+#define SETTINGS_ROW_WIDTH  428
 #define SETTINGS_YEAR_BASE  2020
 #define SETTINGS_YEAR_COUNT 30
 
@@ -66,6 +66,7 @@ static lv_obj_t *section_title(lv_obj_t *parent, const char *text)
     lv_obj_set_style_pad_top(row, 8, 0);
     lv_obj_t *label = lv_label_create(row);
     lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, ui_font_body(), 0);
     lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_ACCENT), 0);
     lv_obj_align(label, LV_ALIGN_TOP_LEFT, 8, 0);
     return row;
@@ -129,7 +130,7 @@ static lv_obj_t *slider_row(lv_obj_t *parent, const char *name, int min,
                             lv_event_cb_t cb)
 {
     lv_obj_t *row = settings_row(parent);
-    lv_obj_set_height(row, 64);
+    lv_obj_set_height(row, 92);
 
     lv_obj_t *name_lbl = lv_label_create(row);
     lv_label_set_text(name_lbl, name);
@@ -141,8 +142,8 @@ static lv_obj_t *slider_row(lv_obj_t *parent, const char *name, int min,
     *value_out = value_lbl;
 
     lv_obj_t *slider = lv_slider_create(row);
-    lv_obj_set_width(slider, SETTINGS_ROW_WIDTH - 24);
-    lv_obj_align(slider, LV_ALIGN_BOTTOM_LEFT, 8, -6);
+    lv_obj_set_size(slider, SETTINGS_ROW_WIDTH - 24, 56);
+    lv_obj_align(slider, LV_ALIGN_BOTTOM_LEFT, 8, -2);
     lv_slider_set_range(slider, min, max);
     lv_slider_set_value(slider, value, LV_ANIM_OFF);
     lv_obj_add_event_cb(slider, cb, LV_EVENT_VALUE_CHANGED, NULL);
@@ -211,12 +212,12 @@ static void rtc_apply_cb(lv_event_t *event)
         ++max_day;
     }
     if (t.day > max_day) {
-        ui_toast("该月没有这一天");
+        ui_toast("No such day this month");
         return;
     }
 
     if (bsp_rtc_set_time(&t) != ESP_OK) {
-        ui_toast("时间设置失败");
+        ui_toast("Time set failed");
         return;
     }
 
@@ -227,9 +228,9 @@ static void rtc_apply_cb(lv_event_t *event)
             back.year == t.year && back.month == t.month &&
             back.day == t.day && back.hour == t.hour &&
             back.minute == t.minute && back.weekday == t.weekday) {
-        ui_toast("时间已更新");
+        ui_toast("Time updated");
     } else {
-        ui_toast("时间校验失败,请重试");
+        ui_toast("Time check failed, retry");
     }
 }
 
@@ -239,18 +240,18 @@ static lv_obj_t *rtc_roller(lv_obj_t *parent, const char *options,
     lv_obj_t *roller = lv_roller_create(parent);
     lv_roller_set_options(roller, options, LV_ROLLER_MODE_NORMAL);
     lv_roller_set_visible_row_count(roller, 1);
-    lv_obj_set_size(roller, width, 40);
-    lv_obj_set_pos(roller, x, 26);
+    lv_obj_set_size(roller, width, 56);
+    lv_obj_set_pos(roller, x, 30);
     return roller;
 }
 
 static void rtc_section_build(lv_obj_t *parent)
 {
     lv_obj_t *row = settings_row(parent);
-    lv_obj_set_height(row, 118);
+    lv_obj_set_height(row, 150);
 
     lv_obj_t *title = lv_label_create(row);
-    lv_label_set_text(title, "RTC 时间(年月日时分)");
+    lv_label_set_text(title, "RTC time (YmdHm)");
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 8, 0);
 
     char years[SETTINGS_YEAR_COUNT * 6];
@@ -281,12 +282,12 @@ static void rtc_section_build(lv_obj_t *parent)
     s.roller_min = rtc_roller(row, minutes, 348, 72);
 
     lv_obj_t *apply = lv_button_create(row);
-    lv_obj_set_size(apply, 120, 40);
+    lv_obj_set_size(apply, 144, 56);
     lv_obj_align(apply, LV_ALIGN_BOTTOM_RIGHT, -8, -2);
     lv_obj_set_style_bg_color(apply, lv_color_hex(UI_COLOR_ACCENT), 0);
     lv_obj_add_event_cb(apply, rtc_apply_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *apply_lbl = lv_label_create(apply);
-    lv_label_set_text(apply_lbl, "应用时间");
+    lv_label_set_text(apply_lbl, "Apply time");
     lv_obj_center(apply_lbl);
 
     /* Pre-fill the rollers with the current RTC reading. */
@@ -314,7 +315,7 @@ static void rtc_section_build(lv_obj_t *parent)
             lv_roller_set_selected(s.roller_min, now.minute, LV_ANIM_OFF);
         }
     } else {
-        ui_toast("RTC 读取失败");
+        ui_toast("RTC read failed");
     }
 }
 
@@ -355,31 +356,34 @@ static void about_open_cb(lv_event_t *event)
     s.about = overlay;
 
     lv_obj_t *close = lv_button_create(overlay);
-    lv_obj_set_size(close, 64, 36);
-    lv_obj_set_pos(close, 388, 10);
+    lv_obj_set_size(close, 72, 56);
+    lv_obj_set_pos(close, 380, 8);
     lv_obj_set_style_bg_color(close, lv_color_hex(UI_COLOR_SURFACE), 0);
     lv_obj_add_event_cb(close, about_close_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *close_lbl = lv_label_create(close);
-    lv_label_set_text(close_lbl, "关闭");
+    lv_label_set_text(close_lbl, "Close");
     lv_obj_center(close_lbl);
 
     lv_obj_t *title = lv_label_create(overlay);
-    lv_label_set_text(title, "关于本机");
-    lv_obj_set_style_text_font(title, ui_font_mid(), 0);
+    lv_label_set_text(title, "About");
+    /* Montserrat has no CJK glyphs; keep Chinese labels on the bundled
+     * Source Han Sans font instead of rendering placeholder squares. */
+    lv_obj_set_style_text_font(title, ui_font_title(), 0);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 24, 14);
 
     lv_obj_t *body = lv_label_create(overlay);
     lv_label_set_text_fmt(body,
-                          "Candis-S31 手表演示固件\n"
-                          "EVT1 · 综合外设演示\n\n"
-                          "BSP 版本:%s\n"
-                          "IDF 版本:%s\n\n"
-                          "2.0 寸 AMOLED · ESP32-S31\n"
+                          "Candis-S31 watch demo\n"
+                          "EVT1 peripheral demo\n\n"
+                          "BSP: %s\n"
+                          "IDF: %s\n\n"
+                          "2.0in AMOLED - ESP32-S31\n"
                           "LVGL %d.%d",
                           CANDIS_S31_BSP_GIT_REV, esp_get_idf_version(),
                           LVGL_VERSION_MAJOR, LVGL_VERSION_MINOR);
     lv_obj_set_width(body, 400);
     lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(body, ui_font_body(), 0);
     lv_obj_set_style_pad_row(body, 4, 0);
     lv_obj_align(body, LV_ALIGN_TOP_LEFT, 24, 76);
 }
@@ -403,8 +407,9 @@ lv_obj_t *app_settings_create(void)
     const demo_settings_t *cfg = demo_settings();
 
     lv_obj_t *content = NULL;
-    lv_obj_t *root = ui_app_scaffold("设置", &content);
+    lv_obj_t *root = ui_app_scaffold("Settings", &content);
     lv_obj_add_event_cb(root, settings_root_delete_cb, LV_EVENT_DELETE, NULL);
+    lv_obj_set_style_text_font(content, ui_font_body(), 0);
 
     lv_obj_set_layout(content, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
@@ -412,19 +417,19 @@ lv_obj_t *app_settings_create(void)
     lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_START);
 
-    section_title(content, "显示");
-    slider_row(content, "亮度", 10, 100, cfg->brightness, &s.lbl_brightness,
+    section_title(content, "Display");
+    slider_row(content, "Brightness", 10, 100, cfg->brightness, &s.lbl_brightness,
                brightness_change_cb);
     lv_label_set_text_fmt(s.lbl_brightness, "%d%%", cfg->brightness);
 
     lv_obj_t *row = settings_row(content);
     lv_obj_set_height(row, 64);
     lv_obj_t *timeout_lbl = lv_label_create(row);
-    lv_label_set_text(timeout_lbl, "息屏超时");
+    lv_label_set_text(timeout_lbl, "Screen timeout");
     lv_obj_align(timeout_lbl, LV_ALIGN_LEFT_MID, 8, 0);
     s.dd_timeout = lv_dropdown_create(row);
-    lv_dropdown_set_options(s.dd_timeout, "10 秒\n30 秒\n60 秒\n120 秒\n常开");
-    lv_obj_set_width(s.dd_timeout, 160);
+    lv_dropdown_set_options(s.dd_timeout, "10 s\n30 s\n60 s\n120 s\nAlways on");
+    lv_obj_set_size(s.dd_timeout, 176, 56);
     lv_obj_align(s.dd_timeout, LV_ALIGN_RIGHT_MID, -8, 0);
     int selected = 1; /* default 30 s */
     for (int i = 0; i < 5; ++i) {
@@ -437,26 +442,26 @@ lv_obj_t *app_settings_create(void)
     lv_obj_add_event_cb(s.dd_timeout, timeout_change_cb,
                         LV_EVENT_VALUE_CHANGED, NULL);
 
-    section_title(content, "音频");
-    slider_row(content, "音量", 0, 100, cfg->volume, &s.lbl_volume,
+    section_title(content, "Audio");
+    slider_row(content, "Volume", 0, 100, cfg->volume, &s.lbl_volume,
                volume_change_cb);
     lv_label_set_text_fmt(s.lbl_volume, "%d%%", cfg->volume);
-    slider_row(content, "麦克风增益", 0, 36, cfg->mic_gain_db, &s.lbl_gain,
+    slider_row(content, "Mic gain", 0, 36, cfg->mic_gain_db, &s.lbl_gain,
                gain_change_cb);
     lv_label_set_text_fmt(s.lbl_gain, "%d dB", cfg->mic_gain_db);
 
-    section_title(content, "时钟");
+    section_title(content, "Clock");
     rtc_section_build(content);
 
     lv_obj_t *about_row = settings_row(content);
-    lv_obj_set_height(about_row, 52);
+    lv_obj_set_height(about_row, 72);
     lv_obj_t *about_btn = lv_button_create(about_row);
-    lv_obj_set_size(about_btn, SETTINGS_ROW_WIDTH - 16, 44);
+    lv_obj_set_size(about_btn, SETTINGS_ROW_WIDTH - 16, 64);
     lv_obj_align(about_btn, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_bg_color(about_btn, lv_color_hex(UI_COLOR_SURFACE), 0);
     lv_obj_add_event_cb(about_btn, about_open_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *about_lbl = lv_label_create(about_btn);
-    lv_label_set_text(about_lbl, "关于本机");
+    lv_label_set_text(about_lbl, "About");
     lv_obj_center(about_lbl);
 
     return root;

@@ -63,7 +63,8 @@ typedef struct {
 
 typedef void (*svc_audio_cb_t)(const svc_audio_event_msg_t *ev, void *user);
 
-/** Start the audio task (stack 8192, prio 5). Does not power the codec yet. */
+/** Start the audio service: brings the codec/I2S up once (persistent
+ * handles, see svc_audio.c) and then starts the audio task. */
 esp_err_t svc_audio_start(void);
 
 /**
@@ -76,6 +77,14 @@ esp_err_t svc_audio_start(void);
 esp_err_t svc_audio_record_start(svc_audio_route_t route, int gain_db,
                                  svc_audio_cb_t cb, void *user);
 esp_err_t svc_audio_record_stop(void);
+/**
+ * Fire-and-forget stop for page teardown: enqueues the stop without
+ * waiting for the audio task (a synchronous stop can block up to
+ * AUDIO_ACK_TIMEOUT_MS when the task is stuck on slow SD IO). The caller
+ * must already have invalidated its audio event token; the completion
+ * event may arrive after the page is gone.
+ */
+esp_err_t svc_audio_record_stop_async(void);
 bool svc_audio_is_recording(void);
 
 /** Adjust gain of the running recording (re-applies the route register). */
@@ -88,6 +97,8 @@ esp_err_t svc_audio_record_set_gain(int gain_db);
 esp_err_t svc_audio_play(const char *path, int volume,
                          svc_audio_cb_t cb, void *user);
 esp_err_t svc_audio_play_stop(void);
+/** Fire-and-forget stop for page teardown (see svc_audio_record_stop_async). */
+esp_err_t svc_audio_play_stop_async(void);
 bool svc_audio_is_playing(void);
 
 /** Pause/resume the running playback. */

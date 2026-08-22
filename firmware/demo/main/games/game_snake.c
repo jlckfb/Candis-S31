@@ -4,7 +4,7 @@
  * 20x20 grid, lv_timer driven (~6 fps start, faster with every food).
  * Input: full-screen swipe (LV_EVENT_GESTURE) plus four virtual keys.
  * The board is a single object painted in its LV_EVENT_DRAW_MAIN handler,
- * so one step invalidates exactly the 380x380 board area (<= 430 rows,
+ * so one step invalidates exactly the 320x320 board area (<= 360 rows,
  * inside the 60 fps dirty-region budget) instead of hundreds of widgets.
  * All game state lives on the LVGL thread; no extra task is created.
  *
@@ -16,17 +16,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "esp_timer.h"
+#include "esp_random.h"
 
 #include "demo_apps.h"
 #include "ui/ui_manager.h"
 
 #define SNAKE_GRID       20
 #define SNAKE_CELLS      (SNAKE_GRID * SNAKE_GRID)
-#define SNAKE_CELL_PX    19
+#define SNAKE_CELL_PX    16
 #define SNAKE_BOARD_PX   (SNAKE_GRID * SNAKE_CELL_PX)
 #define SNAKE_BOARD_X    ((460 - SNAKE_BOARD_PX) / 2)
-#define SNAKE_BOARD_Y    44
+#define SNAKE_BOARD_Y    68
 #define SNAKE_START_MS   160 /* ~6 fps */
 #define SNAKE_MIN_MS     90  /* ~11 fps cap */
 #define SNAKE_SPEEDUP_MS 4   /* per eaten food */
@@ -128,7 +128,7 @@ static void snake_reset(void)
     snake_spawn_food();
     lv_timer_set_period(s.timer, s.period_ms);
     lv_timer_resume(s.timer);
-    lv_label_set_text_fmt(s.lbl_score, "得分 %d", s.score);
+    lv_label_set_text_fmt(s.lbl_score, "Score %d", s.score);
     lv_obj_invalidate(s.board);
 }
 
@@ -141,7 +141,7 @@ static void snake_game_over(void)
     s.over = true;
     lv_timer_pause(s.timer);
     char msg[48];
-    snprintf(msg, sizeof(msg), "游戏结束,得分 %d", s.score);
+    snprintf(msg, sizeof(msg), "Game over, score %d", s.score);
     ui_toast(msg);
 }
 
@@ -186,7 +186,7 @@ static void snake_step_cb(lv_timer_t *timer)
     if (eats) {
         ++s.length;
         s.score += 10;
-        lv_label_set_text_fmt(s.lbl_score, "得分 %d", s.score);
+        lv_label_set_text_fmt(s.lbl_score, "Score %d", s.score);
         if (s.period_ms > SNAKE_MIN_MS) {
             s.period_ms -= SNAKE_SPEEDUP_MS;
             if (s.period_ms < SNAKE_MIN_MS) {
@@ -313,8 +313,15 @@ static void snake_root_delete_cb(lv_event_t *event)
 
 lv_obj_t *game_snake_create(void)
 {
+    static bool s_rng_seeded;
     s = (snake_state_t){ .active = true };
-    srand((unsigned)((esp_timer_get_time() >> 4) & 0x7fffffff));
+    if (!s_rng_seeded) {
+        /* Seed once per process from the hardware RNG; re-entries keep
+         * drawing from the same sequence (the old per-create timer seed
+         * was low entropy and restarted the sequence on every visit). */
+        s_rng_seeded = true;
+        srand((unsigned)esp_random());
+    }
 
     lv_obj_t *root = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(root, lv_color_black(), 0);
@@ -326,8 +333,8 @@ lv_obj_t *game_snake_create(void)
     lv_obj_add_event_cb(root, snake_gesture_cb, LV_EVENT_GESTURE, NULL);
 
     lv_obj_t *back = lv_button_create(root);
-    lv_obj_set_size(back, 44, 36);
-    lv_obj_set_pos(back, 6, 2);
+    lv_obj_set_size(back, 56, 56);
+    lv_obj_set_pos(back, 4, 4);
     lv_obj_set_style_bg_color(back, lv_color_hex(UI_COLOR_SURFACE), 0);
     lv_obj_add_event_cb(back, snake_back_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *back_lbl = lv_label_create(back);
@@ -335,16 +342,16 @@ lv_obj_t *game_snake_create(void)
     lv_obj_center(back_lbl);
 
     s.lbl_score = lv_label_create(root);
-    lv_label_set_text(s.lbl_score, "得分 0");
-    lv_obj_set_pos(s.lbl_score, 60, 12);
+    lv_label_set_text(s.lbl_score, "Score 0");
+    lv_obj_set_pos(s.lbl_score, 72, 22);
 
     lv_obj_t *restart = lv_button_create(root);
-    lv_obj_set_size(restart, 86, 36);
-    lv_obj_set_pos(restart, 368, 2);
+    lv_obj_set_size(restart, 100, 56);
+    lv_obj_set_pos(restart, 356, 4);
     lv_obj_set_style_bg_color(restart, lv_color_hex(UI_COLOR_SURFACE), 0);
     lv_obj_add_event_cb(restart, snake_restart_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *restart_lbl = lv_label_create(restart);
-    lv_label_set_text(restart_lbl, "重开");
+    lv_label_set_text(restart_lbl, "Restart");
     lv_obj_center(restart_lbl);
 
     s.board = lv_obj_create(root);
@@ -372,13 +379,14 @@ lv_obj_t *game_snake_create(void)
     };
     for (int i = 0; i < 4; ++i) {
         lv_obj_t *btn = lv_button_create(root);
-        lv_obj_set_size(btn, 56, 30);
-        lv_obj_set_pos(btn, 100 + i * 68, 428);
+        lv_obj_set_size(btn, 60, 56);
+        lv_obj_set_pos(btn, 98 + i * 68, 400);
         lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COLOR_SURFACE), 0);
         lv_obj_add_event_cb(btn, snake_key_cb, LV_EVENT_CLICKED,
                             (void *)(intptr_t)keys[i].dir);
         lv_obj_t *label = lv_label_create(btn);
         lv_label_set_text(label, keys[i].symbol);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
         lv_obj_center(label);
     }
 

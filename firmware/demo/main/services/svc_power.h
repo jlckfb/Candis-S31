@@ -4,14 +4,20 @@
  * Polls the TG28 every 2 s for battery/charge state, tracks UI idle time and
  * drives screen-off / deep-sleep / shutdown.
  *
- * Screen-off sequence (review-locked, mirrors examples/esp-idf/low-power):
- *   off: stop UI refresh (lv_display_enable_invalidation false) ->
- *        bsp_display_enter_sleep() -> esp_lcd_touch_cst820_wakeup() ->
- *        esp_lcd_touch_cst820_enter_monitor_mode()
- *   on:  exit_monitor_mode -> bsp_display_exit_sleep() -> re-enable
- *        invalidation + full refresh.
- * Wake sources while off: touch monitor interrupt, BOOT key, PWR key (all
- * detected by the service's own poll/IRQ path).
+ * Screen-off sequence (panel-only; the touch controller is never reset):
+ *   off: stop UI refresh (lv_display_enable_invalidation false) + disable
+ *        indev -> bsp_display_enter_sleep_panel(). The CST820 is left
+ *        running and auto-enters standby, which keeps INT wake alive.
+ *   on:  bsp_display_exit_sleep_panel() -> re-enable invalidation + indev
+ *        + full refresh. The panel sleep/wake hardware sequences run
+ *        OUTSIDE the LVGL lock (backlight/SLPIN/SLPOUT + settle delay
+ *        are pure hardware); the lock brackets only the LVGL
+ *        bookkeeping, so taskLVGL is never blocked across the >=120 ms
+ *        transitions. Zero touch-controller resets: a reset landing on
+ *        a touched panel poisons the baseline and latches phantom touches
+ *        (2026-08-21 post-wake CPU storm root cause).
+ * Wake sources while off: touch INT held low until the report is read
+ * (50 ms poll, two samples), BOOT key, PWR key.
  *
  * Deep sleep copies the verified recipe from low_power_main.c: RTC alarm
  * (RX8130CE, no 32.768 kHz xtal on this board) + EXT1 ANY_LOW on GPIO2 with
@@ -34,13 +40,49 @@
 extern "C" {
 #endif
 
+/** Charge-controller phase. The service ramps the TG28 REG62 charge
+ *  current-limit target 50 -> 100 -> 200 -> 300 -> 400 -> 500 mA under
+ *  evidence gates; the value is a configured ceiling, not a measured
+ *  current (the TG28 power path may back it off under VINDPM at any
+ *  time). FAULT latches until VBUS is removed and re-attached. */
+typedef enum {
+    SVC_POWER_CHARGE_IDLE = 0, /**< no VBUS; REG62 parked at 50 mA */
+    SVC_POWER_CHARGE_TRICKLE,  /**< VBUS applied, observing at 50 mA */
+    SVC_POWER_CHARGE_RAMP,     /**< stepping the target upward */
+    SVC_POWER_CHARGE_HOLD,     /**< at ceiling or charge-done, monitoring */
+    SVC_POWER_CHARGE_FAULT,    /**< collapsed to 50 mA, latched until replug */
+} svc_power_charge_phase_t;
+
 typedef struct {
     int battery_mv;
-    int percent;       /**< TG28 fuel gauge estimate; -1 when no battery */
+    /**< TG28 SOC percent, or -1 when there is no battery or no model is
+     * programmed this boot. A voltage-derived percent must never be
+     * substituted. */
+    int percent;
     bool present;
     bool vbus;
     bool charging;
     bool charge_done;
+    /** True only while the TG28 SOC is backed by a programmed battery
+     * model (BSP reference default or a successful runtime override) -
+     * see percent. */
+    bool fuel_gauge_valid;
+    /** True while the active model is the BSP reference default: the
+     *  SOC is reference accuracy (参考模型), never per-battery
+     *  calibrated. False = custom model. */
+    bool fuel_gauge_reference_model;
+    /** Verified REG62 target written by the charge controller (mA); 0
+     *  while no VBUS session is active. Target/register, not measurement. */
+    int charge_target_ma;
+    svc_power_charge_phase_t charge_phase;
+    /** Per-session user confirmation that an external (non-PC) source is
+     *  verified. False at every boot and every VBUS replug: firmware
+     *  cannot classify C1 sources, so the safe default is the 200 mA
+     *  PC-safe charge ceiling. */
+    bool source_verified;
+    /** Active charge ceiling (200 safe / 500 verified), a configured
+     *  limit - not a measured current. */
+    int charge_ceiling_ma;
 } svc_power_status_t;
 
 typedef enum {
@@ -58,6 +100,19 @@ typedef void (*svc_power_cb_t)(const svc_power_status_t *st,
 /** Start the power task (stack 4096, prio 4). Single subscriber. */
 esp_err_t svc_power_start(svc_power_cb_t cb, void *user);
 
+
+/**
+ * Per-session charge-ceiling confirmation. verified=true unlocks the
+ * 300-500 mA REG62 charge steps for THIS VBUS session only; the caller
+ * must have actually confirmed an external power source (user action) -
+ * firmware cannot tell a PC USB port from a charger on C1, and REG16 is
+ * a fixed relaxed 2000 mA board default, so the 200 mA default ceiling
+ * is risk reduction, not a hard total-input guarantee. verified=false
+ * returns to the 200 mA ceiling: any target above 200 is driven down
+ * (verified write) on the power task promptly. Never persists across
+ * unplug or reboot. Safe from any task (queued internally).
+ */
+esp_err_t svc_power_set_external_source_verified(bool verified);
 /** Latest snapshot (copy). Valid before start too (zero-filled). */
 void svc_power_get_status(svc_power_status_t *out);
 

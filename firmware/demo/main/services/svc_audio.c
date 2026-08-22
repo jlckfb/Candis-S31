@@ -4,9 +4,18 @@
  * One audio task (prio 5, stack 8192, command queue depth 6) owns the
  * ES8389 codec; recording and playback are mutually exclusive. All codec,
  * I2C and SD I/O happens on this task, never on the LVGL thread. Public
- * API calls send a command and block on a task notification for the
- * acknowledgement (the task acks every command; worst case it waits for an
- * in-flight WAV save). Streaming runs inline inside the command handler.
+ * API calls send a command and wait for a bounded acknowledgement. The
+ * response object is reference-counted between caller and audio task, so a
+ * caller timeout cannot leave the task writing into a dead stack frame.
+ * Streaming runs inline inside the command handler.
+ * Codec ownership: svc_audio_start() creates the BSP speaker/microphone
+ * handles once, on the main task, before the network service runs. The I2S
+ * TX+RX DMA descriptors (~12.8 KB of MALLOC_CAP_INTERNAL|MALLOC_CAP_DMA)
+ * are therefore allocated while that pool is still contiguous; lazy
+ * per-recording init raced against WiFi/BLE allocations and lost 10/10
+ * times on the 2026-08-21 board log. record_run/play_run reuse the
+ * persistent handles and fail fast when they are absent; per-stream
+ * esp_codec_dev_open()/close() is unchanged and never reallocates DMA.
  *
  * Record path discipline (inherited from the factory firmware, verified on
  * EVT1 boards):
@@ -29,7 +38,7 @@
  * the saved WAV is genuinely single-mic; STEREO keeps the BSP default
  * differential pair; DENOISE records both channels and applies basic noise
  * reduction (first-order high-pass DC blocker + noise gate, int16 fixed
- * point). This is honest "基础降噪"; esp-sr S31 NS is a follow-up.
+ * point). This is honest "Basic NR"; esp-sr S31 NS is a follow-up.
  *
  * Playback accepts PCM16 WAV (1/2 channels, 8/16/44.1/48 kHz), re-opens the
  * speaker at the file rate and mixes everything to mono-duplicated stereo
@@ -45,6 +54,7 @@
 #include "svc_audio.h"
 
 #include <errno.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -56,6 +66,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include "services/svc_storage.h"
@@ -65,6 +76,8 @@ static const char *TAG = "svc_audio";
 #define AUDIO_TASK_STACK        8192
 #define AUDIO_TASK_PRIO         5
 #define AUDIO_QUEUE_DEPTH       6
+#define AUDIO_QUEUE_TIMEOUT_MS  500U
+#define AUDIO_ACK_TIMEOUT_MS    3000U
 
 /* Record format: 16 kHz / 16-bit / stereo, the factory-verified rate. */
 #define REC_SAMPLE_RATE         16000U
@@ -116,6 +129,13 @@ typedef enum {
 } audio_cmd_type_t;
 
 typedef struct {
+    SemaphoreHandle_t done;
+    atomic_uint refs;
+    atomic_bool cancelled;
+    atomic_int result;
+} audio_ack_t;
+
+typedef struct {
     audio_cmd_type_t type;
     svc_audio_route_t route;
     int gain_db;
@@ -124,12 +144,10 @@ typedef struct {
     char path[96];
     svc_audio_cb_t cb;
     void *user;
-    /* Ack channel: the task stores the result into *ack_out (caller-owned,
-     * valid until the notification arrives) and then notifies the waiter.
-     * The command struct itself is copied into the queue, so the task owns
-     * this memory and may keep using it after the ack. */
-    esp_err_t *ack_out;
-    TaskHandle_t waiter;
+    /* The command and caller each own one reference after a successful
+     * enqueue. A caller timeout releases only its reference; the audio task
+     * may safely complete the response later and releases the final one. */
+    audio_ack_t *ack;
 } audio_cmd_t;
 
 typedef struct {
@@ -140,7 +158,14 @@ typedef struct {
 static QueueHandle_t s_queue;
 static TaskHandle_t s_task;
 static bool s_started;
-static volatile audio_mode_t s_mode = AUDIO_MODE_IDLE;
+
+/* Created once by svc_audio_start(); NULL until then and after a failed
+ * start. The BSP caches the same instances in its own statics, so these are
+ * borrowed pointers - never deleted from this file. */
+static esp_codec_dev_handle_t s_speaker_dev;
+static esp_codec_dev_handle_t s_mic_dev;
+
+static atomic_int s_mode = ATOMIC_VAR_INIT(AUDIO_MODE_IDLE);
 
 /* Single-task IO buffers: recording and playback never overlap, so one
  * static pair is enough and keeps the 8 KB task stack shallow. */
@@ -170,6 +195,60 @@ static int clamp_int(int value, int minimum, int maximum)
         return maximum;
     }
     return value;
+}
+
+static audio_mode_t audio_mode_load(void)
+{
+    return (audio_mode_t)atomic_load_explicit(&s_mode, memory_order_acquire);
+}
+
+static void audio_mode_store(audio_mode_t mode)
+{
+    atomic_store_explicit(&s_mode, mode, memory_order_release);
+}
+
+static audio_ack_t *audio_ack_create(void)
+{
+    audio_ack_t *ack = pvPortMalloc(sizeof(*ack));
+    if (ack == NULL) {
+        return NULL;
+    }
+    ack->done = xSemaphoreCreateBinary();
+    if (ack->done == NULL) {
+        vPortFree(ack);
+        return NULL;
+    }
+    atomic_init(&ack->refs, 2U);
+    atomic_init(&ack->cancelled, false);
+    atomic_init(&ack->result, ESP_ERR_TIMEOUT);
+    return ack;
+}
+
+static void audio_ack_release(audio_ack_t *ack)
+{
+    if (ack != NULL && atomic_fetch_sub_explicit(&ack->refs, 1U,
+                                                  memory_order_acq_rel) == 1U) {
+        vSemaphoreDelete(ack->done);
+        vPortFree(ack);
+    }
+}
+
+static bool audio_cmd_cancelled(const audio_cmd_t *cmd)
+{
+    return cmd->ack != NULL &&
+           atomic_load_explicit(&cmd->ack->cancelled, memory_order_acquire);
+}
+
+/* Called exactly once by the audio task for every dequeued command. */
+static void audio_ack_complete(audio_cmd_t *cmd, esp_err_t result)
+{
+    if (cmd->ack == NULL) {
+        return;
+    }
+    atomic_store_explicit(&cmd->ack->result, result, memory_order_release);
+    xSemaphoreGive(cmd->ack->done);
+    audio_ack_release(cmd->ack);
+    cmd->ack = NULL;
 }
 
 /* ES8389 PGA accepts 0..36.5 dB in ~3 dB steps; the UI contract is 0..36
@@ -512,8 +591,15 @@ static esp_err_t record_build_path(char *out_path, size_t out_size)
 static esp_err_t record_save_wav(const uint8_t *pcm, uint32_t pcm_size,
                                  char *out_path, size_t out_size)
 {
-    esp_err_t result = record_build_path(out_path, out_size);
+    svc_storage_lease_t lease = {0};
+    esp_err_t result = svc_storage_lease_acquire(&lease);
     if (result != ESP_OK) {
+        ESP_LOGW(TAG, "record save rejected: TF absent or removing");
+        return result;
+    }
+    result = record_build_path(out_path, out_size);
+    if (result != ESP_OK) {
+        svc_storage_lease_release(&lease);
         return result;
     }
     uint8_t header[WAV_HEADER_BYTES];
@@ -522,6 +608,7 @@ static esp_err_t record_save_wav(const uint8_t *pcm, uint32_t pcm_size,
     if (file == NULL) {
         ESP_LOGE(TAG, "open %s for write failed: %s", out_path,
                  strerror(errno));
+        svc_storage_lease_release(&lease);
         return ESP_FAIL;
     }
     result = ESP_OK;
@@ -537,6 +624,7 @@ static esp_err_t record_save_wav(const uint8_t *pcm, uint32_t pcm_size,
     if (result != ESP_OK) {
         unlink(out_path);
     }
+    svc_storage_lease_release(&lease);
     return result;
 }
 
@@ -576,12 +664,16 @@ static void record_apply_route(svc_audio_route_t route, int16_t *samples,
 static void record_run(svc_audio_route_t route, int gain_db,
                        svc_audio_cb_t cb, void *user, uint8_t *pcm)
 {
-    esp_codec_dev_handle_t speaker = bsp_audio_codec_speaker_init();
-    esp_codec_dev_handle_t microphone = bsp_audio_codec_microphone_init();
+    /* The audio task only exists once svc_audio_start() brought the codec
+     * up, so these borrows are non-NULL; the guard is cheap insurance
+     * against future reordering. */
+    esp_codec_dev_handle_t speaker = s_speaker_dev;
+    esp_codec_dev_handle_t microphone = s_mic_dev;
     if (speaker == NULL || microphone == NULL) {
-        ESP_LOGE(TAG, "codec init failed");
-        emit_event(cb, user, SVC_AUDIO_EV_ERROR, 0, NULL, ESP_FAIL);
-        s_mode = AUDIO_MODE_IDLE;
+        ESP_LOGE(TAG, "record: codec unavailable");
+        emit_event(cb, user, SVC_AUDIO_EV_ERROR, 0, NULL,
+                   ESP_ERR_INVALID_STATE);
+        audio_mode_store(AUDIO_MODE_IDLE);
         return;
     }
 
@@ -635,7 +727,9 @@ static void record_run(svc_audio_route_t route, int gain_db,
         audio_cmd_t cmd;
         while (xQueueReceive(s_queue, &cmd, 0) == pdTRUE) {
             esp_err_t ack = ESP_ERR_INVALID_STATE;
-            if (cmd.type == CMD_RECORD_STOP) {
+            if (audio_cmd_cancelled(&cmd)) {
+                ack = ESP_ERR_TIMEOUT;
+            } else if (cmd.type == CMD_RECORD_STOP) {
                 stop_requested = true;
                 ack = ESP_OK;
             } else if (cmd.type == CMD_SET_GAIN) {
@@ -650,12 +744,7 @@ static void record_run(svc_audio_route_t route, int gain_db,
                     ack = ESP_FAIL;
                 }
             }
-            if (cmd.ack_out != NULL) {
-                *cmd.ack_out = ack;
-            }
-            if (cmd.waiter != NULL) {
-                xTaskNotifyGive(cmd.waiter);
-            }
+            audio_ack_complete(&cmd, ack);
         }
         if (stop_requested) {
             break;
@@ -708,13 +797,13 @@ cleanup:
         ESP_LOGE(TAG, "capture failed: %s", esp_err_to_name(result));
         emit_event(cb, user, SVC_AUDIO_EV_ERROR, 0, NULL, result);
         heap_caps_free(pcm);
-        s_mode = AUDIO_MODE_IDLE;
+        audio_mode_store(AUDIO_MODE_IDLE);
         return;
     }
 
     /* Save phase: the task stays busy (mode SAVING) so new record/play
      * requests are rejected while the WAV is written to the card. */
-    s_mode = AUDIO_MODE_SAVING;
+    audio_mode_store(AUDIO_MODE_SAVING);
     char path[sizeof(((svc_audio_event_msg_t *)0)->path)];
     const esp_err_t save_result = record_save_wav(pcm, filled, path,
                                                   sizeof(path));
@@ -726,7 +815,7 @@ cleanup:
                    (int)(filled / (REC_SAMPLE_RATE * REC_FRAME_BYTES)),
                    path, ESP_OK);
     }
-    s_mode = AUDIO_MODE_IDLE;
+    audio_mode_store(AUDIO_MODE_IDLE);
 }
 
 /* ------------------------------------------------------------------ */
@@ -756,12 +845,22 @@ static void play_teardown(FILE **file, esp_codec_dev_handle_t *speaker,
 /* Runs on the audio task after play_start was acked. */
 static void play_run(play_ctx_t *ctx)
 {
+    svc_storage_lease_t lease = {0};
+    esp_err_t lease_result = svc_storage_lease_acquire(&lease);
+    if (lease_result != ESP_OK) {
+        ESP_LOGW(TAG, "play rejected: TF absent or removing");
+        emit_event(ctx->cb, ctx->user, SVC_AUDIO_EV_ERROR, 0, NULL,
+                   lease_result);
+        audio_mode_store(AUDIO_MODE_IDLE);
+        return;
+    }
     FILE *file = fopen(ctx->path, "rb");
     if (file == NULL) {
         ESP_LOGE(TAG, "open %s failed: %s", ctx->path, strerror(errno));
         emit_event(ctx->cb, ctx->user, SVC_AUDIO_EV_ERROR, 0, NULL,
                    ESP_ERR_NOT_FOUND);
-        s_mode = AUDIO_MODE_IDLE;
+        svc_storage_lease_release(&lease);
+        audio_mode_store(AUDIO_MODE_IDLE);
         return;
     }
     wav_info_t info;
@@ -770,16 +869,21 @@ static void play_run(play_ctx_t *ctx)
         ESP_LOGW(TAG, "unsupported WAV %s: %s", ctx->path,
                  esp_err_to_name(result));
         fclose(file);
+        svc_storage_lease_release(&lease);
         emit_event(ctx->cb, ctx->user, SVC_AUDIO_EV_ERROR, 0, NULL, result);
-        s_mode = AUDIO_MODE_IDLE;
+        audio_mode_store(AUDIO_MODE_IDLE);
         return;
     }
 
-    esp_codec_dev_handle_t speaker = bsp_audio_codec_speaker_init();
+    /* See record_run: borrowed, non-NULL once the service is running. */
+    esp_codec_dev_handle_t speaker = s_speaker_dev;
     if (speaker == NULL) {
+        ESP_LOGE(TAG, "play: codec unavailable");
         fclose(file);
-        emit_event(ctx->cb, ctx->user, SVC_AUDIO_EV_ERROR, 0, NULL, ESP_FAIL);
-        s_mode = AUDIO_MODE_IDLE;
+        svc_storage_lease_release(&lease);
+        emit_event(ctx->cb, ctx->user, SVC_AUDIO_EV_ERROR, 0, NULL,
+                   ESP_ERR_INVALID_STATE);
+        audio_mode_store(AUDIO_MODE_IDLE);
         return;
     }
 
@@ -798,9 +902,10 @@ static void play_run(play_ctx_t *ctx)
         ESP_LOGE(TAG, "speaker open/volume failed: %s",
                  esp_err_to_name(codec_result));
         play_teardown(&file, speaker, &open_attempted);
+        svc_storage_lease_release(&lease);
         emit_event(ctx->cb, ctx->user, SVC_AUDIO_EV_ERROR, 0, NULL,
                    codec_result);
-        s_mode = AUDIO_MODE_IDLE;
+        audio_mode_store(AUDIO_MODE_IDLE);
         return;
     }
 
@@ -815,7 +920,9 @@ static void play_run(play_ctx_t *ctx)
         audio_cmd_t cmd;
         while (xQueueReceive(s_queue, &cmd, 0) == pdTRUE) {
             esp_err_t ack = ESP_ERR_INVALID_STATE;
-            if (cmd.type == CMD_PLAY_STOP) {
+            if (audio_cmd_cancelled(&cmd)) {
+                ack = ESP_ERR_TIMEOUT;
+            } else if (cmd.type == CMD_PLAY_STOP) {
                 stop_requested = true;
                 ack = ESP_OK;
             } else if (cmd.type == CMD_PLAY_PAUSE) {
@@ -826,12 +933,7 @@ static void play_run(play_ctx_t *ctx)
                 ack = esp_codec_dev_set_out_vol(speaker, ctx->volume) ==
                       ESP_CODEC_DEV_OK ? ESP_OK : ESP_FAIL;
             }
-            if (cmd.ack_out != NULL) {
-                *cmd.ack_out = ack;
-            }
-            if (cmd.waiter != NULL) {
-                xTaskNotifyGive(cmd.waiter);
-            }
+            audio_ack_complete(&cmd, ack);
         }
         if (stop_requested) {
             break;
@@ -899,6 +1001,7 @@ static void play_run(play_ctx_t *ctx)
         vTaskDelay(pdMS_TO_TICKS(100)); /* drain the DMA tail */
     }
     play_teardown(&file, speaker, &open_attempted);
+    svc_storage_lease_release(&lease);
 
     if (result != ESP_OK) {
         emit_event(ctx->cb, ctx->user, SVC_AUDIO_EV_ERROR, 0, NULL, result);
@@ -908,7 +1011,7 @@ static void play_run(play_ctx_t *ctx)
                    (int)(consumed / (info.sample_rate * info.block_align)),
                    ctx->path, ESP_OK);
     }
-    s_mode = AUDIO_MODE_IDLE;
+    audio_mode_store(AUDIO_MODE_IDLE);
 }
 
 /* ------------------------------------------------------------------ */
@@ -918,7 +1021,7 @@ static void play_run(play_ctx_t *ctx)
 static void record_start_command(audio_cmd_t *cmd)
 {
     esp_err_t result = ESP_ERR_INVALID_STATE;
-    if (s_mode == AUDIO_MODE_IDLE) {
+    if (audio_mode_load() == AUDIO_MODE_IDLE) {
         if (!svc_storage_mounted()) {
             result = ESP_ERR_INVALID_STATE; /* contract: no SD card */
         } else {
@@ -931,31 +1034,25 @@ static void record_start_command(audio_cmd_t *cmd)
                 result = ESP_ERR_NO_MEM;
             } else {
                 const int gain = sanitize_gain_db(cmd->gain_db);
-                s_mode = AUDIO_MODE_RECORDING;
-                if (cmd->ack_out != NULL) {
-                    *cmd->ack_out = ESP_OK;
+                if (audio_cmd_cancelled(cmd)) {
+                    heap_caps_free(pcm);
+                    audio_ack_complete(cmd, ESP_ERR_TIMEOUT);
+                    return;
                 }
-                if (cmd->waiter != NULL) {
-                    xTaskNotifyGive(cmd->waiter);
-                    cmd->waiter = NULL; /* acked; stream runs on */
-                }
+                audio_mode_store(AUDIO_MODE_RECORDING);
+                audio_ack_complete(cmd, ESP_OK);
                 record_run(cmd->route, gain, cmd->cb, cmd->user, pcm);
                 return;
             }
         }
     }
-    if (cmd->ack_out != NULL) {
-        *cmd->ack_out = result;
-    }
-    if (cmd->waiter != NULL) {
-        xTaskNotifyGive(cmd->waiter);
-    }
+    audio_ack_complete(cmd, result);
 }
 
 static void play_start_command(audio_cmd_t *cmd)
 {
     esp_err_t result = ESP_ERR_INVALID_STATE;
-    if (s_mode == AUDIO_MODE_IDLE) {
+    if (audio_mode_load() == AUDIO_MODE_IDLE) {
         if (!svc_storage_mounted()) {
             result = ESP_ERR_INVALID_STATE;
         } else {
@@ -965,24 +1062,17 @@ static void play_start_command(audio_cmd_t *cmd)
             ctx.volume = clamp_int(cmd->volume, 0, 100);
             ctx.cb = cmd->cb;
             ctx.user = cmd->user;
-            s_mode = AUDIO_MODE_PLAYING;
-            if (cmd->ack_out != NULL) {
-                *cmd->ack_out = ESP_OK;
+            if (audio_cmd_cancelled(cmd)) {
+                audio_ack_complete(cmd, ESP_ERR_TIMEOUT);
+                return;
             }
-            if (cmd->waiter != NULL) {
-                xTaskNotifyGive(cmd->waiter);
-                cmd->waiter = NULL;
-            }
+            audio_mode_store(AUDIO_MODE_PLAYING);
+            audio_ack_complete(cmd, ESP_OK);
             play_run(&ctx);
             return;
         }
     }
-    if (cmd->ack_out != NULL) {
-        *cmd->ack_out = result;
-    }
-    if (cmd->waiter != NULL) {
-        xTaskNotifyGive(cmd->waiter);
-    }
+    audio_ack_complete(cmd, result);
 }
 
 static void audio_task(void *arg)
@@ -991,6 +1081,10 @@ static void audio_task(void *arg)
     audio_cmd_t cmd;
     for (;;) {
         if (xQueueReceive(s_queue, &cmd, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        if (audio_cmd_cancelled(&cmd)) {
+            audio_ack_complete(&cmd, ESP_ERR_TIMEOUT);
             continue;
         }
         esp_err_t result = ESP_ERR_INVALID_STATE;
@@ -1004,12 +1098,7 @@ static void audio_task(void *arg)
         default:
             break; /* idle-time stop/gain/volume requests: invalid state */
         }
-        if (cmd.ack_out != NULL) {
-            *cmd.ack_out = result;
-        }
-        if (cmd.waiter != NULL) {
-            xTaskNotifyGive(cmd.waiter);
-        }
+        audio_ack_complete(&cmd, result);
     }
 }
 
@@ -1022,40 +1111,122 @@ static esp_err_t send_command(audio_cmd_t *cmd)
         /* The task can never ack its own command: refuse the deadlock. */
         return ESP_ERR_INVALID_STATE;
     }
-    esp_err_t ack = ESP_ERR_TIMEOUT;
-    cmd->ack_out = &ack;
-    cmd->waiter = xTaskGetCurrentTaskHandle();
-    while (ulTaskNotifyTake(pdTRUE, 0) > 0) {
-        /* drain any stale notification from an earlier call */
+    audio_ack_t *ack = audio_ack_create();
+    if (ack == NULL) {
+        return ESP_ERR_NO_MEM;
     }
-    if (xQueueSend(s_queue, cmd, pdMS_TO_TICKS(500)) != pdTRUE) {
+    cmd->ack = ack;
+    if (xQueueSend(s_queue, cmd, pdMS_TO_TICKS(AUDIO_QUEUE_TIMEOUT_MS)) !=
+            pdTRUE) {
+        /* The task never received its ownership reference. */
+        audio_ack_release(ack);
+        audio_ack_release(ack);
         return ESP_ERR_TIMEOUT;
     }
-    /* Wait without a timeout: every queued command is acked by the task
-     * (worst case after an in-flight WAV save finishes), and the ack slot
-     * lives on the caller's stack, so an early return here would leave the
-     * task writing into a dead frame. */
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    return ack;
+    const BaseType_t completed =
+        xSemaphoreTake(ack->done, pdMS_TO_TICKS(AUDIO_ACK_TIMEOUT_MS));
+    if (completed != pdTRUE) {
+        /* Prevent a command that is still waiting in the queue from
+         * becoming a late, invisible record/play operation after the UI
+         * has already recovered from the timeout. */
+        atomic_store_explicit(&ack->cancelled, true, memory_order_release);
+    }
+    const esp_err_t result = completed == pdTRUE ?
+        (esp_err_t)atomic_load_explicit(&ack->result, memory_order_acquire) :
+        ESP_ERR_TIMEOUT;
+    audio_ack_release(ack);
+    return result;
+}
+
+/* Fire-and-forget variant for teardown paths that must not block on the
+ * audio task (page deletion while the task sits in a slow SD transfer
+ * would hold the LVGL thread for up to the ack timeout). The command is
+ * enqueued without an ack object: audio_ack_complete() and the
+ * cancellation check treat ack == NULL as "nobody is waiting", so the
+ * running record/play loops service it exactly like an acked stop. */
+static esp_err_t send_command_nowait(audio_cmd_t *cmd)
+{
+    if (!s_started) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (xTaskGetCurrentTaskHandle() == s_task) {
+        /* The task can never ack its own command: refuse the deadlock. */
+        return ESP_ERR_INVALID_STATE;
+    }
+    cmd->ack = NULL;
+    if (xQueueSend(s_queue, cmd, pdMS_TO_TICKS(AUDIO_QUEUE_TIMEOUT_MS)) !=
+            pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
 }
 
 /* ------------------------------------------------------------------ */
 /* Public API                                                          */
 /* ------------------------------------------------------------------ */
 
+/* Bring the codec up for the whole service lifetime, then start the task.
+ *
+ * The I2S TX+RX DMA descriptors (~12.8 KB of MALLOC_CAP_INTERNAL|
+ * MALLOC_CAP_DMA) are allocated here on the main task, before
+ * svc_net_start() runs (demo_main.c starts audio before net) and before
+ * WiFi/BLE churn and UI navigation fragment the internal DMA pool
+ * (2026-08-21 board log: lazy first-record init failed
+ * i2s_alloc_dma_desc 10/10 when even 960 B contiguous was gone).
+ * Tradeoff, accepted for the demo: AUDIO_3V3_SW (TG28 ALDO3) and both I2S
+ * channels stay powered for the whole uptime. Deep sleep reboots the chip
+ * on wake, and svc_power restarts the system if the pre-sleep
+ * bsp_power_safe_state() reports a failure after tearing rails - both
+ * paths re-run the boot chain and reach this function again, so no
+ * pre-sleep audio deinit is needed. Sleep attempts refused BEFORE
+ * safe-state (VBUS/preflight/alarm/EXT1 checks) return to the running UI
+ * with the handles still valid.
+ *
+ * Cleanup contract: bsp_audio_deinit() internally performs
+ * bsp_audio_codec_deinit() on both cached instances and then frees the
+ * shared data interface and both I2S channels (bsp_audio.c). Failure paths
+ * therefore call it exactly once and never add a codec deinit on top,
+ * which would double-free.
+ */
 esp_err_t svc_audio_start(void)
 {
     if (s_started) {
         return ESP_OK;
     }
+
+    /* Idempotent; returns the real I2S/DMA error and cleans up after
+     * itself on failure. The codec constructors below reuse its channels. */
+    esp_err_t error = bsp_audio_init(NULL);
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "bsp_audio_init: %s", esp_err_to_name(error));
+        return error;
+    }
+
+    s_speaker_dev = bsp_audio_codec_speaker_init();
+    s_mic_dev = bsp_audio_codec_microphone_init();
+    if (s_speaker_dev == NULL || s_mic_dev == NULL) {
+        ESP_LOGE(TAG, "codec init failed: speaker=%p mic=%p",
+                 s_speaker_dev, s_mic_dev);
+        bsp_audio_deinit(); /* full single rollback, clears BSP statics */
+        s_speaker_dev = NULL;
+        s_mic_dev = NULL;
+        return ESP_FAIL;
+    }
+
     s_queue = xQueueCreate(AUDIO_QUEUE_DEPTH, sizeof(audio_cmd_t));
     if (s_queue == NULL) {
+        bsp_audio_deinit();
+        s_speaker_dev = NULL;
+        s_mic_dev = NULL;
         return ESP_ERR_NO_MEM;
     }
     if (xTaskCreate(audio_task, "svc_audio", AUDIO_TASK_STACK, NULL,
                     AUDIO_TASK_PRIO, &s_task) != pdPASS) {
         vQueueDelete(s_queue);
         s_queue = NULL;
+        bsp_audio_deinit();
+        s_speaker_dev = NULL;
+        s_mic_dev = NULL;
         return ESP_ERR_NO_MEM;
     }
     s_started = true;
@@ -1089,9 +1260,22 @@ esp_err_t svc_audio_record_stop(void)
     return send_command(&cmd);
 }
 
+/* Fire-and-forget stop for page teardown: never waits on the audio task
+ * (see send_command_nowait). The caller must have invalidated its audio
+ * event token, because completion events can now arrive after the page
+ * is gone. */
+esp_err_t svc_audio_record_stop_async(void)
+{
+    audio_cmd_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.type = CMD_RECORD_STOP;
+    return send_command_nowait(&cmd);
+}
+
 bool svc_audio_is_recording(void)
 {
-    return s_mode == AUDIO_MODE_RECORDING || s_mode == AUDIO_MODE_SAVING;
+    const audio_mode_t mode = audio_mode_load();
+    return mode == AUDIO_MODE_RECORDING || mode == AUDIO_MODE_SAVING;
 }
 
 esp_err_t svc_audio_record_set_gain(int gain_db)
@@ -1130,9 +1314,18 @@ esp_err_t svc_audio_play_stop(void)
     return send_command(&cmd);
 }
 
+/* Fire-and-forget stop for page teardown (see svc_audio_record_stop_async). */
+esp_err_t svc_audio_play_stop_async(void)
+{
+    audio_cmd_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.type = CMD_PLAY_STOP;
+    return send_command_nowait(&cmd);
+}
+
 bool svc_audio_is_playing(void)
 {
-    return s_mode == AUDIO_MODE_PLAYING;
+    return audio_mode_load() == AUDIO_MODE_PLAYING;
 }
 
 esp_err_t svc_audio_set_volume(int volume)

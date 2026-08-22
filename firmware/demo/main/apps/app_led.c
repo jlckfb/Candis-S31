@@ -32,22 +32,22 @@ typedef struct {
 } led_effect_t;
 
 static const led_color_t s_colors[LED_COLOR_COUNT] = {
-    { "红", SET_IRGB(0, 64, 0, 0) },
-    { "绿", SET_IRGB(0, 0, 64, 0) },
-    { "蓝", SET_IRGB(0, 0, 0, 64) },
-    { "白", SET_IRGB(0, 44, 44, 44) },
-    { "紫", SET_IRGB(0, 52, 0, 56) },
-    { "青", SET_IRGB(0, 0, 52, 52) },
-    { "黄", SET_IRGB(0, 56, 42, 0) },
+    { "Red", SET_IRGB(0, 64, 0, 0) },
+    { "Green", SET_IRGB(0, 0, 64, 0) },
+    { "Blue", SET_IRGB(0, 0, 0, 64) },
+    { "White", SET_IRGB(0, 44, 44, 44) },
+    { "Purple", SET_IRGB(0, 52, 0, 56) },
+    { "Cyan", SET_IRGB(0, 0, 52, 52) },
+    { "Yellow", SET_IRGB(0, 56, 42, 0) },
 };
 
 static const led_effect_t s_effects[LED_EFFECT_COUNT] = {
-    { "常亮", BSP_LED_ON },
-    { "快闪", BSP_LED_BLINK_FAST },
-    { "慢闪", BSP_LED_BLINK_SLOW },
-    { "快呼吸", BSP_LED_BREATHE_FAST },
-    { "慢呼吸", BSP_LED_BREATHE_SLOW },
-    { "关", BSP_LED_OFF },
+    { "Always", BSP_LED_ON },
+    { "Fast blink", BSP_LED_BLINK_FAST },
+    { "Slow blink", BSP_LED_BLINK_SLOW },
+    { "Fast breathe", BSP_LED_BREATHE_FAST },
+    { "Slow breathe", BSP_LED_BREATHE_SLOW },
+    { "Off", BSP_LED_OFF },
 };
 
 typedef struct {
@@ -125,15 +125,16 @@ lv_obj_t *app_led_create(void)
     s = (led_state_t){ .active = true, .color = 3, .effect = 0 };
 
     lv_obj_t *content = NULL;
-    lv_obj_t *root = ui_app_scaffold("彩灯", &content);
+    lv_obj_t *root = ui_app_scaffold("LED", &content);
     lv_obj_add_event_cb(root, led_root_delete_cb, LV_EVENT_DELETE, NULL);
+    lv_obj_set_style_text_font(content, ui_font_body(), 0);
 
     led_indicator_handle_t handles[BSP_LED_NUM] = {0};
     int count = 0;
     const esp_err_t err = bsp_led_indicator_create(handles, &count, BSP_LED_NUM);
     if (err != ESP_OK || count != BSP_LED_NUM) {
         lv_obj_t *label = lv_label_create(content);
-        lv_label_set_text(label, "彩灯初始化失败");
+        lv_label_set_text(label, "LED init failed");
         lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_ERR), 0);
         lv_obj_center(label);
         return root;
@@ -141,7 +142,7 @@ lv_obj_t *app_led_create(void)
     s.led = handles[BSP_LED_1];
 
     lv_obj_t *title_color = lv_label_create(content);
-    lv_label_set_text(title_color, "颜色");
+    lv_label_set_text(title_color, "Color");
     lv_obj_set_style_text_color(title_color, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
     lv_obj_align(title_color, LV_ALIGN_TOP_LEFT, 12, 6);
 
@@ -151,8 +152,8 @@ lv_obj_t *app_led_create(void)
     };
     for (int i = 0; i < LED_COLOR_COUNT; ++i) {
         lv_obj_t *btn = lv_button_create(content);
-        lv_obj_set_size(btn, 52, 52);
-        lv_obj_set_pos(btn, 12 + i * 62, 34);
+        lv_obj_set_size(btn, UI_TOUCH_MIN, UI_TOUCH_MIN);
+        lv_obj_set_pos(btn, 8 + i * 60, 34);
         lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_color(btn, lv_color_hex(swatch[i]), 0);
         lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
@@ -163,27 +164,28 @@ lv_obj_t *app_led_create(void)
     led_select_style(s.color_btn[s.color], true);
 
     lv_obj_t *title_effect = lv_label_create(content);
-    lv_label_set_text(title_effect, "效果");
+    lv_label_set_text(title_effect, "Effect");
     lv_obj_set_style_text_color(title_effect, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
     lv_obj_align(title_effect, LV_ALIGN_TOP_LEFT, 12, 106);
 
     /* Effects: three per row, mapped onto the BSP blink lists. */
     for (int i = 0; i < LED_EFFECT_COUNT; ++i) {
         lv_obj_t *btn = lv_button_create(content);
-        lv_obj_set_size(btn, 138, 52);
-        lv_obj_set_pos(btn, 12 + (i % 3) * 146, 134 + (i / 3) * 62);
+        lv_obj_set_size(btn, 132, 60);
+        lv_obj_set_pos(btn, 4 + (i % 3) * 144, 134 + (i / 3) * 72);
         lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COLOR_SURFACE), 0);
         lv_obj_add_event_cb(btn, effect_click_cb, LV_EVENT_CLICKED,
                             (void *)(intptr_t)i);
         lv_obj_t *label = lv_label_create(btn);
         lv_label_set_text(label, s_effects[i].name);
+        lv_obj_set_style_text_font(label, ui_font_body(), 0);
         lv_obj_center(label);
         s.effect_btn[i] = btn;
     }
     led_select_style(s.effect_btn[s.effect], true);
 
     lv_obj_t *hint = lv_label_create(content);
-    lv_label_set_text(hint, "WS2812B · 由电源开关 DC1SW 供电");
+    lv_label_set_text(hint, "WS2812B, powered via DC1SW switch");
     lv_obj_set_style_text_color(hint, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, 12, -10);
 

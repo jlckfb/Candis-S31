@@ -18,6 +18,8 @@ extern "C" {
 
 lv_obj_t *app_recorder_create(void);
 lv_obj_t *app_player_create(void);
+lv_obj_t *app_test_center_create(void);
+lv_obj_t *app_display_test_create(void);
 lv_obj_t *app_wifi_create(void);
 lv_obj_t *app_ble_create(void);
 lv_obj_t *app_files_create(void);
@@ -29,6 +31,7 @@ lv_obj_t *app_camera_create(void);
 lv_obj_t *app_sysinfo_create(void);
 lv_obj_t *game_2048_create(void);
 lv_obj_t *game_snake_create(void);
+lv_obj_t *game_breakout_create(void);
 
 void demo_apps_register_all(void);
 

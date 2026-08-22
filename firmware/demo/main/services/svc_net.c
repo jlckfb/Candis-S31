@@ -5,6 +5,10 @@
  * WiFi and BLE operation. Public API calls only enqueue a message and return;
  * results travel back through the same queue and user callbacks are always
  * invoked on the network task, so apps must forward UI work via ui_async().
+ * WiFi link events (STA disconnect, GOT_IP) travel on a dedicated small
+ * queue that the net task drains first, so a link-state transition is never
+ * dropped behind command or scan traffic (a dropped transition would leave
+ * the s_wifi.connected view out of sync with the radio until the next one).
  *
  * WiFi: netif/driver come up once in svc_net_start() and stay up. Scans are
  * the blocking kind (executed on the network task, never on the UI thread).
@@ -29,6 +33,7 @@
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -37,6 +42,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "nvs.h"
 
 #include "host/ble_gap.h"
 #include "host/ble_gatt.h"
@@ -52,6 +58,9 @@
 #define NET_TASK_STACK   6144
 #define NET_TASK_PRIO    4
 #define NET_QUEUE_LEN    8
+#define NET_ADV_QUEUE_LEN 16
+#define NET_WIFI_EV_QUEUE_LEN 4   /* link transitions: drained first */
+#define NET_READY_BIT    BIT0
 
 #define WIFI_AP_MAX      20   /* contract: scan list cap */
 #define WIFI_SCAN_RECS   25
@@ -87,6 +96,7 @@ typedef enum {
     BLE_EV_CONNECT_FAILED,
     BLE_EV_DISCONNECTED,
     BLE_EV_DISC_DONE,
+    BLE_EV_HOST_RESET,
 } net_ble_sub_t;
 
 typedef struct {
@@ -127,7 +137,10 @@ typedef struct {
 /* ---------------- shared state ---------------- */
 
 static QueueHandle_t s_queue;
+static QueueHandle_t s_adv_queue;
+static QueueHandle_t s_wifi_ev_queue;  /* WiFi link events: drained first */
 static SemaphoreHandle_t s_wifi_mutex; /* guards connected/ip for any-context reads */
+static EventGroupHandle_t s_ready_event;
 static bool s_started;
 
 static struct {
@@ -137,6 +150,8 @@ static struct {
     volatile bool user_disconnect;
     TickType_t conn_start;
     char ssid[33];
+    char password[65];   /* RAM copy of the current attempt; saved to NVS
+                          * on GOT_IP and zeroed right after */
     char ip[16];
     svc_wifi_conn_cb_t cb;
     void *cb_user;
@@ -172,10 +187,28 @@ static bool net_send(net_msg_t *msg, TickType_t timeout)
     return s_queue != NULL && xQueueSend(s_queue, msg, timeout) == pdPASS;
 }
 
+static bool net_send_adv(net_msg_t *msg)
+{
+    return s_adv_queue != NULL && xQueueSend(s_adv_queue, msg, 0) == pdPASS;
+}
+
 static void net_post_ble_event(net_ble_sub_t sub)
 {
     net_msg_t msg = { .type = MSG_BLE_EVENT };
     msg.ble_event.sub = sub;
+    /* Connection lifecycle transitions ride the drained-first priority
+     * queue so they are never stranded behind a burst of scan reports or
+     * advertisements in the depth-8 command queue (a dropped CONNECT /
+     * DISCONNECT leaves the UI stuck in "connecting"). DISC_DONE keeps the
+     * normal path with the scan traffic it belongs to. */
+    if (sub != BLE_EV_DISC_DONE) {
+        if (s_wifi_ev_queue != NULL &&
+                xQueueSend(s_wifi_ev_queue, &msg, 0) == pdPASS) {
+            return;
+        }
+        ESP_LOGW(NET_TAG, "priority queue full, BLE event %d dropped", sub);
+        return;
+    }
     if (!net_send(&msg, 0)) {
         ESP_LOGW(NET_TAG, "net queue full, BLE event %d dropped", sub);
     }
@@ -200,8 +233,12 @@ static void net_wifi_event_handler(void *arg, esp_event_base_t base,
     } else {
         return;
     }
-    if (!net_send(&msg, 0)) {
-        ESP_LOGW(NET_TAG, "net queue full, WiFi event dropped");
+    /* Link events go to their own queue, drained first by the net task:
+     * a command queue full of BLE control traffic must never drop a
+     * link-state transition. */
+    if (s_wifi_ev_queue == NULL ||
+            xQueueSend(s_wifi_ev_queue, &msg, 0) != pdPASS) {
+        ESP_LOGW(NET_TAG, "WiFi event queue full, event dropped");
     }
 }
 
@@ -253,20 +290,20 @@ static const char *net_wifi_fail_text(int reason)
     case WIFI_REASON_AUTH_FAIL:
     case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
     case WIFI_REASON_HANDSHAKE_TIMEOUT:
-        return "密码错误/认证失败";
+        return "Wrong password/auth failed";
     case WIFI_REASON_NO_AP_FOUND:
     case WIFI_REASON_NO_AP_FOUND_W_COMPATIBLE_SECURITY:
     case WIFI_REASON_NO_AP_FOUND_IN_AUTHMODE_THRESHOLD:
     case WIFI_REASON_NO_AP_FOUND_IN_RSSI_THRESHOLD:
-        return "未找到该网络";
+        return "Network not found";
     case WIFI_REASON_ASSOC_FAIL:
-        return "关联被拒绝";
+        return "Association refused";
     case WIFI_REASON_CONNECTION_FAIL:
-        return "连接失败";
+        return "Connect failed";
     case WIFI_REASON_BEACON_TIMEOUT:
-        return "信号超时";
+        return "Signal timeout";
     default:
-        return "连接失败";
+        return "Connect failed";
     }
 }
 
@@ -344,6 +381,8 @@ static void net_wifi_do_connect(const net_msg_t *msg)
     s_wifi.cb = msg->wifi_connect.cb;
     s_wifi.cb_user = msg->wifi_connect.user;
     snprintf(s_wifi.ssid, sizeof(s_wifi.ssid), "%s", msg->wifi_connect.ssid);
+    snprintf(s_wifi.password, sizeof(s_wifi.password), "%s",
+             msg->wifi_connect.password);
 
     wifi_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
@@ -356,7 +395,7 @@ static void net_wifi_do_connect(const net_msg_t *msg)
         ESP_LOGW(NET_TAG, "wifi connect kickoff failed: %s", esp_err_to_name(err));
         s_wifi.cb = NULL;
         if (msg->wifi_connect.cb) {
-            msg->wifi_connect.cb(SVC_WIFI_EV_CONNECT_FAILED, "连接失败",
+            msg->wifi_connect.cb(SVC_WIFI_EV_CONNECT_FAILED, "Connect failed",
                                  msg->wifi_connect.user);
         }
         return;
@@ -364,6 +403,50 @@ static void net_wifi_do_connect(const net_msg_t *msg)
     s_wifi.connecting = true;
     s_wifi.conn_start = xTaskGetTickCount();
     ESP_LOGI(NET_TAG, "connecting to \"%s\"", s_wifi.ssid);
+}
+
+/* ---------------- WiFi: persisted credentials ----------------
+ * Namespace "demo" (shared with demo_board.c settings), keys wifi_ssid /
+ * wifi_pass. Written once, after GOT_IP, so a failed attempt never
+ * clobbers known-good credentials. Failures only warn - persistence must
+ * not break the connection itself. */
+
+#define NET_NVS_NAMESPACE "demo"
+#define NET_NVS_KEY_SSID  "wifi_ssid"
+#define NET_NVS_KEY_PASS  "wifi_pass"
+
+static void net_wifi_cred_save(const char *ssid, const char *pass)
+{
+    nvs_handle_t handle;
+    if (nvs_open(NET_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+        ESP_LOGW(NET_TAG, "wifi credentials: NVS open failed");
+        return;
+    }
+    esp_err_t err = nvs_set_str(handle, NET_NVS_KEY_SSID, ssid);
+    if (err == ESP_OK) {
+        err = nvs_set_str(handle, NET_NVS_KEY_PASS, pass != NULL ? pass : "");
+    }
+    const esp_err_t commit_err = nvs_commit(handle);
+    nvs_close(handle);
+    if (err == ESP_OK) {
+        err = commit_err;
+    }
+    if (err != ESP_OK) {
+        ESP_LOGW(NET_TAG, "wifi credentials save failed: %s",
+                 esp_err_to_name(err));
+    }
+}
+
+static void net_wifi_cred_forget(void)
+{
+    nvs_handle_t handle;
+    if (nvs_open(NET_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+        return;
+    }
+    nvs_erase_key(handle, NET_NVS_KEY_SSID);
+    nvs_erase_key(handle, NET_NVS_KEY_PASS);
+    nvs_commit(handle);
+    nvs_close(handle);
 }
 
 static void net_wifi_on_event(const net_msg_t *msg)
@@ -388,6 +471,12 @@ static void net_wifi_on_event(const net_msg_t *msg)
             snprintf(s_wifi.ip, sizeof(s_wifi.ip), "%s", ip);
         }
         ESP_LOGI(NET_TAG, "got ip %s", ip);
+        /* Persist the credentials only after a full connection: a failed
+         * attempt keeps whatever was saved before. */
+        if (s_wifi.ssid[0] != '\0') {
+            net_wifi_cred_save(s_wifi.ssid, s_wifi.password);
+            s_wifi.password[0] = '\0';
+        }
         if (s_wifi.cb) {
             s_wifi.cb(SVC_WIFI_EV_CONNECTED, ip, s_wifi.cb_user);
         }
@@ -395,6 +484,7 @@ static void net_wifi_on_event(const net_msg_t *msg)
     }
 
     /* WIFI_EV_DISC */
+    s_wifi.password[0] = '\0';
     int reason = msg->wifi_event.reason;
     if (s_wifi.user_disconnect) {
         s_wifi.user_disconnect = false;
@@ -452,12 +542,13 @@ static void net_wifi_poll_timeout(void)
     s_wifi.connecting = false;
     esp_wifi_disconnect(); /* cancel the attempt quietly */
     s_wifi.user_disconnect = false;
+    s_wifi.password[0] = '\0'; /* close the RAM window for this attempt */
     svc_wifi_conn_cb_t cb = s_wifi.cb;
     void *user = s_wifi.cb_user;
     s_wifi.cb = NULL;
     ESP_LOGW(NET_TAG, "connect timeout");
     if (cb) {
-        cb(SVC_WIFI_EV_CONNECT_FAILED, "连接超时", user);
+        cb(SVC_WIFI_EV_CONNECT_FAILED, "Connect timeout", user);
     }
 }
 
@@ -490,7 +581,22 @@ static void net_ble_on_reset(int reason)
     if (s_ble.conn_handle != BLE_HS_CONN_HANDLE_NONE) {
         s_ble.conn_handle = BLE_HS_CONN_HANDLE_NONE;
         net_post_ble_event(BLE_EV_DISCONNECTED);
+    } else if (s_ble.conn_cb != NULL) {
+        /* Connection attempt pending but not yet established: no GAP
+         * CONNECT event will ever arrive for it, because the host
+         * restart discards the procedure. Without this delivery the
+         * conn_cb slot stays occupied and every later svc_ble_connect()
+         * is refused with INVALID_STATE until reboot. The failure is
+         * delivered through the normal queue path so the callback runs
+         * on the network task, exactly like a GAP-reported failure. */
+        net_post_ble_event(BLE_EV_CONNECT_FAILED);
     }
+    /* Scan state has the same stuck-slot hazard: after a host reset the
+     * controller no longer reports advertisements, but the scanning flag
+     * and scan_cb would keep occupying the session until the app stops
+     * the scan itself. The net task owns those fields; tell it to clear
+     * them (symmetrical to the conn_cb handling above). */
+    net_post_ble_event(BLE_EV_HOST_RESET);
 }
 
 static bool net_ble_seen(const ble_addr_t *addr)
@@ -576,7 +682,7 @@ static int net_ble_gap_event(struct ble_gap_event *event, void *arg)
             }
             memcpy(dev->name, fields.name, n);
         }
-        if (!net_send(&msg, 0)) {
+        if (!net_send_adv(&msg)) {
             ESP_LOGD(NET_TAG, "adv queue drop");
         }
         return 0;
@@ -647,13 +753,24 @@ static void net_ble_do_scan_start(const net_msg_t *msg)
     struct ble_gap_disc_params params;
     memset(&params, 0, sizeof(params));
     params.passive = 1;
-    params.filter_duplicates = 1;
-
-    s_ble.scan_cb = msg->ble_scan.cb;
-    s_ble.scan_user = msg->ble_scan.user;
-    /* Fresh session view: reset the de-dup cache before discovery starts. */
+    /* Controller-side duplicate filtering is OFF on purpose. Observation
+     * (2026-08-21 board log): with filter_duplicates=1 the LE Set Scan
+     * Enable was rejected by the controller with hci_err=0x207 while the
+     * same runtime had already exhausted the internal DMA pool for the
+     * I2S path - correlation, root cause not proven (the controller is a
+     * closed blob). The host already de-duplicates the session
+     * (net_ble_seen, 32 entries, reset just below), so disabling the
+     * controller filter is the minimal single-variable experiment/fix;
+     * report volume stays bounded by the controller flow control and the
+     * host pool lives in PSRAM. */
+    params.filter_duplicates = 0;
     s_seen_next = 0;
     memset(s_seen, 0, sizeof(s_seen));
+    if (s_adv_queue != NULL) {
+        xQueueReset(s_adv_queue);
+    }
+    s_ble.scan_cb = msg->ble_scan.cb;
+    s_ble.scan_user = msg->ble_scan.user;
     int rc = ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &params,
                           net_ble_gap_event, NULL);
     if (rc != 0) {
@@ -680,6 +797,9 @@ static void net_ble_do_scan_stop(void)
     }
     s_ble.scan_cb = NULL;
     s_ble.scan_user = NULL;
+    if (s_adv_queue != NULL) {
+        xQueueReset(s_adv_queue);
+    }
 }
 
 static void net_ble_do_connect(const net_msg_t *msg)
@@ -761,6 +881,15 @@ static void net_ble_on_event(const net_msg_t *msg)
         s_ble.conn_cb = NULL;
         s_ble.conn_user = NULL;
         break;
+    case BLE_EV_HOST_RESET:
+        /* The host restarted: the controller-side scan procedure is gone
+         * with it. Clear the session state the net task owns. There is no
+         * scan-completion event in the public API, so scan_cb is simply
+         * dropped, matching "the scan is over". */
+        s_ble.scanning = false;
+        s_ble.scan_cb = NULL;
+        s_ble.scan_user = NULL;
+        break;
     default:
         break;
     }
@@ -771,9 +900,27 @@ static void net_ble_on_event(const net_msg_t *msg)
 static void net_task(void *arg)
 {
     (void)arg;
+    /* WiFi callbacks and the NimBLE host can enqueue messages while their
+     * stacks are being brought up. Do not consume those messages until both
+     * bring-up attempts have finished and the capability flags are stable. */
+    if (s_ready_event != NULL) {
+        xEventGroupWaitBits(s_ready_event, NET_READY_BIT, pdFALSE, pdTRUE,
+                            portMAX_DELAY);
+    }
     net_msg_t msg;
     for (;;) {
-        if (xQueueReceive(s_queue, &msg, pdMS_TO_TICKS(500)) == pdPASS) {
+        /* WiFi link transitions first: they are rare and the radio state
+         * view must follow them without loss, so they never wait behind
+         * command or scan traffic. Then control commands; advertisements
+         * last (a busy scan must not be able to starve lifecycle events). */
+        BaseType_t received = xQueueReceive(s_wifi_ev_queue, &msg, 0);
+        if (received != pdPASS) {
+            received = xQueueReceive(s_queue, &msg, 0);
+        }
+        if (received != pdPASS) {
+            received = xQueueReceive(s_adv_queue, &msg, pdMS_TO_TICKS(20));
+        }
+        if (received == pdPASS) {
             switch (msg.type) {
             case MSG_WIFI_SCAN:
                 net_wifi_do_scan(&msg);
@@ -827,23 +974,71 @@ esp_err_t svc_net_start(void)
     }
     s_wifi_mutex = xSemaphoreCreateMutex();
     s_queue = xQueueCreate(NET_QUEUE_LEN, sizeof(net_msg_t));
-    if (s_wifi_mutex == NULL || s_queue == NULL) {
+    s_adv_queue = xQueueCreate(NET_ADV_QUEUE_LEN, sizeof(net_msg_t));
+    s_wifi_ev_queue = xQueueCreate(NET_WIFI_EV_QUEUE_LEN, sizeof(net_msg_t));
+    s_ready_event = xEventGroupCreate();
+    if (s_wifi_mutex == NULL || s_queue == NULL || s_adv_queue == NULL ||
+            s_wifi_ev_queue == NULL || s_ready_event == NULL) {
         ESP_LOGE(NET_TAG, "ipc alloc failed");
+        if (s_ready_event != NULL) {
+            vEventGroupDelete(s_ready_event);
+            s_ready_event = NULL;
+        }
+        if (s_queue != NULL) {
+            vQueueDelete(s_queue);
+            s_queue = NULL;
+        }
+        if (s_adv_queue != NULL) {
+            vQueueDelete(s_adv_queue);
+            s_adv_queue = NULL;
+        }
+        if (s_wifi_ev_queue != NULL) {
+            vQueueDelete(s_wifi_ev_queue);
+            s_wifi_ev_queue = NULL;
+        }
+        if (s_wifi_mutex != NULL) {
+            vSemaphoreDelete(s_wifi_mutex);
+            s_wifi_mutex = NULL;
+        }
         return ESP_ERR_NO_MEM;
     }
     if (xTaskCreatePinnedToCore(net_task, "svc_net", NET_TASK_STACK, NULL,
                                 NET_TASK_PRIO, NULL, 0) != pdPASS) {
         ESP_LOGE(NET_TAG, "task create failed");
+        vEventGroupDelete(s_ready_event);
+        s_ready_event = NULL;
+        vQueueDelete(s_queue);
+        s_queue = NULL;
+        vQueueDelete(s_adv_queue);
+        s_adv_queue = NULL;
+        vQueueDelete(s_wifi_ev_queue);
+        s_wifi_ev_queue = NULL;
+        vSemaphoreDelete(s_wifi_mutex);
+        s_wifi_mutex = NULL;
         return ESP_ERR_NO_MEM;
     }
 
     esp_err_t wifi_err = net_wifi_bringup();
     s_wifi.up = (wifi_err == ESP_OK);
     esp_err_t ble_err = net_ble_bringup();
+    /* Mark the service started even when both capabilities failed: the task
+     * and IPC are valid, and public APIs can consistently report the specific
+     * unavailable capability until the next reboot rather than pretending a
+     * retry-safe rollback exists for partially initialized IDF stacks. */
+    s_started = true;
+    xEventGroupSetBits(s_ready_event, NET_READY_BIT);
     if (wifi_err != ESP_OK && ble_err != ESP_OK) {
+        ESP_LOGE(NET_TAG, "network capabilities unavailable (WiFi=%s, BLE=%s)",
+                 esp_err_to_name(wifi_err), esp_err_to_name(ble_err));
         return wifi_err;
     }
-    s_started = true;
+    if (wifi_err != ESP_OK) {
+        ESP_LOGW(NET_TAG, "WiFi unavailable; BLE remains enabled: %s",
+                 esp_err_to_name(wifi_err));
+    } else if (ble_err != ESP_OK) {
+        ESP_LOGW(NET_TAG, "BLE unavailable; WiFi remains enabled: %s",
+                 esp_err_to_name(ble_err));
+    }
     return ESP_OK;
 }
 
@@ -889,6 +1084,13 @@ esp_err_t svc_wifi_disconnect(void)
     return net_send(&msg, pdMS_TO_TICKS(100)) ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
+bool svc_wifi_is_connecting(void)
+{
+    /* Single-writer flag (network task); a racy read is acceptable for a
+     * UI convergence heuristic. */
+    return s_started && s_wifi.connecting;
+}
+
 bool svc_wifi_is_connected(char *ip_out, size_t ip_len)
 {
     bool connected = false;
@@ -903,6 +1105,59 @@ bool svc_wifi_is_connected(char *ip_out, size_t ip_len)
         xSemaphoreGive(s_wifi_mutex);
     }
     return connected;
+}
+
+bool svc_net_wifi_saved(char *ssid_out, size_t ssid_cap,
+                        char *pass_out, size_t pass_cap)
+{
+    if (ssid_out == NULL || ssid_cap == 0) {
+        return false;
+    }
+    ssid_out[0] = '\0';
+    nvs_handle_t handle;
+    if (nvs_open(NET_NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK) {
+        return false;
+    }
+    /* nvs_get_str's size query includes the trailing NUL. */
+    size_t ssid_len = 0;
+    bool ok = nvs_get_str(handle, NET_NVS_KEY_SSID, NULL, &ssid_len) ==
+                  ESP_OK &&
+              ssid_len >= 2 && ssid_len <= ssid_cap &&
+              nvs_get_str(handle, NET_NVS_KEY_SSID, ssid_out, &ssid_len) ==
+                  ESP_OK;
+    if (!ok) {
+        ssid_out[0] = '\0';
+    }
+    if (pass_out != NULL && pass_cap > 0) {
+        pass_out[0] = '\0';
+        size_t pass_len = 0;
+        if (nvs_get_str(handle, NET_NVS_KEY_PASS, NULL, &pass_len) ==
+                ESP_OK &&
+                pass_len <= pass_cap) {
+            nvs_get_str(handle, NET_NVS_KEY_PASS, pass_out, &pass_len);
+        }
+    }
+    nvs_close(handle);
+    return ok;
+}
+
+void svc_net_wifi_saved_forget(void)
+{
+    net_wifi_cred_forget();
+}
+
+bool svc_ble_is_connecting(void)
+{
+    /* Connecting == a connect callback slot is held but no link handle
+     * exists yet. Both fields live on the network task; a racy read is
+     * acceptable for the UI convergence heuristic. */
+    return s_started && s_ble.conn_cb != NULL &&
+           s_ble.conn_handle == BLE_HS_CONN_HANDLE_NONE;
+}
+
+bool svc_ble_is_connected(void)
+{
+    return s_started && s_ble.connected;
 }
 
 esp_err_t svc_ble_scan_start(svc_ble_scan_cb_t cb, void *user)

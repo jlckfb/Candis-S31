@@ -6,19 +6,22 @@
  * review-locked sleep/shutdown sequences:
  *
  *   screen off: hold LVGL lock, stop invalidation + indev, unlock,
- *               bsp_display_enter_sleep(), CST820 wakeup() then
- *               enter_monitor_mode() (low_power_main.c 488-540 pattern).
- *   screen on:  exit_monitor_mode(), bsp_display_exit_sleep(), hold lock,
- *               re-enable invalidation + indev, full-screen invalidate,
- *               unlock.
- *   wake detection while off: 200 ms poll of BSP_TOUCH_INT (GPIO3) low;
- *               BOOT/PWR wake through svc_power_activity() = turn on.
+ *               bsp_display_enter_sleep_panel(). The CST820 is left
+ *               untouched (no sleep command, no reset): it auto-enters
+ *               standby and asserts INT on touch.
+ *   screen on:  bsp_display_exit_sleep_panel(), hold lock, re-enable
+ *               invalidation + indev, full-screen invalidate, unlock.
+ *               Zero touch-controller resets (a reset on a touched panel
+ *               poisons the baseline and latches phantom touches).
+ *   wake detection while off: 50 ms poll of BSP_TOUCH_INT (GPIO3) low,
+ *               two consecutive samples; BOOT/PWR wake through
+ *               svc_power_activity() = turn on.
  *   deep sleep: drain shared IRQ, RX8130CE alarm (no 32.768 kHz xtal on
  *               this board), EXT1 ANY_LOW on GPIO2 with rtc_gpio pull-up
  *               (low_power_main.c 861-879 recipe), bsp_power_safe_state(),
  *               esp_deep_sleep_start(). Wake is a fresh reset.
- *   shutdown:   bsp_power_safe_state() first, then VBUS guard (soft-PWROFF
- *               with VBUS attached reboots instead of cutting power),
+ *   shutdown:   VBUS guard first (soft-PWROFF with VBUS attached reboots
+ *               instead of cutting power), then bsp_power_safe_state(),
  *               then bsp_pmic_power_off().
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -35,6 +38,7 @@
 #include "esp_bit_defs.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
@@ -42,20 +46,21 @@
 #include "freertos/task.h"
 #include "lvgl.h"
 #include "rx8130ce.h"
-#include "esp_lcd_touch_cst820.h"
 
+#include "services/svc_audio.h"
 #include "services/svc_storage.h"
 #include "ui/ui_manager.h"
 
 #define POWER_TASK_STACK_BYTES 4096
 #define POWER_TASK_PRIORITY    4
-#define POWER_TICK_MS          200
+#define POWER_TICK_MS          50   /* INT wake poll cadence while screen off */
 #define PMIC_POLL_MS           2000
 #define CMD_QUEUE_DEPTH        8
 
 #define CMD_SCREEN_OFF 1
 #define CMD_SCREEN_ON  2
-
+#define CMD_SOURCE_VERIFIED 3
+#define CMD_SOURCE_UNSAFE 4
 static const char *TAG = "svc_power";
 
 static svc_power_cb_t s_callback;
@@ -71,6 +76,14 @@ static volatile int64_t s_last_activity_us;
 static volatile int s_screen_timeout_s;
 static volatile bool s_screen_off;
 static bool s_touch_wake_confirm; /* require two low samples on GPIO3 */
+
+/* Bounded wake-failure retry (power task only): a failed SLPOUT is
+ * retried every 500 ms, at most 3 times, then falls back to waiting for
+ * the next user event. Both fields are touched on the power task only. */
+#define POWER_WAKE_RETRY_MAX   3
+#define POWER_WAKE_RETRY_MS    500
+static int s_wake_retry_count;
+static int64_t s_wake_retry_due_us;
 
 /* ------------------------------------------------------------------ */
 /* Status snapshot                                                     */
@@ -102,42 +115,59 @@ static void screen_off_run(void)
     if (s_screen_off) {
         return;
     }
-    /* Stop UI refresh first so no new frame is queued while the panel
-     * goes to sleep. The lock is held only around the LVGL flag flips. */
     lv_display_t *disp = lv_display_get_default();
     lv_indev_t *indev = bsp_display_get_input_dev();
-    if (ui_lock()) {
-        if (disp != NULL) {
-            lv_display_enable_invalidation(disp, false);
-        }
-        if (indev != NULL) {
-            lv_indev_enable(indev, false);
-        }
-        ui_unlock();
-    }
 
-    const esp_err_t sleep_err = bsp_display_enter_sleep();
+    /* Freeze LVGL first so no new frame or input races the panel
+     * transition, then release the lock: the hardware sequence must not
+     * run under it. */
+    if (!ui_lock()) {
+        ESP_LOGW(TAG, "screen off skipped: LVGL lock unavailable");
+        return;
+    }
+    if (disp != NULL) {
+        lv_display_enable_invalidation(disp, false);
+    }
+    if (indev != NULL) {
+        lv_indev_enable(indev, false);
+    }
+    ui_unlock();
+
+    /* Panel-only sleep: the touch controller is deliberately NOT put to
+     * deep sleep (that state cannot be touch-woken) and NOT reset. Left
+     * running, the CST820 drops into its auto-standby tier on its own and
+     * pulses INT on touch, which is what the poll below waits for. Every
+     * hard reset in the old sequence (wakeup + "monitor mode" enter) was
+     * both ineffective and a phantom-touch source on wake. */
+    /* The hardware sequence (backlight off, SLPIN, then a >=120 ms settle
+     * delay) runs OUTSIDE the LVGL lock: holding the lock across it
+     * blocked taskLVGL for the whole transition. Invalidation is already
+     * disabled, so nothing new renders while the panel parks. */
+    const esp_err_t sleep_err = bsp_display_enter_sleep_panel();
     if (sleep_err != ESP_OK) {
         ESP_LOGE(TAG, "display sleep-in failed: %s", esp_err_to_name(sleep_err));
-    }
-
-    /* bsp_display_enter_sleep() parks the CST820 in its deep sleep, which
-     * cannot be woken by touch; restore the touch-wakeable standby via the
-     * reset cycle (low_power_main.c display_and_touch_sleep pattern). */
-    esp_lcd_touch_handle_t touch = bsp_touch_get_handle();
-    if (touch != NULL) {
-        const esp_err_t wake_err = esp_lcd_touch_cst820_wakeup(touch);
-        if (wake_err != ESP_OK) {
-            ESP_LOGW(TAG, "CST820 wakeup failed: %s", esp_err_to_name(wake_err));
+        /* Roll the LVGL freeze back (same recovery the old in-lock path
+         * performed). A failed lock here leaves the UI frozen until the
+         * next screen-off attempt, which the idle-timeout tick retries. */
+        if (!ui_lock()) {
+            ESP_LOGE(TAG, "screen off rollback skipped: LVGL lock unavailable");
+            return;
         }
-        const esp_err_t mon_err = esp_lcd_touch_cst820_enter_monitor_mode(touch);
-        if (mon_err != ESP_OK) {
-            ESP_LOGW(TAG, "CST820 monitor mode failed: %s", esp_err_to_name(mon_err));
+        if (disp != NULL) {
+            lv_display_enable_invalidation(disp, true);
         }
+        if (indev != NULL) {
+            lv_indev_enable(indev, true);
+            lv_indev_wait_release(indev);
+        }
+        ui_unlock();
+        return;
     }
 
     s_screen_off = true;
     s_touch_wake_confirm = false;
+    s_wake_retry_count = 0;
+    s_wake_retry_due_us = 0;
     ESP_LOGI(TAG, "screen off");
     svc_power_status_t snapshot;
     svc_power_get_status(&snapshot);
@@ -149,33 +179,55 @@ static void screen_on_run(void)
     if (!s_screen_off) {
         return;
     }
-    esp_lcd_touch_handle_t touch = bsp_touch_get_handle();
-    if (touch != NULL) {
-        const esp_err_t mon_err = esp_lcd_touch_cst820_exit_monitor_mode(touch);
-        if (mon_err != ESP_OK) {
-            ESP_LOGW(TAG, "CST820 monitor exit failed: %s", esp_err_to_name(mon_err));
-        }
-    }
-    const esp_err_t wake_err = bsp_display_exit_sleep();
-    if (wake_err != ESP_OK) {
-        ESP_LOGE(TAG, "display sleep-out failed: %s", esp_err_to_name(wake_err));
-    }
-
-    s_screen_off = false;
-    s_last_activity_us = esp_timer_get_time();
-
     lv_display_t *disp = lv_display_get_default();
     lv_indev_t *indev = bsp_display_get_input_dev();
-    if (ui_lock()) {
-        if (disp != NULL) {
-            lv_display_enable_invalidation(disp, true);
+
+    /* Wake the panel (SLPOUT, >=120 ms settle, backlight) OUTSIDE the LVGL
+     * lock, mirroring screen_off_run(): holding the lock across the wake
+     * transition blocked taskLVGL for the whole sequence. While the screen
+     * is off, invalidation is disabled, so nothing new renders during the
+     * wake and any residual flush degrades to an unsynchronized write. */
+    const esp_err_t wake_err = bsp_display_exit_sleep_panel();
+    if (wake_err != ESP_OK) {
+        ESP_LOGE(TAG, "display sleep-out failed: %s", esp_err_to_name(wake_err));
+        /* Bounded auto-retry from the power task (no locks held here):
+         * the panel may miss one SLPOUT right after a hot plug. After
+         * POWER_WAKE_RETRY_MAX attempts give up and wait for the next
+         * user event; s_screen_off stays set either way. */
+        if (s_wake_retry_count < POWER_WAKE_RETRY_MAX) {
+            ++s_wake_retry_count;
+            s_wake_retry_due_us =
+                esp_timer_get_time() + POWER_WAKE_RETRY_MS * INT64_C(1000);
+            ESP_LOGW(TAG, "wake retry %d/%d scheduled",
+                     s_wake_retry_count, POWER_WAKE_RETRY_MAX);
+        } else {
+            s_wake_retry_count = 0;
+            s_wake_retry_due_us = 0;
+            ESP_LOGE(TAG, "wake retries exhausted, waiting for user event");
         }
-        if (indev != NULL) {
-            lv_indev_enable(indev, true);
-        }
-        lv_obj_invalidate(lv_screen_active()); /* full redraw on next cycle */
-        ui_unlock();
+        return;
     }
+
+    if (!ui_lock()) {
+        ESP_LOGW(TAG, "screen on skipped: LVGL lock unavailable");
+        return;
+    }
+    if (disp != NULL) {
+        lv_display_enable_invalidation(disp, true);
+    }
+    /* Zero touch activity on wake: the CST820 stayed powered and the touch
+     * which woke the panel may still be latched in LVGL's indev state. */
+    if (indev != NULL) {
+        lv_indev_wait_release(indev);
+        lv_indev_enable(indev, true);
+    }
+    lv_obj_invalidate(lv_screen_active()); /* full redraw on next cycle */
+    ui_unlock();
+
+    s_screen_off = false;
+    s_wake_retry_count = 0;
+    s_wake_retry_due_us = 0;
+    s_last_activity_us = esp_timer_get_time();
     ESP_LOGI(TAG, "screen on");
     svc_power_status_t snapshot;
     svc_power_get_status(&snapshot);
@@ -226,6 +278,437 @@ bool svc_power_is_screen_off(void)
     return s_screen_off;
 }
 
+esp_err_t svc_power_set_external_source_verified(bool verified)
+{
+    if (!s_started) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const uint32_t cmd = verified ? CMD_SOURCE_VERIFIED : CMD_SOURCE_UNSAFE;
+    return xQueueSend(s_cmd_queue, &cmd, 0) == pdTRUE ? ESP_OK : ESP_FAIL;
+}
+
+/* ------------------------------------------------------------------ */
+/* Charge controller (service task, 2 s cadence)                       */
+/* ------------------------------------------------------------------ */
+
+/* Exact REG62 steps. The controller writes a verified ceiling; the actual
+ * charge current is decided by the TG28 power path and may be lower at any
+ * time (VINDPM back-off), so nothing here may be reported as a measured
+ * current. The 500 mA ceiling is pending cell/connector thermal sign-off;
+ * there is no cell-temperature loop (fixed TS divider, no NTC). */
+static const uint16_t k_charge_targets[] = {50, 100, 200, 300, 400, 500};
+#define CHARGE_TARGET_COUNT       (sizeof(k_charge_targets) / sizeof(k_charge_targets[0]))
+/* Timestamps (esp_timer_get_time, monotonic us) rather than poll counters:
+ * exactly one full 2 s settle at 50 mA after a battery is first seen in
+ * the VBUS session, then the first rise; every later rise is exactly 4 s
+ * after the previous successful one. */
+#define CHARGE_SETTLE_US          (2 * 1000000LL)
+#define CHARGE_STEP_US            (4 * 1000000LL)
+#define CHARGE_VBAT_MIN_MV        3000
+#define CHARGE_VBAT_HEADROOM_MV   50
+#define CHARGE_VBAT_ABS_MAX_MV    4450
+#define CHARGE_VBUS_MARGIN_MV     320
+#define CHARGE_MAX_DROOPS         2
+#define CHARGE_MAX_PMIC_FAILS     3
+
+typedef struct {
+    svc_power_charge_phase_t phase;
+    int idx;            /* index into k_charge_targets */
+    int target_ma;      /* last readback-verified REG62 value */
+    int64_t settle_start_us; /* first poll with a battery present; 0 = none */
+    int64_t last_change_us; /* last verified target write */
+    int droops;         /* VBUS droop events this session */
+    int pmic_fails;     /* consecutive failed controller polls */
+    uint16_t vbus_mv;   /* latest gate VBUS ADC sample (evidence) */
+    uint16_t vindpm_mv; /* configured values, read once per session */
+    uint16_t vchg_mv;
+    bool limits_loaded;
+    /* Per-session external-source confirmation (user action only); false
+     * at boot, on unplug and on memset - never persisted. Gates only the
+     * REG62 charge ceiling (200 safe / 500 confirmed); REG16 is a fixed
+     * relaxed 2000 mA board default and is never switched by this. */
+    bool source_verified;
+    /* FAULT only: false from the moment collapse begins, true only after
+     * a dedicated set-50 + get-50 exact verification succeeded. The
+     * cached target/idx cannot decide this - a set whose readback I2C
+     * failed may have reached the hardware while the software still
+     * records the old value. */
+    bool fault_park_verified;
+} charge_state_t;
+
+static charge_state_t s_chg;
+
+/* PC-safe default: without a per-session user confirmation the ramp stops
+ * at 200 mA - risk reduction for computer debugging, NOT a hard
+ * total-input guarantee: REG16 stays at the relaxed 2000 mA default and
+ * the TG28 hardware backs the charge current off under VINDPM/input
+ * limit while the system load keeps priority. Firmware cannot classify a
+ * PC port vs a charger on C1 - the confirmation is mandatory and never
+ * assumed. */
+#define CHARGE_SAFE_CEILING_MA 200
+
+static int charge_ceiling_idx(void)
+{
+    if (s_chg.source_verified) {
+        return (int)CHARGE_TARGET_COUNT - 1;
+    }
+    for (int i = 0; i < (int)CHARGE_TARGET_COUNT; ++i) {
+        if (k_charge_targets[i] >= CHARGE_SAFE_CEILING_MA) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+/* Power-task handler for the public source-verification control. It only
+ * gates the REG62 charge ceiling (200 safe / 500 confirmed); REG16 is a
+ * fixed relaxed 2000 mA board default and is never switched here.
+ *
+ * enable:  publish the confirmed ceiling; RAMP resumes the gated 4 s
+ *          steps up to 500 while VBUS/battery/gates allow. Ignored in
+ *          FAULT (the PMIC is already misbehaving).
+ * disable: latch the reobservation state BEFORE the park attempt (same
+ *          ordering as battery removal) and drive the verified target to
+ * <= 200; TRICKLE owns retries and never rises above 200. */
+static bool charge_write_target(int idx);
+
+static void source_verified_command(bool enable)
+{
+    if (enable) {
+        if (s_chg.phase == SVC_POWER_CHARGE_FAULT) {
+            ESP_LOGW(TAG, "source verify ignored in FAULT");
+            return;
+        }
+        if (!s_chg.source_verified) {
+            s_chg.source_verified = true;
+            ESP_LOGI(TAG, "external source confirmed: charge ceiling %d mA "
+                     "(input limit stays %d mA)",
+                     (int)k_charge_targets[charge_ceiling_idx()],
+                     (int)BSP_PMIC_SAFE_INPUT_CURRENT_LIMIT_MA);
+        }
+        return;
+    }
+    s_chg.source_verified = false;
+    if (s_chg.phase == SVC_POWER_CHARGE_RAMP ||
+            s_chg.phase == SVC_POWER_CHARGE_HOLD) {
+        s_chg.phase = SVC_POWER_CHARGE_TRICKLE;
+        s_chg.settle_start_us = 0;
+        if (s_chg.idx > charge_ceiling_idx()) {
+            (void)charge_write_target(charge_ceiling_idx());
+        }
+    }
+    ESP_LOGI(TAG, "PC-safe charge ceiling %d mA (risk reduction; input "
+             "limit stays %d mA)",
+             CHARGE_SAFE_CEILING_MA,
+             (int)BSP_PMIC_SAFE_INPUT_CURRENT_LIMIT_MA);
+}
+
+static void charge_collapse(const char *reason);
+
+/* One sticky flag per controller poll: a logical operation that failed in
+ * whole or in part (set+get+readback mismatch, limit load, VBUS ADC).
+ * Sub-transaction successes never clear it - only a poll in which every
+ * attempted operation completed cleanly resets the failure streak, so
+ * three genuinely failed polls in a row reach the collapse threshold. */
+static bool s_chg_op_failed;
+
+static void charge_account_poll(void)
+{
+    if (s_chg_op_failed) {
+        if (++s_chg.pmic_fails >= CHARGE_MAX_PMIC_FAILS) {
+            charge_collapse("repeated controller PMIC failures");
+        }
+    } else {
+        s_chg.pmic_fails = 0;
+    }
+}
+
+static void charge_collapse(const char *reason)
+{
+    if (s_chg.phase == SVC_POWER_CHARGE_FAULT) {
+        return;
+    }
+    ESP_LOGW(TAG, "charge controller collapsed to %d mA: %s "
+             "(droops=%d fails=%d)",
+             (int)k_charge_targets[0], reason, s_chg.droops,
+             s_chg.pmic_fails);
+    /* The park below is best-effort; until a dedicated set-50 + get-50
+     * verification succeeds (here or in a later FAULT poll), the FAULT
+     * state must keep retrying regardless of any cached target value. */
+    s_chg.fault_park_verified = false;
+    uint16_t parked = 0;
+    if (bsp_pmic_set_charge_current(k_charge_targets[0]) == ESP_OK &&
+            bsp_pmic_get_charge_current(&parked) == ESP_OK &&
+            parked == k_charge_targets[0]) {
+        s_chg.idx = 0;
+        s_chg.target_ma = parked;
+        s_chg.fault_park_verified = true;
+    }
+    s_chg.phase = SVC_POWER_CHARGE_FAULT;
+}
+
+static bool charge_write_target(int idx)
+{
+    const uint16_t target = k_charge_targets[idx];
+    uint16_t readback = 0;
+    if (bsp_pmic_set_charge_current(target) != ESP_OK ||
+            bsp_pmic_get_charge_current(&readback) != ESP_OK) {
+        s_chg_op_failed = true;
+        return false;
+    }
+    if (readback != target) {
+        ESP_LOGE(TAG, "charge target readback %u mA != %u mA",
+                 readback, target);
+        s_chg_op_failed = true;
+        return false;
+    }
+    s_chg.idx = idx;
+    s_chg.target_ma = target;
+    s_chg.last_change_us = esp_timer_get_time();
+    return true;
+}
+
+/* Evidence gates. All must hold before any rise and continuously while
+ * raised. *droop distinguishes "source cannot keep up" (the only failure
+ * that counts toward the droop-collapse budget) from the others.
+ * Configured VINDPM and charge voltage are read from the PMIC, never
+ * assumed from POR. */
+static bool charge_gates(const bsp_pmic_status_t *pmic, bool *droop)
+{
+    *droop = false;
+    if (!pmic->vbus_present || !pmic->battery_present) {
+        return false;
+    }
+    if (!pmic->charging && !pmic->charge_done) {
+        return false;
+    }
+    if (pmic->battery_mv < CHARGE_VBAT_MIN_MV) {
+        return false;
+    }
+    const int vbat_cap = s_chg.vchg_mv + CHARGE_VBAT_HEADROOM_MV;
+    if (pmic->battery_mv > (vbat_cap < CHARGE_VBAT_ABS_MAX_MV ?
+                            vbat_cap : CHARGE_VBAT_ABS_MAX_MV)) {
+        return false;
+    }
+    uint16_t vbus_mv = 0;
+    if (bsp_pmic_read_adc_mv(BSP_PMIC_ADC_VBUS, &vbus_mv) != ESP_OK) {
+        s_chg_op_failed = true;
+        return false;
+    }
+    s_chg.vbus_mv = vbus_mv; /* keep the latest sample as rise evidence */
+    if (vbus_mv < (uint16_t)(s_chg.vindpm_mv + CHARGE_VBUS_MARGIN_MV)) {
+        *droop = true;
+        return false;
+    }
+    return true;
+}
+
+static void charge_load_limits(void)
+{
+    if (s_chg.limits_loaded) {
+        return;
+    }
+    /* One logical operation: both configured values or neither counts. */
+    uint16_t vindpm = 0;
+    uint16_t vchg = 0;
+    if (bsp_pmic_get_vindpm(&vindpm) == ESP_OK &&
+            bsp_pmic_get_charge_voltage(&vchg) == ESP_OK) {
+        s_chg.vindpm_mv = vindpm;
+        s_chg.vchg_mv = vchg;
+        s_chg.limits_loaded = true;
+        ESP_LOGI(TAG, "charge limits: VINDPM %u mV, Vchg %u mV",
+                 s_chg.vindpm_mv, s_chg.vchg_mv);
+    } else {
+        s_chg_op_failed = true;
+    }
+}
+
+static void charge_step_down(const bsp_pmic_status_t *pmic, bool droop)
+{
+    if (droop && ++s_chg.droops >= CHARGE_MAX_DROOPS) {
+        charge_collapse("repeated VBUS droop");
+        return;
+    }
+    if (s_chg.idx > 0) {
+        if (charge_write_target(s_chg.idx - 1)) {
+            ESP_LOGI(TAG, "charge stepped down to %d mA (droop=%d "
+                     "fails=%d VBAT=%u mV VBUS=%u mV)",
+                     s_chg.target_ma, droop, s_chg.pmic_fails,
+                     pmic->battery_mv, s_chg.vbus_mv);
+        }
+    }
+    /* Already at 50 mA: nothing to lower; the TG28 handles termination. */
+}
+
+/* Battery gone while a raised target may be active: latch the fresh-
+ * observation state (TRICKLE + cleared settle) BEFORE attempting the
+ * verified 50 mA park, so even a failed park write can never leave a
+ * reinserted cell resuming in RAMP/HOLD against an unverified register;
+ * TRICKLE's retry path then owns the 50 mA restoration on later polls.
+ * Used by RAMP and HOLD alike. */
+static void charge_park_and_reobserve(void)
+{
+    s_chg.phase = SVC_POWER_CHARGE_TRICKLE;
+    s_chg.settle_start_us = 0;
+    (void)charge_write_target(0);
+}
+
+static void charge_session_start(void)
+{
+    memset(&s_chg, 0, sizeof(s_chg));
+    s_chg.phase = SVC_POWER_CHARGE_TRICKLE;
+    /* Start/restore the safe 50 mA ceiling; the BSP already forced it at
+     * boot, this also covers a session started while that write was still
+     * failing. Verified write; retried by the TRICKLE state on failure.
+     * The charge-ceiling confirmation is per-session: memset leaves it
+     * unconfirmed, so an unknown/PC source ramps 50->100->200 only. */
+    if (charge_write_target(0)) {
+        ESP_LOGI(TAG, "VBUS session: charge starts at %d mA", s_chg.target_ma);
+    }
+}
+
+static void charge_unplug(void)
+{
+    /* End of session: park the charge target at 50 mA best-effort (logged
+     * on failure) so a raised ceiling does not survive into the next
+     * session; REG16 is a fixed 2000 mA board default and is untouched
+     * here. The per-session charge-ceiling confirmation dies with the
+     * memset either way. */
+    uint16_t parked = 0;
+    if (bsp_pmic_set_charge_current(k_charge_targets[0]) == ESP_OK &&
+            bsp_pmic_get_charge_current(&parked) == ESP_OK &&
+            parked == k_charge_targets[0]) {
+        s_chg.target_ma = parked;
+    } else {
+        ESP_LOGW(TAG, "failed to park charge target at %d mA on unplug",
+                 (int)k_charge_targets[0]);
+    }
+    memset(&s_chg, 0, sizeof(s_chg));
+    s_chg.phase = SVC_POWER_CHARGE_IDLE;
+}
+
+static void charge_tick(const bsp_pmic_status_t *pmic)
+{
+    const int64_t now = esp_timer_get_time();
+    bool droop = false;
+    switch (s_chg.phase) {
+    case SVC_POWER_CHARGE_IDLE:
+        break;
+    case SVC_POWER_CHARGE_TRICKLE:
+        charge_load_limits();
+        if (s_chg.target_ma != k_charge_targets[0]) {
+            /* The session-start write failed; retry once per poll. When
+             * this poll already logged a failed logical attempt (the
+             * session-start write itself), do not immediately retry
+             * again - one logical attempt per 2 s poll, next poll
+             * retries. */
+            if (!s_chg_op_failed) {
+                charge_write_target(0);
+            }
+            break;
+        }
+        if (!pmic->battery_present) {
+            /* No cell: the 2 s observation window starts when one is
+             * first seen, not at the VBUS edge - and restarts after
+             * every removal. */
+            s_chg.settle_start_us = 0;
+            break;
+        }
+        if (s_chg.settle_start_us == 0) {
+            s_chg.settle_start_us = now;
+            break; /* first poll with a battery: begin the observation */
+        }
+        if (now - s_chg.settle_start_us < CHARGE_SETTLE_US) {
+            break; /* exactly one full 2 s settle at 50 mA */
+        }
+        if (!s_chg.limits_loaded) {
+            break; /* no rise judgment before the configured limits are in */
+        }
+        if (pmic->charge_done) {
+            s_chg.phase = SVC_POWER_CHARGE_HOLD;
+            break;
+        }
+        if (!charge_gates(pmic, &droop)) {
+            break;
+        }
+        /* Settle complete with all gates green: the first rise happens
+         * now (audit contract S0 -> S1), ~2 s after the battery was
+         * first observed. */
+        if (s_chg.idx >= charge_ceiling_idx()) {
+            s_chg.phase = SVC_POWER_CHARGE_HOLD;
+            break;
+        }
+        if (charge_write_target(s_chg.idx + 1)) {
+            ESP_LOGI(TAG, "charge rise to %d mA verified "
+                     "(VBUS=%u mV VBAT=%u mV charging=%d done=%d)",
+                     s_chg.target_ma, s_chg.vbus_mv, pmic->battery_mv,
+                     pmic->charging, pmic->charge_done);
+            s_chg.phase = SVC_POWER_CHARGE_RAMP;
+        }
+        break;
+    case SVC_POWER_CHARGE_RAMP:
+        if (!pmic->battery_present) {
+            /* Cell removal is checked FIRST - before charge_done - so a
+             * stale done flag in the same snapshot cannot delay the
+             * verified 50 mA park by one poll. Parking is immediate and
+             * demands a fresh settle for the next cell (mirror of HOLD). */
+            charge_park_and_reobserve();
+            break;
+        }
+        if (pmic->charge_done) {
+            s_chg.phase = SVC_POWER_CHARGE_HOLD;
+            break;
+        }
+        if (!charge_gates(pmic, &droop)) {
+            charge_step_down(pmic, droop);
+            break;
+        }
+        if (now - s_chg.last_change_us < CHARGE_STEP_US) {
+            break; /* exactly 4 s between successful target writes */
+        }
+        if (s_chg.idx >= charge_ceiling_idx()) {
+            s_chg.phase = SVC_POWER_CHARGE_HOLD;
+            ESP_LOGI(TAG, "charge target at %d mA ceiling", s_chg.target_ma);
+            break;
+        }
+        if (charge_write_target(s_chg.idx + 1)) {
+            ESP_LOGI(TAG, "charge rise to %d mA verified "
+                     "(VBUS=%u mV VBAT=%u mV charging=%d done=%d)",
+                     s_chg.target_ma, s_chg.vbus_mv, pmic->battery_mv,
+                     pmic->charging, pmic->charge_done);
+        }
+        break;
+    case SVC_POWER_CHARGE_HOLD:
+        if (!pmic->battery_present) {
+            charge_park_and_reobserve();
+            break;
+        }
+        if (!charge_gates(pmic, &droop)) {
+            /* Continuous gates while raised: ANY failure (battery/charge
+             * state, VBAT sanity, source droop) steps the ceiling down
+             * toward 50 mA; only a droop consumes the collapse budget.
+             * An elevated target is never retained through a gate
+             * failure. */
+            charge_step_down(pmic, droop);
+        }
+        break;
+    case SVC_POWER_CHARGE_FAULT:
+        /* Latched until unplug, but the 50 mA park must actually verify:
+         * the cached target/idx cannot prove the hardware state (a set
+         * whose readback failed may still have reached REG62), so retry
+         * a dedicated set-50 + get-50 verification once per 2 s poll
+         * until it succeeds. */
+        if (!s_chg.fault_park_verified && charge_write_target(0)) {
+            s_chg.fault_park_verified = true;
+            ESP_LOGI(TAG, "FAULT park verified at %d mA", s_chg.target_ma);
+        }
+        break;
+    default:
+        break;
+    }
+    charge_account_poll();
+}
+
 /* ------------------------------------------------------------------ */
 /* PMIC polling and charge edges                                       */
 /* ------------------------------------------------------------------ */
@@ -234,6 +717,10 @@ static void pmic_poll(void)
 {
     bsp_pmic_status_t pmic = {0};
     if (bsp_pmic_get_status(&pmic) != ESP_OK) {
+        if (s_chg.phase != SVC_POWER_CHARGE_IDLE) {
+            s_chg_op_failed = true;
+            charge_account_poll();
+        }
         return;
     }
 
@@ -241,11 +728,35 @@ static void pmic_poll(void)
     portENTER_CRITICAL(&s_status_lock);
     prev = s_status;
     s_status.battery_mv = pmic.battery_mv;
-    s_status.percent = pmic.battery_present ? pmic.battery_percent : -1;
+    s_status.percent = (pmic.battery_present && pmic.fuel_gauge_valid) ?
+                       pmic.battery_percent : -1;
     s_status.present = pmic.battery_present;
     s_status.vbus = pmic.vbus_present;
     s_status.charging = pmic.charging;
     s_status.charge_done = pmic.charge_done;
+    s_status.fuel_gauge_valid = pmic.fuel_gauge_valid;
+    s_status.fuel_gauge_reference_model = pmic.fuel_gauge_reference_model;
+    portEXIT_CRITICAL(&s_status_lock);
+
+    /* One failure-accounting epoch per poll: sticky through all controller
+     * operations below, counted once by charge_tick's tail. */
+    s_chg_op_failed = false;
+
+    /* Charge-controller session edges run before the tick so a fresh
+     * session always begins with the verified 50 mA write. */
+    if (!prev.vbus && pmic.vbus_present) {
+        charge_session_start();
+    } else if (prev.vbus && !pmic.vbus_present) {
+        charge_unplug();
+    }
+    charge_tick(&pmic);
+
+    portENTER_CRITICAL(&s_status_lock);
+    s_status.charge_target_ma =
+        s_chg.phase == SVC_POWER_CHARGE_IDLE ? 0 : s_chg.target_ma;
+    s_status.charge_phase = s_chg.phase;
+    s_status.source_verified = s_chg.source_verified;
+    s_status.charge_ceiling_ma = k_charge_targets[charge_ceiling_idx()];
     svc_power_status_t cur = s_status;
     portEXIT_CRITICAL(&s_status_lock);
 
@@ -268,6 +779,10 @@ static void power_task(void *arg)
 {
     (void)arg;
     int pmic_ticks = 0;
+    /* First poll immediately: no blind 2 s window before the board state
+     * is observed, so a VBUS session already present at boot reaches
+     * charge_session_start() right away. */
+    pmic_poll();
     for (;;) {
         uint32_t cmd;
         while (xQueueReceive(s_cmd_queue, &cmd, 0) == pdTRUE) {
@@ -275,13 +790,26 @@ static void power_task(void *arg)
                 screen_off_run();
             } else if (cmd == CMD_SCREEN_ON) {
                 screen_on_run();
+            } else if (cmd == CMD_SOURCE_VERIFIED) {
+                source_verified_command(true);
+            } else if (cmd == CMD_SOURCE_UNSAFE) {
+                source_verified_command(false);
             }
         }
 
+        if (s_screen_off && s_wake_retry_due_us != 0 &&
+                esp_timer_get_time() >= s_wake_retry_due_us) {
+            s_wake_retry_due_us = 0;
+            screen_on_run();
+        }
+
         if (s_screen_off) {
-            /* CST820 monitor mode pulses INT low on touch. Require two
-             * consecutive low samples so a residual pulse right after
-             * sleep-in cannot bounce the screen straight back on. */
+            /* The CST820 keeps scanning (auto-standby) while the panel is
+             * off. Nobody reads its I2C report registers in this state, so
+             * a touch asserts INT and - per the datasheet contract - the
+             * line stays low until the report is fetched. Two consecutive
+             * low samples at the 50 ms tick (>=50-100 ms held) still gate
+             * out a residual edge from the sleep-in transition itself. */
             if (gpio_get_level(BSP_TOUCH_INT) == 0) {
                 if (s_touch_wake_confirm) {
                     s_touch_wake_confirm = false;
@@ -317,22 +845,33 @@ static void power_task(void *arg)
 /* ------------------------------------------------------------------ */
 
 /* Application protocol teardown registered with the BSP safe-state chain.
- * svc_power itself owns no protocol owner; unmount the TF card best-effort
- * so the FAT is left clean while the supply is still present. Display,
+ * Close the storage lease gate and require a clean unmount while the supply
+ * is still present. Display,
  * audio and network owners are handled by the BSP-level rail/pin parking
  * (a richer app callback can be layered on later without changing this
  * registration). */
 static esp_err_t power_safe_shutdown_cb(void *ctx)
 {
     (void)ctx;
-    if (svc_storage_mounted()) {
-        const esp_err_t err = bsp_sdcard_unmount();
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "safe-state TF unmount failed: %s", esp_err_to_name(err));
-            return err;
-        }
+    return svc_storage_quiesce_and_unmount();
+}
+
+/* BSP safe-state continues parking pins and cutting rails even when its
+ * application callback fails. Therefore all refusal-capable application
+ * work must complete before entering BSP safe-state; the callback above is
+ * only an idempotent last line of defence. */
+static esp_err_t power_safe_state_preflight(void)
+{
+    if (svc_audio_is_recording() || svc_audio_is_playing()) {
+        ESP_LOGW(TAG, "power transition refused while audio is active");
+        return ESP_ERR_INVALID_STATE;
     }
-    return ESP_OK;
+
+    const esp_err_t err = svc_storage_quiesce_and_unmount();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "storage quiesce failed: %s", esp_err_to_name(err));
+    }
+    return err;
 }
 
 /* ------------------------------------------------------------------ */
@@ -441,17 +980,36 @@ static esp_err_t arm_rtc_wakeup_alarm(int wake_minutes)
 
 /* Restore panel + refresh state when a deep-sleep attempt is refused
  * after the panel was already parked at entry. */
-static void deep_sleep_abort_restore(void)
+static void deep_sleep_abort_restore(bool panel_parked)
 {
-    lv_display_t *disp = lv_display_get_default();
-    if (ui_lock()) {
-        if (disp != NULL) {
-            lv_display_enable_invalidation(disp, true);
-        }
-        lv_obj_invalidate(lv_screen_active());
-        ui_unlock();
+    if (!panel_parked) {
+        return;
     }
-    (void)bsp_display_exit_sleep();
+
+    lv_display_t *disp = lv_display_get_default();
+    /* Panel wake (SLPOUT, >=120 ms settle, backlight) runs OUTSIDE the
+     * LVGL lock: it is pure hardware, and invalidation is still disabled
+     * from the park step, so nothing renders during the wake. */
+    const esp_err_t wake_err = bsp_display_exit_sleep_panel();
+    if (wake_err != ESP_OK) {
+        ESP_LOGE(TAG, "deep-sleep abort display restore failed: %s",
+                 esp_err_to_name(wake_err));
+        return;
+    }
+    if (!ui_lock()) {
+        ESP_LOGE(TAG, "deep-sleep abort restore skipped: LVGL lock unavailable");
+        return;
+    }
+    if (disp != NULL) {
+        lv_display_enable_invalidation(disp, true);
+    }
+    lv_indev_t *indev = bsp_display_get_input_dev();
+    if (indev != NULL) {
+        lv_indev_wait_release(indev);
+        lv_indev_enable(indev, true);
+    }
+    lv_obj_invalidate(lv_screen_active());
+    ui_unlock();
 }
 
 esp_err_t svc_power_deep_sleep(int wake_after_min)
@@ -463,19 +1021,47 @@ esp_err_t svc_power_deep_sleep(int wake_after_min)
     /* Park the panel cleanly while its rails are still up (skip when the
      * screen is already off). Refresh is stopped so LVGL does not queue
      * new frames during the transition. */
+    bool panel_parked = false;
     if (!s_screen_off) {
         lv_display_t *disp = lv_display_get_default();
-        if (ui_lock()) {
-            if (disp != NULL) {
-                lv_display_enable_invalidation(disp, false);
-            }
-            ui_unlock();
+        lv_indev_t *indev = bsp_display_get_input_dev();
+        if (!ui_lock()) {
+            return ESP_ERR_TIMEOUT;
         }
-        const esp_err_t sleep_err = bsp_display_enter_sleep();
+        if (disp != NULL) {
+            lv_display_enable_invalidation(disp, false);
+        }
+        if (indev != NULL) {
+            lv_indev_enable(indev, false);
+        }
+        ui_unlock();
+
+        /* Keep the touch controller powered until the final safe-state
+         * sequence. This makes an aborted deep-sleep attempt recoverable
+         * without a CST820 reset or a stale LVGL touch state. */
+        /* Panel parking runs OUTSIDE the LVGL lock, same as
+         * screen_off_run(): invalidation is already disabled above, so
+         * nothing renders while the panel sleeps. */
+        const esp_err_t sleep_err = bsp_display_enter_sleep_panel();
         if (sleep_err != ESP_OK) {
-            ESP_LOGW(TAG, "display sleep-in before deep sleep failed: %s",
+            ESP_LOGE(TAG, "display sleep-in before deep sleep failed: %s",
                      esp_err_to_name(sleep_err));
+            if (ui_lock()) {
+                if (disp != NULL) {
+                    lv_display_enable_invalidation(disp, true);
+                }
+                if (indev != NULL) {
+                    lv_indev_wait_release(indev);
+                    lv_indev_enable(indev, true);
+                }
+                ui_unlock();
+            } else {
+                ESP_LOGE(TAG,
+                         "deep-sleep abort rollback skipped: LVGL lock unavailable");
+            }
+            return sleep_err;
         }
+        panel_parked = true;
     }
 
     /* Drain the shared line first so no stale edge is captured by EXT1. */
@@ -488,7 +1074,7 @@ esp_err_t svc_power_deep_sleep(int wake_after_min)
     }
     if (!irq.line_released) {
         ESP_LOGE(TAG, "shared IRQ line busy, deep sleep refused");
-        deep_sleep_abort_restore();
+        deep_sleep_abort_restore(panel_parked);
         return ESP_ERR_TIMEOUT;
     }
 
@@ -497,7 +1083,7 @@ esp_err_t svc_power_deep_sleep(int wake_after_min)
         const esp_err_t alarm_err = arm_rtc_wakeup_alarm(wake_after_min);
         if (alarm_err != ESP_OK) {
             ESP_LOGE(TAG, "RTC alarm arm failed: %s", esp_err_to_name(alarm_err));
-            deep_sleep_abort_restore();
+            deep_sleep_abort_restore(panel_parked);
             return alarm_err;
         }
         alarm_armed = true;
@@ -527,17 +1113,39 @@ esp_err_t svc_power_deep_sleep(int wake_after_min)
         if (!alarm_armed) {
             /* No wake source would remain armed: deep sleep would be
              * permanent. Refuse it. */
-            deep_sleep_abort_restore();
+            deep_sleep_abort_restore(panel_parked);
             return ESP_ERR_INVALID_STATE;
         }
     }
 
-    /* Peripheral power-down: registered safe-shutdown callback, USB host
-     * stop, pin parking and rail removal. */
+    /* Refusal-capable teardown must finish before BSP safe-state, because
+     * the BSP deliberately continues rail removal after callback errors. */
+    const esp_err_t preflight_err = power_safe_state_preflight();
+    if (preflight_err != ESP_OK) {
+        if (alarm_armed) {
+            (void)bsp_rtc_alarm_irq_enable(false);
+        }
+        deep_sleep_abort_restore(panel_parked);
+        return preflight_err;
+    }
+
+    /* Peripheral power-down: idempotent registered shutdown callback, USB
+     * host stop, pin parking and rail removal. */
     const esp_err_t safe_err = bsp_power_safe_state();
     if (safe_err != ESP_OK) {
-        ESP_LOGW(TAG, "safe-state reported: %s (continuing to sleep)",
+        /* bsp_power_safe_state() keeps tearing rails/parking pins after a
+         * failed step, so the board is in a partially-unpowered state with
+         * unknown contents: the audio codec/I2S rails may already be down
+         * while the service still holds persistent codec handles, and any
+         * rail may follow. Resuming the UI here would run on top of that.
+         * The only system-wide-safe continuation is a fresh boot. */
+        ESP_LOGE(TAG, "safe-state failed (%s) after teardown began: restarting",
                  esp_err_to_name(safe_err));
+        if (alarm_armed) {
+            (void)bsp_rtc_alarm_irq_enable(false);
+        }
+        vTaskDelay(pdMS_TO_TICKS(50)); /* let the log drain */
+        esp_restart();
     }
 
     ESP_LOGW(TAG, "entering deep sleep (wake: %s)",
@@ -561,17 +1169,35 @@ esp_err_t svc_power_shutdown(void)
      * reboots the board instead of cutting power, so refuse BEFORE the
      * safe-state chain drops any rail (the system keeps running). */
     bsp_pmic_status_t pmic = {0};
-    if (bsp_pmic_get_status(&pmic) == ESP_OK && pmic.vbus_present) {
+    const esp_err_t pmic_err = bsp_pmic_get_status(&pmic);
+    if (pmic_err != ESP_OK) {
+        ESP_LOGE(TAG, "cannot verify VBUS state: %s", esp_err_to_name(pmic_err));
+        return pmic_err;
+    }
+    if (pmic.vbus_present) {
         ESP_LOGW(TAG, "VBUS present: power-off refused, unplug USB first");
         return ESP_ERR_INVALID_STATE;
     }
 
-    /* Safe-shutdown chain: the registered application callback, then BSP
-     * pin parking and rail removal. */
+    /* Refusal-capable teardown must finish before BSP safe-state, because
+     * that function may already have removed rails when reporting an error. */
+    const esp_err_t preflight_err = power_safe_state_preflight();
+    if (preflight_err != ESP_OK) {
+        return preflight_err;
+    }
+
+    /* Safe-shutdown chain: idempotent application callback, then BSP pin
+     * parking and rail removal. */
     const esp_err_t safe_err = bsp_power_safe_state();
     if (safe_err != ESP_OK) {
-        ESP_LOGE(TAG, "safe-state failed: %s (continuing, rails may be partial)",
+        /* Same reasoning as deep sleep: safe-state tears rails even when
+         * it returns an error, so returning to the running UI would use
+         * stale peripheral state (including the persistent audio codec
+         * handles). A failed power-off attempt ends in a restart. */
+        ESP_LOGE(TAG, "safe-state failed (%s) after teardown began: restarting",
                  esp_err_to_name(safe_err));
+        vTaskDelay(pdMS_TO_TICKS(50)); /* let the log drain */
+        esp_restart();
     }
 
     return bsp_pmic_power_off();

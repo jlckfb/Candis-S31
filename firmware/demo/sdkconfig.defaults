@@ -41,30 +41,57 @@ CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
 CONFIG_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
 
-# Display: 48 MHz QSPI (CO5300 50 MHz write limit), TE sync, two 460x48
-# internal DMA buffers in LVGL PARTIAL mode. Whole-frame transfer needs
-# 17.6 ms > 16.67 ms TE period, so full-screen updates run at 30 fps and
-# local animations lock to the 60 Hz TE cadence. Keep dirty areas <= 430
-# lines for 60 fps content.
-#
-# Buffer height 48, not 80: QSPI DMA cannot read octal PSRAM, so the two
-# LVGL buffers must fit internal RAM alongside the WiFi driver and the BLE
-# controller pool. 2x460x80 (147 KB) left < 25 KB and esp_wifi_init plus
-# btdm_osal_elem_mempool_init both failed (2026-08-21); 2x460x48 (88 KB)
-# frees ~59 KB while keeping ~10 flushes per frame, invisible with TE sync.
+# Display: 48 MHz QSPI (CO5300 50 MHz write limit) with the panel TE edge
+# (GPIO16) gating every flush. Pipeline facts (esp_lvgl_adapter 0.5.x,
+# profile SPI_WITH_PSRAM_TE, verified in display_manager.c):
+#   - On SPI/QSPI (IF_OTHER) the adapter accepts only TEAR_AVOID_MODE NONE
+#     or TE_SYNC; TE_SYNC hard-maps to LVGL RENDER_MODE_FULL with ONE
+#     460x460 PSRAM draw buffer (423200 B), so any invalidate merges into a
+#     full-frame redraw paced by TE.
+#   - PARTIAL + TE double buffering does not exist on this interface:
+#     DOUBLE/TRIPLE_PARTIAL need panel frame buffers (RGB/MIPI only) and
+#     validate_tearing_mode() rejects them for IF_OTHER.
+#   - A full frame takes 423200 B x 8 / 48 MHz = 17.6 ms > 16.67 ms TE
+#     period, so full refresh tops out at ~30 fps; smoothness must come from
+#     keeping invalidations rare/local and from PPA-accelerated redraws.
+# CONFIG_BSP_LCD_DRAW_BUF_HEIGHT now only sizes the SPI max_transfer_sz
+# (460 x 48 x 2 = 44160 B internal DMA) for the QSPI bus; it no longer
+# selects an LVGL PARTIAL buffer. CONFIG_BSP_LCD_DRAW_BUF_DOUBLE has no
+# effect on the adapter path (kept so existing configs keep parsing).
+# Internal DMA budget: ~44 KB for the SPI transfer buffer only; WiFi, BLE
+# and I2S DMA pools keep the headroom verified on 2026-08-21.
 CONFIG_BSP_LCD_PIXEL_CLOCK_MHZ=48
 CONFIG_BSP_LCD_TE_SYNC=y
 CONFIG_LV_DEF_REFR_PERIOD=15
 CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=48
 CONFIG_BSP_LCD_DRAW_BUF_DOUBLE=y
 
-# Both RISC-V cores render in parallel; RGB565_SWAPPED makes LVGL write the
-# byte order the CO5300 consumes directly.
-CONFIG_LV_OS_FREERTOS=y
-CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
+# Rendering runs on the adapter's single SW draw unit; RGB565 byte order is
+# the CO5300 contract, handled by the panel driver + adapter flush.
+# Official adapter baseline: CLIB allocators, single SW draw unit (the
+# dual-unit dispatch path spun with zero progress on this board; the
+# adapter task serializes rendering).
+CONFIG_LV_USE_CLIB_MALLOC=y
+CONFIG_LV_USE_CLIB_STRING=y
+CONFIG_LV_USE_CLIB_SPRINTF=y
+CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=1
+# PPA acceleration route: the adapter's blend/fill handler
+# (enable_ppa_accel in the BSP display profile), NOT LVGL's native PPA draw
+# unit. CONFIG_LV_USE_PPA must stay disabled: lv_draw_ppa_private.h requires
+# CONFIG_LV_DRAW_BUF_ALIGN == CONFIG_CACHE_L2_CACHE_LINE_SIZE, and that
+# Kconfig symbol only exists on ESP32-P4 (ESP32-S31 has none), so the native
+# unit cannot compile here; LVGL's esp.cmake also links esp_driver_ppa only
+# for esp32p4. The adapter path is compile-clean on S31 (its CMake adds
+# esp_driver_ppa for esp32s31) and is mutually exclusive with the native
+# unit anyway. Keep exactly one SW draw unit: the adapter PPA path requires
+# LV_DRAW_SW_DRAW_UNIT_CNT == 1 (dual units spun with zero progress on this
+# board).
+CONFIG_LV_USE_PPA=n
+# Cache-line draw-buffer alignment (S31 dcache line = 64 B, factory-proven
+# value): keeps every LVGL draw/layer buffer aligned for the adapter's
+# esp_cache_msync writeback and for PPA/DMA transfers.
 CONFIG_LV_DRAW_BUF_ALIGN=64
-CONFIG_LV_DRAW_SW_SUPPORT_RGB565_SWAPPED=y
-
+CONFIG_LV_FONT_MONTSERRAT_16=y
 # 1 ms tick so the LVGL task paces refresh cycles against the 16.67 ms TE period.
 CONFIG_FREERTOS_HZ=1000
 CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
@@ -74,11 +101,9 @@ CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER=y
 # sized, too small for this app (factory stack-protection incident 2026-08-20).
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 
-# LVGL heap: the built-in allocator pool lives in internal RAM. 128 KB here
-# plus two 460x80 DMA buffers (147 KB) overran the internal heap at boot
-# (lvgl_port buf2 allocation failed, 2026-08-21 first flash). 64 KB is the
-# factory-validated size; the nav stack keeps only 1-2 app screens alive at a
-# time, so per-screen widget trees fit comfortably.
+# Keep LVGL allocations in a bounded private pool. Using libc malloc sends
+# the UI's many small allocations to internal RAM first and eventually
+# starves the I2S DMA allocator after navigating several screens.
 CONFIG_LV_MEM_SIZE_KILOBYTES=64
 
 # Fonts: Source Han Sans SC 16 CJK as the UI default (Simplified Chinese),
@@ -109,3 +134,13 @@ CONFIG_BT_CTRL_BLE_ADV_REPORT_FLOW_CTRL_NUM=50
 
 # WiFi stays at IDF defaults (enabled on this target); credentials persist in
 # the nvs partition.
+
+# USB Device (CDC) mode for the OTG app (G3): esp_tinyusb from
+# main/idf_component.yml, the single non-default knob is the CDC class
+# enable - everything else (DMA mode, ESP VID/default PID, 512 B
+# buffers, 4 KB task) stays at the values the board-validated
+# firmware/usb_cdc_device image used. The TinyUSB device task only
+# exists while the port is a Sink (uninstalled on every role change),
+# so its ~4 KB internal stack is a transient cost inside the DIRAM
+# headroom.
+CONFIG_TINYUSB_CDC_ENABLED=y

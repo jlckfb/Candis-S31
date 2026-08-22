@@ -10,9 +10,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stdatomic.h>
 #include <string.h>
 
 #include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
 #include "lvgl.h"
 
 #include "demo_apps.h"
@@ -21,6 +23,7 @@
 #include "ui/ui_manager.h"
 
 #define APP_MAX_APS 20
+#define WF_FALLBACK_POLL_MS 100
 
 typedef enum {
     WF_STATE_IDLE,
@@ -39,10 +42,15 @@ typedef struct {
     lv_obj_t *list;
     lv_obj_t *spinner;
     lv_obj_t *lbl_connecting;
+    lv_timer_t *fallback_timer;
+    uint32_t session;
+    uint32_t last_conn_seq;
     char ssid[33];      /* AP selected for connection */
     char ip[16];
     int ap_count;
     svc_wifi_ap_t aps[APP_MAX_APS];
+    char saved_ssid[33];   /* NVS credentials loaded at create */
+    char saved_pass[65];
 } wf_app_t;
 
 static wf_app_t s;
@@ -50,14 +58,70 @@ static wf_app_t s;
 /* ---------------- async payloads ---------------- */
 
 typedef struct {
+    uint32_t session;
     int count;                    /* -1 = scan failed */
     svc_wifi_ap_t aps[APP_MAX_APS];
 } wf_scan_result_t;
 
 typedef struct {
+    uint32_t session;
+    uint32_t seq;
     svc_wifi_event_t ev;
     char detail[48];
 } wf_conn_result_t;
+
+typedef enum {
+    WF_FALLBACK_NONE = 0,
+    WF_FALLBACK_SCAN_BUSY,
+    WF_FALLBACK_CONNECTED,
+    WF_FALLBACK_CONNECT_FAILED,
+    WF_FALLBACK_DISCONNECTED,
+} wf_fallback_event_t;
+
+static atomic_uint s_session_seq;
+static atomic_uint s_live_session;
+static atomic_uint s_conn_seq;
+static portMUX_TYPE s_fallback_lock = portMUX_INITIALIZER_UNLOCKED;
+static struct {
+    uint32_t session;
+    uint32_t seq;
+    wf_fallback_event_t event;
+} s_fallback;
+
+static bool wf_session_is_live(uint32_t session)
+{
+    return session != 0 &&
+           atomic_load_explicit(&s_live_session, memory_order_acquire) ==
+               session;
+}
+
+static void wf_fallback_post(uint32_t session, uint32_t seq,
+                             wf_fallback_event_t event)
+{
+    if (!wf_session_is_live(session)) {
+        return;
+    }
+    portENTER_CRITICAL(&s_fallback_lock);
+    if (wf_session_is_live(session)) {
+        s_fallback.session = session;
+        s_fallback.seq = seq;
+        s_fallback.event = event;
+    }
+    portEXIT_CRITICAL(&s_fallback_lock);
+}
+
+static wf_fallback_event_t wf_fallback_take(uint32_t *session, uint32_t *seq)
+{
+    portENTER_CRITICAL(&s_fallback_lock);
+    const wf_fallback_event_t event = s_fallback.event;
+    *session = s_fallback.session;
+    *seq = s_fallback.seq;
+    s_fallback.event = WF_FALLBACK_NONE;
+    s_fallback.session = 0;
+    s_fallback.seq = 0;
+    portEXIT_CRITICAL(&s_fallback_lock);
+    return event;
+}
 
 static void *wf_alloc(size_t size)
 {
@@ -102,15 +166,40 @@ static void wf_action_button(const char *text, bool visible)
     }
 }
 
+static void wf_row_clicked(lv_event_t *event);
+static void wf_saved_row_cb(lv_event_t *event);
+
 static void wf_rebuild_list(void)
 {
     if (s.list == NULL) {
         return;
     }
     lv_obj_clean(s.list);
+    /* Saved-network direct reconnect stays at the top of every scan
+     * result, so the one-tap path survives rescans. */
+    if (s.saved_ssid[0] != '\0') {
+        lv_obj_t *row = lv_button_create(s.list);
+        lv_obj_set_size(row, LV_PCT(100), 56);
+        lv_obj_set_style_bg_color(row, lv_color_hex(UI_COLOR_SURFACE), 0);
+        lv_obj_set_style_radius(row, 12, 0);
+        lv_obj_set_style_border_color(row, lv_color_hex(UI_COLOR_ACCENT), 0);
+        lv_obj_set_style_border_width(row, 1, 0);
+        lv_obj_add_event_cb(row, wf_saved_row_cb, LV_EVENT_CLICKED, NULL);
+
+        lv_obj_t *lbl = lv_label_create(row);
+        lv_label_set_text_fmt(lbl, "Saved: %s", s.saved_ssid);
+        lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(lbl, 300);
+        lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 12, 0);
+
+        lv_obj_t *go = lv_label_create(row);
+        lv_label_set_text(go, LV_SYMBOL_PLAY);
+        lv_obj_set_style_text_color(go, lv_color_hex(UI_COLOR_ACCENT), 0);
+        lv_obj_align(go, LV_ALIGN_RIGHT_MID, -12, 0);
+    }
     if (s.ap_count == 0) {
         lv_obj_t *empty = lv_label_create(s.list);
-        lv_label_set_text(empty, "未找到网络");
+        lv_label_set_text(empty, "No networks found");
         lv_obj_set_style_text_color(empty, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
         lv_obj_set_width(empty, LV_PCT(100));
         lv_obj_set_style_text_align(empty, LV_TEXT_ALIGN_CENTER, 0);
@@ -131,9 +220,10 @@ static void wf_rebuild_list(void)
         lv_obj_set_style_pad_left(row, 12, 0);
         lv_obj_set_style_pad_right(row, 12, 0);
         lv_obj_set_user_data(row, (void *)(intptr_t)i);
+        lv_obj_add_event_cb(row, wf_row_clicked, LV_EVENT_CLICKED, NULL);
 
         lv_obj_t *lbl_ssid = lv_label_create(row);
-        lv_label_set_text(lbl_ssid, ap->ssid[0] ? ap->ssid : "(隐藏)");
+        lv_label_set_text(lbl_ssid, ap->ssid[0] ? ap->ssid : "(hidden)");
         lv_label_set_long_mode(lbl_ssid, LV_LABEL_LONG_DOT);
         lv_obj_set_width(lbl_ssid, 200);
 
@@ -176,97 +266,194 @@ static void wf_rebuild_list(void)
 static void wf_apply_scan(void *arg)
 {
     wf_scan_result_t *res = arg;
-    if (s.active && s.state == WF_STATE_SCANNING) {
+    if (s.active && res->session == s.session &&
+            s.state == WF_STATE_SCANNING) {
         s.state = WF_STATE_IDLE;
         if (res->count < 0) {
-            wf_status_set("扫描失败", UI_COLOR_ERR);
+            wf_status_set("Scan failed", UI_COLOR_ERR);
         } else {
             s.ap_count = res->count;
             memcpy(s.aps, res->aps, sizeof(s.aps[0]) * res->count);
-            wf_status_set(res->count ? "选择网络" : "未找到网络",
+            wf_status_set(res->count ? "Select network" : "No networks found",
                           UI_COLOR_TEXT);
             wf_rebuild_list();
         }
         wf_spinner_show(false, NULL);
-        wf_action_button("扫描", true);
+        wf_action_button("Scan", true);
     }
     heap_caps_free(res);
 }
 
-static void wf_apply_conn(void *arg)
+static void wf_apply_conn_event(uint32_t seq, svc_wifi_event_t event,
+                                const char *detail)
 {
-    wf_conn_result_t *res = arg;
-    if (!s.active) {
-        heap_caps_free(res);
+    if (seq <= s.last_conn_seq) {
         return;
     }
-    switch (res->ev) {
+    s.last_conn_seq = seq;
+    switch (event) {
     case SVC_WIFI_EV_CONNECTED:
         s.state = WF_STATE_CONNECTED;
-        snprintf(s.ip, sizeof(s.ip), "%s", res->detail);
-        wf_spinner_show(false, NULL);
-        wf_status_set("已连接", UI_COLOR_OK);
-        if (s.lbl_status != NULL) {
-            lv_label_set_text_fmt(s.lbl_status, "已连接 IP %s", s.ip);
+        snprintf(s.ip, sizeof(s.ip), "%.15s", detail ? detail : "");
+        if (s.ip[0] == '\0') {
+            svc_wifi_is_connected(s.ip, sizeof(s.ip));
         }
-        wf_action_button("断开", true);
+        wf_spinner_show(false, NULL);
+        wf_status_set("Connected", UI_COLOR_OK);
+        if (s.lbl_status != NULL) {
+            lv_label_set_text_fmt(s.lbl_status, "Connected, IP %s",
+                                  s.ip[0] ? s.ip : "Fetching");
+        }
+        wf_action_button("Disconnect", true);
         ui_status_set_wifi(2);
         break;
     case SVC_WIFI_EV_CONNECT_FAILED:
         s.state = WF_STATE_IDLE;
         wf_spinner_show(false, NULL);
-        wf_status_set("连接失败", UI_COLOR_ERR);
-        wf_action_button("扫描", true);
+        wf_status_set("Connect failed", UI_COLOR_ERR);
+        wf_action_button("Scan", true);
         ui_status_set_wifi(0);
-        ui_msgbox("连接失败", res->detail, NULL, NULL);
+        ui_msgbox("Connect failed", detail && detail[0] ? detail : "Retry",
+                  NULL, NULL);
         break;
     case SVC_WIFI_EV_DISCONNECTED:
     default:
         s.state = WF_STATE_IDLE;
         s.ip[0] = '\0';
         wf_spinner_show(false, NULL);
-        wf_status_set("已断开", UI_COLOR_TEXT_DIM);
-        wf_action_button("扫描", true);
+        wf_status_set("Disconnected", UI_COLOR_TEXT_DIM);
+        wf_action_button("Scan", true);
         ui_status_set_wifi(0);
         break;
     }
+}
+
+static void wf_apply_conn(void *arg)
+{
+    wf_conn_result_t *res = arg;
+    if (s.active && res->session == s.session) {
+        wf_apply_conn_event(res->seq, res->ev, res->detail);
+    }
     heap_caps_free(res);
+}
+
+static void wf_fallback_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    uint32_t session = 0;
+    uint32_t seq = 0;
+    const wf_fallback_event_t event = wf_fallback_take(&session, &seq);
+    if (!s.active) {
+        return;
+    }
+    if (event == WF_FALLBACK_SCAN_BUSY && session == s.session) {
+        if (s.state == WF_STATE_SCANNING) {
+            s.state = WF_STATE_IDLE;
+            wf_spinner_show(false, NULL);
+            wf_status_set("Busy, retry after disconnect", UI_COLOR_WARN);
+            wf_action_button("Scan", true);
+        }
+    } else if (event != WF_FALLBACK_NONE && session == s.session) {
+        const svc_wifi_event_t wifi_event =
+            event == WF_FALLBACK_CONNECTED ? SVC_WIFI_EV_CONNECTED :
+            event == WF_FALLBACK_CONNECT_FAILED ? SVC_WIFI_EV_CONNECT_FAILED :
+                                                  SVC_WIFI_EV_DISCONNECTED;
+        wf_apply_conn_event(seq, wifi_event,
+                            wifi_event == SVC_WIFI_EV_CONNECT_FAILED ?
+                                "Event queue busy, retry" : NULL);
+    }
+
+    /* A disconnect requested while leaving the previous page can complete
+     * after a new page restores the old connected snapshot. CONNECTING is
+     * covered too: when the CONNECTED/FAILED event is lost (queue drop,
+     * host reset mid-flight) the page would otherwise spin "Connecting"
+     * forever - the svc-layer state is the ground truth here. */
+    if (s.state == WF_STATE_IDLE || s.state == WF_STATE_CONNECTED ||
+            s.state == WF_STATE_CONNECTING) {
+        char ip[16] = { 0 };
+        const bool connected = svc_wifi_is_connected(ip, sizeof(ip));
+        if (connected && s.state != WF_STATE_CONNECTED) {
+            s.state = WF_STATE_CONNECTED;
+            snprintf(s.ip, sizeof(s.ip), "%s", ip);
+            wf_spinner_show(false, NULL);
+            wf_status_set("Connected", UI_COLOR_OK);
+            lv_label_set_text_fmt(s.lbl_status, "Connected, IP %s",
+                                  s.ip[0] ? s.ip : "Fetching");
+            wf_action_button("Disconnect", true);
+        } else if (!connected && s.state == WF_STATE_CONNECTED) {
+            s.state = WF_STATE_IDLE;
+            s.ip[0] = '\0';
+            wf_status_set("Disconnected", UI_COLOR_TEXT_DIM);
+            wf_action_button("Scan", true);
+        } else if (!connected && s.state == WF_STATE_CONNECTING &&
+                   !svc_wifi_is_connecting()) {
+            /* The service is no longer attempting a connect either: the
+             * outcome event was lost, converge back to IDLE. */
+            s.state = WF_STATE_IDLE;
+            wf_spinner_show(false, NULL);
+            wf_status_set("Connect failed", UI_COLOR_ERR);
+            wf_action_button("Scan", true);
+        }
+        ui_status_set_wifi(connected ? 2 : 0);
+    }
 }
 
 /* ---------------- service callbacks (network task) ---------------- */
 
 static void wf_scan_cb(const svc_wifi_ap_t *aps, int count, void *user)
 {
-    (void)user;
-    if (!s.active) {
+    const uint32_t session = (uint32_t)(uintptr_t)user;
+    if (!wf_session_is_live(session)) {
         return;
     }
     wf_scan_result_t *res = wf_alloc(sizeof(*res));
     if (res == NULL) {
+        wf_fallback_post(session, 0, WF_FALLBACK_SCAN_BUSY);
         return;
     }
+    res->session = session;
     if (aps == NULL) {
         res->count = -1;
     } else {
-        res->count = count > APP_MAX_APS ? APP_MAX_APS : count;
+        res->count = count < 0 ? 0 :
+                     count > APP_MAX_APS ? APP_MAX_APS : count;
         memcpy(res->aps, aps, sizeof(aps[0]) * res->count);
     }
-    ui_async(wf_apply_scan, res);
+    if (!ui_async(wf_apply_scan, res)) {
+        heap_caps_free(res);
+        wf_fallback_post(session, 0, WF_FALLBACK_SCAN_BUSY);
+    }
 }
 
 static void wf_conn_cb(svc_wifi_event_t ev, const char *detail, void *user)
 {
-    (void)user;
-    if (!s.active) {
+    const uint32_t session = (uint32_t)(uintptr_t)user;
+    if (!wf_session_is_live(session)) {
         return;
     }
     wf_conn_result_t *res = wf_alloc(sizeof(*res));
+    const uint32_t seq = atomic_fetch_add_explicit(
+                             &s_conn_seq, 1, memory_order_relaxed) + 1;
     if (res == NULL) {
+        wf_fallback_post(session, seq,
+                         ev == SVC_WIFI_EV_CONNECTED ? WF_FALLBACK_CONNECTED :
+                         ev == SVC_WIFI_EV_CONNECT_FAILED ?
+                             WF_FALLBACK_CONNECT_FAILED :
+                             WF_FALLBACK_DISCONNECTED);
         return;
     }
+    res->session = session;
+    res->seq = seq;
     res->ev = ev;
     snprintf(res->detail, sizeof(res->detail), "%s", detail ? detail : "");
-    ui_async(wf_apply_conn, res);
+    if (!ui_async(wf_apply_conn, res)) {
+        heap_caps_free(res);
+        wf_fallback_post(session, seq,
+                         ev == SVC_WIFI_EV_CONNECTED ? WF_FALLBACK_CONNECTED :
+                         ev == SVC_WIFI_EV_CONNECT_FAILED ?
+                             WF_FALLBACK_CONNECT_FAILED :
+                             WF_FALLBACK_DISCONNECTED);
+    }
 }
 
 /* ---------------- user actions (LVGL context) ---------------- */
@@ -278,20 +465,21 @@ static void wf_start_connect(void)
     }
     s.state = WF_STATE_CONNECTING;
     char line[48];
-    snprintf(line, sizeof(line), "正在连接 %s...", s.ssid);
+    snprintf(line, sizeof(line), "Connecting %.28s...", s.ssid);
     wf_spinner_show(true, line);
-    wf_status_set("连接中", UI_COLOR_WARN);
+    wf_status_set("Connecting", UI_COLOR_WARN);
     wf_action_button(NULL, false);
     ui_status_set_wifi(1);
 }
 
 static void wf_try_connect(const char *password)
 {
-    if (svc_wifi_connect(s.ssid, password, wf_conn_cb, NULL) != ESP_OK) {
+    if (svc_wifi_connect(s.ssid, password, wf_conn_cb,
+                         (void *)(uintptr_t)s.session) != ESP_OK) {
         s.state = WF_STATE_IDLE;
         wf_spinner_show(false, NULL);
-        wf_status_set("连接失败", UI_COLOR_ERR);
-        wf_action_button("扫描", true);
+        wf_status_set("Connect failed", UI_COLOR_ERR);
+        wf_action_button("Scan", true);
         return;
     }
     wf_start_connect();
@@ -304,6 +492,18 @@ static void wf_keyboard_done(const char *text, void *user)
         return; /* cancelled */
     }
     wf_try_connect(text);
+}
+
+/* One-tap reconnect with the credentials persisted by the service
+ * after the last successful connection. */
+static void wf_saved_row_cb(lv_event_t *event)
+{
+    (void)event;
+    if (!s.active || s.state != WF_STATE_IDLE || s.saved_ssid[0] == '\0') {
+        return;
+    }
+    snprintf(s.ssid, sizeof(s.ssid), "%s", s.saved_ssid);
+    wf_try_connect(s.saved_pass);
 }
 
 static void wf_row_clicked(lv_event_t *event)
@@ -329,15 +529,15 @@ static void wf_on_scan(lv_event_t *event)
     if (!s.active || s.state != WF_STATE_IDLE) {
         return;
     }
-    if (svc_wifi_scan(wf_scan_cb, NULL) != ESP_OK) {
-        ui_toast("扫描不可用");
+    if (svc_wifi_scan(wf_scan_cb, (void *)(uintptr_t)s.session) != ESP_OK) {
+        ui_toast("Scan unavailable");
         return;
     }
     s.state = WF_STATE_SCANNING;
     s.ap_count = 0;
     wf_action_button(NULL, false);
-    wf_status_set("正在扫描...", UI_COLOR_TEXT_DIM);
-    wf_spinner_show(true, "正在扫描...");
+    wf_status_set("Scanning...", UI_COLOR_TEXT_DIM);
+    wf_spinner_show(true, "Scanning...");
 }
 
 static void wf_on_disconnect(lv_event_t *event)
@@ -349,8 +549,8 @@ static void wf_on_disconnect(lv_event_t *event)
     svc_wifi_disconnect();
     s.state = WF_STATE_IDLE;
     s.ip[0] = '\0';
-    wf_status_set("已断开", UI_COLOR_TEXT_DIM);
-    wf_action_button("扫描", true);
+    wf_status_set("Disconnected", UI_COLOR_TEXT_DIM);
+    wf_action_button("Scan", true);
     ui_status_set_wifi(0);
 }
 
@@ -367,6 +567,14 @@ static void wf_on_delete(lv_event_t *event)
 {
     (void)event;
     s.active = false;
+    if (s.fallback_timer != NULL) {
+        lv_timer_delete(s.fallback_timer);
+        s.fallback_timer = NULL;
+    }
+    unsigned int expected = s.session;
+    atomic_compare_exchange_strong_explicit(
+        &s_live_session, &expected, 0, memory_order_acq_rel,
+        memory_order_acquire);
     /* Stop the service operations this app started. */
     if (s.state == WF_STATE_CONNECTING || s.state == WF_STATE_CONNECTED) {
         svc_wifi_disconnect();
@@ -381,31 +589,41 @@ lv_obj_t *app_wifi_create(void)
     memset(&s, 0, sizeof(s));
     s.active = true;
     s.state = WF_STATE_IDLE;
+    s.session = atomic_fetch_add_explicit(&s_session_seq, 1,
+                                          memory_order_relaxed) + 1;
+    portENTER_CRITICAL(&s_fallback_lock);
+    s_fallback = (typeof(s_fallback)){ 0 };
+    portEXIT_CRITICAL(&s_fallback_lock);
+    atomic_store_explicit(&s_live_session, s.session, memory_order_release);
+    atomic_store_explicit(&s_conn_seq, 0, memory_order_relaxed);
 
     lv_obj_t *content = NULL;
     lv_obj_t *root = ui_app_scaffold("WiFi", &content);
     s.root = root;
     lv_obj_add_event_cb(root, wf_on_delete, LV_EVENT_DELETE, NULL);
+    lv_obj_set_style_text_font(content, ui_font_body(), 0);
+    s.fallback_timer = lv_timer_create(wf_fallback_timer_cb,
+                                       WF_FALLBACK_POLL_MS, NULL);
 
     s.lbl_status = lv_label_create(content);
-    lv_label_set_text(s.lbl_status, "未连接");
+    lv_label_set_text(s.lbl_status, "Not connected");
     lv_obj_set_pos(s.lbl_status, 8, 6);
-    lv_obj_set_width(s.lbl_status, 300);
+    lv_obj_set_width(s.lbl_status, 280);
     lv_label_set_long_mode(s.lbl_status, LV_LABEL_LONG_DOT);
 
     s.btn_action = lv_button_create(content);
-    lv_obj_set_size(s.btn_action, 120, 44);
-    lv_obj_align(s.btn_action, LV_ALIGN_TOP_RIGHT, -4, 0);
+    lv_obj_set_size(s.btn_action, 132, UI_TOUCH_MIN);
+    lv_obj_align(s.btn_action, LV_ALIGN_TOP_RIGHT, 0, 0);
     lv_obj_set_style_bg_color(s.btn_action, lv_color_hex(UI_COLOR_ACCENT), 0);
     lv_obj_set_style_radius(s.btn_action, 12, 0);
     lv_obj_add_event_cb(s.btn_action, wf_on_action, LV_EVENT_CLICKED, NULL);
     s.lbl_action = lv_label_create(s.btn_action);
-    lv_label_set_text(s.lbl_action, "扫描");
+    lv_label_set_text(s.lbl_action, "Scan");
     lv_obj_center(s.lbl_action);
 
     s.list = lv_obj_create(content);
-    lv_obj_set_size(s.list, 452, 324);
-    lv_obj_set_pos(s.list, 0, 56);
+    lv_obj_set_size(s.list, LV_PCT(100), 272);
+    lv_obj_set_pos(s.list, 0, 68);
     lv_obj_set_style_bg_opa(s.list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s.list, 0, 0);
     lv_obj_set_style_pad_all(s.list, 0, 0);
@@ -427,17 +645,47 @@ lv_obj_t *app_wifi_create(void)
                                 lv_color_hex(UI_COLOR_TEXT_DIM), 0);
     lv_obj_add_flag(s.lbl_connecting, LV_OBJ_FLAG_HIDDEN);
 
+    /* Saved credentials are loaded up front so the direct-reconnect row
+     * can also reappear on scan results after a mid-session disconnect. */
+    svc_net_wifi_saved(s.saved_ssid, sizeof(s.saved_ssid),
+                       s.saved_pass, sizeof(s.saved_pass));
+
     /* Restore view if a previous session left the link up. */
     char ip[16];
     if (svc_wifi_is_connected(ip, sizeof(ip))) {
         s.state = WF_STATE_CONNECTED;
         snprintf(s.ip, sizeof(s.ip), "%s", ip);
-        lv_label_set_text_fmt(s.lbl_status, "已连接 IP %s", ip);
+        lv_label_set_text_fmt(s.lbl_status, "Connected, IP %s", ip);
         lv_obj_set_style_text_color(s.lbl_status, lv_color_hex(UI_COLOR_OK), 0);
-        wf_action_button("断开", true);
+        wf_action_button("Disconnect", true);
+        ui_status_set_wifi(2);
+    } else if (s.saved_ssid[0] != '\0') {
+        /* Saved credentials: one-tap reconnect instead of scan+keyboard. */
+        lv_obj_t *row = lv_button_create(s.list);
+        lv_obj_set_size(row, LV_PCT(100), 56);
+        lv_obj_set_style_bg_color(row, lv_color_hex(UI_COLOR_SURFACE), 0);
+        lv_obj_set_style_radius(row, 12, 0);
+        lv_obj_set_style_border_color(row, lv_color_hex(UI_COLOR_ACCENT), 0);
+        lv_obj_set_style_border_width(row, 1, 0);
+        lv_obj_add_event_cb(row, wf_saved_row_cb, LV_EVENT_CLICKED, NULL);
+
+        lv_obj_t *lbl = lv_label_create(row);
+        lv_label_set_text_fmt(lbl, "Saved: %s", s.saved_ssid);
+        lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(lbl, 300);
+        lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 12, 0);
+
+        lv_obj_t *go = lv_label_create(row);
+        lv_label_set_text(go, LV_SYMBOL_PLAY);
+        lv_obj_set_style_text_color(go, lv_color_hex(UI_COLOR_ACCENT), 0);
+        lv_obj_align(go, LV_ALIGN_RIGHT_MID, -12, 0);
+
+        lv_obj_t *hint = lv_label_create(s.list);
+        lv_label_set_text(hint, "Tap top-right to scan for others");
+        lv_obj_set_style_text_color(hint, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
     } else {
         lv_obj_t *hint = lv_label_create(s.list);
-        lv_label_set_text(hint, "点击右上角扫描网络");
+        lv_label_set_text(hint, "Tap top-right to scan");
         lv_obj_set_style_text_color(hint, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
     }
 

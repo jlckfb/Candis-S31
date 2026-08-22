@@ -47,6 +47,11 @@ typedef enum {
 typedef void (*svc_wifi_scan_cb_t)(const svc_wifi_ap_t *aps, int count, void *user);
 typedef void (*svc_wifi_conn_cb_t)(svc_wifi_event_t ev, const char *detail, void *user);
 
+/**
+ * Start the shared network task. A return error means both WiFi and BLE were
+ * unavailable; a single-capability failure is logged and the other stack is
+ * still usable. Capability state is fixed until reboot.
+ */
 esp_err_t svc_net_start(void);
 
 /** Async scan; cb receives a sorted-by-RSSI list (max 20). One at a time. */
@@ -56,8 +61,25 @@ esp_err_t svc_wifi_connect(const char *ssid, const char *password,
                            svc_wifi_conn_cb_t cb, void *user);
 esp_err_t svc_wifi_disconnect(void);
 
+/** true while a connect attempt is in flight (between kickoff and the
+ * CONNECTED/FAILED outcome). */
+bool svc_wifi_is_connecting(void);
+
 /** true when connected; ip_out (if non-NULL) receives "192.168.x.x". */
 bool svc_wifi_is_connected(char *ip_out, size_t ip_len);
+
+/**
+ * Credentials persisted after a successful connection (NVS namespace
+ * "demo", keys wifi_ssid/wifi_pass). Returns true when a saved SSID was
+ * loaded into ssid_out (pass_out receives the password, "" for open
+ * networks; either pointer may be NULL to skip). Buffers: SSID 33, password
+ * 64 (63 + NUL).
+ */
+bool svc_net_wifi_saved(char *ssid_out, size_t ssid_cap,
+                        char *pass_out, size_t pass_cap);
+
+/** Erase the saved credentials (explicit user "forget"). */
+void svc_net_wifi_saved_forget(void);
 
 /* ---------------- BLE ---------------- */
 
@@ -87,6 +109,13 @@ typedef void (*svc_ble_conn_cb_t)(svc_ble_event_t ev, const svc_ble_svc_t *svcs,
 
 esp_err_t svc_ble_scan_start(svc_ble_scan_cb_t cb, void *user);
 esp_err_t svc_ble_scan_stop(void);
+
+/** true while a connect attempt is in flight (callback slot held, no link
+ * yet). */
+bool svc_ble_is_connecting(void);
+
+/** true once a link is established and CONNECTED was reported. */
+bool svc_ble_is_connected(void);
 
 /** Connect by address; discovery runs automatically, then SERVICES_DONE. */
 esp_err_t svc_ble_connect(const uint8_t addr[6], uint8_t addr_type,
