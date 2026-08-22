@@ -35,6 +35,7 @@ compile_commands.json
 .clangd/
 
 # Tests and coverage
+.work/
 pytest-embedded/
 pytest_embedded_log/
 .pytest_cache/
@@ -72,3 +73,6 @@ venv/
 *.sublime-workspace
 .DS_Store
 Thumbs.db
+
+# Node
+node_modules/
