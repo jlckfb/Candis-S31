@@ -17,7 +17,7 @@ env:
   IDF_COMMIT: b1d13e9fe441c4f75e240c98a26fd631b7b3232f
   # BSP revision required by the Factory and low-power APIs. Push this BSP
   # commit before the product commit so the public CI checkout remains exact.
-  ESP_BSP_COMMIT: cf9f87ab40630c2576a316de3f4e996dded700e3
+  ESP_BSP_COMMIT: 1d10b2b58b79b05faed0b44124578cb5fc7703da
 
 jobs:
   getting-started:
