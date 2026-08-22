@@ -13,8 +13,8 @@ permissions:
 
 env:
   # Update the tag and commit together after the new version passes validation.
-  IDF_REF: v6.1-beta1
-  IDF_COMMIT: b1d13e9fe441c4f75e240c98a26fd631b7b3232f
+  IDF_REF: v6.1-rc1
+  IDF_COMMIT: 44f0c59f7c81a72a5868a52d5f6dfbbf88829704
   # The BSP is vendored at vendor/esp-bsp (see vendor/esp-bsp/SOURCE_COMMIT);
   # CI builds exactly what a plain clone contains. Maintainers refresh the
   # snapshot with tools/sync_bsp.sh after esp-bsp changes land.
@@ -139,18 +139,6 @@ jobs:
         if: steps.idf-cache.outputs.cache-hit == 'true'
         run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
 
-      # v6.1-beta1 does not ship librfate.a for esp32s31 while esp_phy's
-      # CMake links it when ESP_PHY_ENABLE_CERT_TEST is on (Factory RF
-      # diagnostics). Guard the link until upstream ships the library.
-      # Idempotent against the cached toolchain tree.
-      - name: Patch ESP-IDF esp_phy librfate link guard
-        run: |
-          PATCH="$GITHUB_WORKSPACE/tools/ci/esp-idf-v6.1-beta1-esp_phy-librfate-guard.patch"
-          if git -C ~/esp-idf apply -R --check "$PATCH" 2>/dev/null; then
-            echo "guard already present in the cached ESP-IDF"
-          else
-            git -C ~/esp-idf apply "$PATCH"
-          fi
 
       - name: Validate Factory host and Recovery tooling
         run: |
