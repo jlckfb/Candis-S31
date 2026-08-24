@@ -13,6 +13,10 @@
  *               invalidation + indev, full-screen invalidate, unlock.
  *               Zero touch-controller resets (a reset on a touched panel
  *               poisons the baseline and latches phantom touches).
+ *               lv_indev_wait_release() is armed only when the CST820
+ *               still reports a physical finger; an unconditional arm
+ *               would swallow the first real touch after a no-finger
+ *               (key) wake (AGENT-AI.md §0F / §8-22).
  *   wake detection while off: 50 ms poll of BSP_TOUCH_INT (GPIO3) low,
  *               two consecutive samples; BOOT/PWR wake through
  *               svc_power_activity() = turn on.
@@ -110,6 +114,41 @@ static void power_emit(const svc_power_status_t *snapshot, svc_power_event_t ev)
     }
 }
 
+/* AGENT-AI.md §0F / §8 rule 22: never arm lv_indev_wait_release()
+ * unconditionally on a wake/restore path. The CST820 input device runs in
+ * LV_INDEV_MODE_EVENT (vendor esp-bsp esp_lvgl_port_touch.c: event mode is
+ * set whenever the INT GPIO is configured), so after a RELEASED report the
+ * LVGL read timer stays paused until the next INT edge. An armed
+ * wait-release with no finger down is therefore cleared only by the NEXT
+ * real press, and that press is dropped by indev_pointer_proc() - the
+ * first touch after a no-finger wake is swallowed (reproduced on hardware
+ * by factory, fixed the same way in BSP display_lvgl_touch_resume_locked()).
+ * Read the CST820 physical state first and arm wait-release only when a
+ * finger is still down. A failed read cannot prove "no finger": keep the
+ * historical arm-on-restore behaviour (protects against a stale PRESSED
+ * becoming a phantom click) rather than silently dropping the guard. */
+static void power_indev_wait_release_if_pressed(lv_indev_t *indev)
+{
+    if (indev == NULL) {
+        return;
+    }
+    bool pressed = true;
+    esp_lcd_touch_handle_t touch = bsp_touch_get_handle();
+    if (touch != NULL) {
+        uint8_t point_count = 0;
+        esp_lcd_touch_point_data_t point = {0};
+        if (esp_lcd_touch_read_data(touch) == ESP_OK &&
+                esp_lcd_touch_get_data(touch, &point, &point_count, 1) == ESP_OK) {
+            pressed = point_count > 0;
+        } else {
+            ESP_LOGW(TAG, "touch state read failed, keeping wait-release");
+        }
+    }
+    if (pressed) {
+        lv_indev_wait_release(indev);
+    }
+}
+
 static void screen_off_run(void)
 {
     if (s_screen_off) {
@@ -130,6 +169,14 @@ static void screen_off_run(void)
     }
     if (indev != NULL) {
         lv_indev_enable(indev, false);
+        /* §8 rule 21 counterpart: where the BSP swaps in a RELEASED-only
+         * read callback it also lv_indev_reset()s the device so no pressed/
+         * scroll target survives the transition. The demo blocks reads by
+         * disabling the indev instead (the CST820 never enters hardware
+         * sleep here), but the reset is still required: without it a stale
+         * PRESSED could outlive screen-off, and once wake only conditionally
+         * arms wait-release (§8-22) nothing else would contain it. */
+        lv_indev_reset(indev, NULL);
     }
     ui_unlock();
 
@@ -158,7 +205,7 @@ static void screen_off_run(void)
         }
         if (indev != NULL) {
             lv_indev_enable(indev, true);
-            lv_indev_wait_release(indev);
+            power_indev_wait_release_if_pressed(indev);
         }
         ui_unlock();
         return;
@@ -218,7 +265,7 @@ static void screen_on_run(void)
     /* Zero touch activity on wake: the CST820 stayed powered and the touch
      * which woke the panel may still be latched in LVGL's indev state. */
     if (indev != NULL) {
-        lv_indev_wait_release(indev);
+        power_indev_wait_release_if_pressed(indev);
         lv_indev_enable(indev, true);
     }
     lv_obj_invalidate(lv_screen_active()); /* full redraw on next cycle */
@@ -1005,7 +1052,7 @@ static void deep_sleep_abort_restore(bool panel_parked)
     }
     lv_indev_t *indev = bsp_display_get_input_dev();
     if (indev != NULL) {
-        lv_indev_wait_release(indev);
+        power_indev_wait_release_if_pressed(indev);
         lv_indev_enable(indev, true);
     }
     lv_obj_invalidate(lv_screen_active());
@@ -1033,6 +1080,10 @@ esp_err_t svc_power_deep_sleep(int wake_after_min)
         }
         if (indev != NULL) {
             lv_indev_enable(indev, false);
+            /* Same §8 rule 21 counterpart as screen_off_run(): clear any
+             * pressed/scroll target at the freeze so it cannot outlive the
+             * transition when wake arms wait-release only conditionally. */
+            lv_indev_reset(indev, NULL);
         }
         ui_unlock();
 
@@ -1051,7 +1102,7 @@ esp_err_t svc_power_deep_sleep(int wake_after_min)
                     lv_display_enable_invalidation(disp, true);
                 }
                 if (indev != NULL) {
-                    lv_indev_wait_release(indev);
+                    power_indev_wait_release_if_pressed(indev);
                     lv_indev_enable(indev, true);
                 }
                 ui_unlock();
