@@ -23,21 +23,26 @@ CONFIG_SPIRAM_USE_CAPS_ALLOC=y
 # unconditionally tear-free. A 15 ms LVGL period lets small dirty updates use
 # every TE edge while touch and animation state are serviced at high cadence.
 CONFIG_BSP_LCD_PIXEL_CLOCK_MHZ=48
+# The board-specific esp_lvgl_port path keeps LVGL in PARTIAL mode and waits
+# for TE only before the first chunk of each refresh cycle.  This preserves
+# 60 Hz local updates without turning every invalidate into a full frame.
 CONFIG_BSP_LCD_TE_SYNC=y
 CONFIG_LV_DEF_REFR_PERIOD=15
 
-# Low-latency display pipeline: two 460x80 internal DMA buffers in LVGL
+# Low-latency display pipeline: two 460x48 internal DMA buffers in LVGL
 # PARTIAL mode. Only the first chunk of a refresh cycle waits for TE; the
 # remaining chunks stream back-to-back while LVGL renders into the other
 # buffer. A full 460x460 transfer still needs at least 17.6 ms at 48 MHz and
 # is therefore paced by every second 60 Hz TE edge.
 # CONFIG_BSP_LCD_DIRECT_MODE is not set
-CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=80
+CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=48
 CONFIG_BSP_LCD_DRAW_BUF_DOUBLE=y
 
-# Keep PSRAM at 100 MHz for image assets and the camera path. It is the lowest
-# non-40 MHz S31 grade; the long-octal part is rated 120 MHz. MEMTEST stays on
-# while the setting is validated on the 3.3 V rail (pre-J1 rework).
+# Keep PSRAM at the currently validated 100 MHz baseline for this image.
+# The physical capacity and part rating are not closed: startup reports 32 MB
+# while product/NRV16 records point to 16 MB. Do not raise the clock until the
+# capacity/alias test and BOM/top-mark check are complete; 200/250 MHz must be
+# qualified later as separate official, non-overclocked test grades.
 CONFIG_SPIRAM_SPEED_100M=y
 CONFIG_SPIRAM_MEMTEST=y
 
@@ -50,12 +55,10 @@ CONFIG_FREERTOS_HZ=1000
 CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
 CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER=y
 
-# Both RISC-V cores render in parallel; buffers stay cache-line aligned and
-# LVGL writes RGB565 directly in the byte order consumed by the CO5300.
-# (LVGL's PPA backend is P4-only in 9.5 - esp.cmake and the L2 cache line
-# check do not cover the S31 - so hardware PPA acceleration is not used yet.)
-# LV_USE_OS_FREERTOS is required for more than one SW draw unit.
-CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
+# Start the restored PARTIAL+TE path with one software draw unit so the display
+# transport can be qualified independently of multi-draw scheduling.  A later
+# two-unit A/B may be run only after the 60/30 fps baseline is stable.
+CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=1
 CONFIG_LV_DRAW_BUF_ALIGN=64
 CONFIG_LV_DRAW_SW_SUPPORT_RGB565_SWAPPED=y
 CONFIG_LV_OS_FREERTOS=y

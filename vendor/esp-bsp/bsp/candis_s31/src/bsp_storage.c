@@ -174,15 +174,23 @@ esp_err_t bsp_spiffs_mount(void)
                         "SPIFFS mount failed");
 
     size_t total = 0, used = 0;
-    esp_err_t error = esp_spiffs_info(conf.partition_label, &total, &used);
-    if (error != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to get SPIFFS partition information (%s)",
-                 esp_err_to_name(error));
-    } else {
-        ESP_LOGI(TAG, "SPIFFS mounted at %s: total %d, used %d",
-                 CONFIG_BSP_SPIFFS_MOUNT_POINT, total, used);
+    esp_err_t info_error = esp_spiffs_info(conf.partition_label, &total, &used);
+    if (info_error != ESP_OK) {
+        ESP_LOGE(TAG,
+                 "Failed to get SPIFFS partition information (%s); rolling back mount",
+                 esp_err_to_name(info_error));
+        esp_err_t rollback_error =
+            esp_vfs_spiffs_unregister(conf.partition_label);
+        if (rollback_error != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to roll back SPIFFS mount (%s)",
+                     esp_err_to_name(rollback_error));
+        }
+        return info_error;
     }
-    return error;
+
+    ESP_LOGI(TAG, "SPIFFS mounted at %s: total %d, used %d",
+             CONFIG_BSP_SPIFFS_MOUNT_POINT, total, used);
+    return ESP_OK;
 }
 
 esp_err_t bsp_spiffs_unmount(void)

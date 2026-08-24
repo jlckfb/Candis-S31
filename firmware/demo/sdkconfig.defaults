@@ -41,34 +41,23 @@ CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
 CONFIG_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
 
-# Display: 48 MHz QSPI (CO5300 50 MHz write limit) with the panel TE edge
-# (GPIO16) gating every flush. Pipeline facts (esp_lvgl_adapter 0.5.x,
-# profile SPI_WITH_PSRAM_TE, verified in display_manager.c):
-#   - On SPI/QSPI (IF_OTHER) the adapter accepts only TEAR_AVOID_MODE NONE
-#     or TE_SYNC; TE_SYNC hard-maps to LVGL RENDER_MODE_FULL with ONE
-#     460x460 PSRAM draw buffer (423200 B), so any invalidate merges into a
-#     full-frame redraw paced by TE.
-#   - PARTIAL + TE double buffering does not exist on this interface:
-#     DOUBLE/TRIPLE_PARTIAL need panel frame buffers (RGB/MIPI only) and
-#     validate_tearing_mode() rejects them for IF_OTHER.
-#   - A full frame takes 423200 B x 8 / 48 MHz = 17.6 ms > 16.67 ms TE
-#     period, so full refresh tops out at ~30 fps; smoothness must come from
-#     keeping invalidations rare/local and from PPA-accelerated redraws.
-# CONFIG_BSP_LCD_DRAW_BUF_HEIGHT now only sizes the SPI max_transfer_sz
-# (460 x 48 x 2 = 44160 B internal DMA) for the QSPI bus; it no longer
-# selects an LVGL PARTIAL buffer. CONFIG_BSP_LCD_DRAW_BUF_DOUBLE has no
-# effect on the adapter path (kept so existing configs keep parsing).
-# Internal DMA budget: ~44 KB for the SPI transfer buffer only; WiFi, BLE
-# and I2S DMA pools keep the headroom verified on 2026-08-21.
+# Display: board-local esp_lvgl_port path, QSPI 48 MHz (within the CO5300
+# 50 MHz write limit), LVGL PARTIAL, and two 460x48 internal-DMA buffers.
+# Only the first chunk of each refresh cycle waits for the GPIO16 TE edge;
+# later chunks are pipelined. The full 423200-byte RGB565 frame still needs
+# about 17.6 ms on the wire, so the validated targets are ~60 fps for local
+# updates and ~30 fps for full-screen traffic. The 2x2 partial-window
+# rounder and hidden black first-frame redraw are BSP contracts, not optional
+# application workarounds.
 CONFIG_BSP_LCD_PIXEL_CLOCK_MHZ=48
 CONFIG_BSP_LCD_TE_SYNC=y
 CONFIG_LV_DEF_REFR_PERIOD=15
 CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=48
 CONFIG_BSP_LCD_DRAW_BUF_DOUBLE=y
 
-# Rendering runs on the adapter's single SW draw unit; RGB565 byte order is
-# the CO5300 contract, handled by the panel driver + adapter flush.
-# Official adapter baseline: CLIB allocators, single SW draw unit (the
+# Rendering runs on one SW draw unit; RGB565 byte order is the CO5300
+# contract, handled by the BSP/port flush path. CLIB allocators and a single
+# SW draw unit are the validated baseline (the
 # dual-unit dispatch path spun with zero progress on this board; the
 # adapter task serializes rendering).
 CONFIG_LV_USE_CLIB_MALLOC=y

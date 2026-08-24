@@ -11,7 +11,6 @@
 #include "driver/gpio.h"
 #include "esp_check.h"
 #include "esp_console.h"
-#include "esp_lvgl_port_disp.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -237,9 +236,10 @@ static int command_display_sleep_test(int argc, char **argv)
 /* --- Read-only TE (tearing-effect) probe -------------------------------- */
 
 /* The CO5300 TE line (BSP_LCD_TE) carries one pulse per panel scan. The
- * command starts the display if needed, then asks esp_lvgl_port to observe
- * both edges through its existing ISR. It does not replace the GPIO handler
- * or modify the displayed LVGL object tree. */
+ * display is created by esp_lvgl_adapter, whose TE observer is not exposed as
+ * a public API. Sample the GPIO directly instead: GPIO inputs can be observed
+ * without changing the adapter-owned interrupt configuration or the LVGL
+ * object tree. */
 
 #define DISPLAY_TE_WINDOW_MS_DEFAULT 1000
 #define DISPLAY_TE_WINDOW_MS_MIN     100
@@ -270,11 +270,9 @@ typedef struct {
     bool have_fall;
 } te_probe_t;
 
-/* Written by the LVGL port's TE ISR observer and read by the console task
- * after the observer has been removed. */
-static volatile te_probe_t s_te_probe;
+static te_probe_t s_te_probe;
 
-static void te_span_reset(volatile te_span_t *span)
+static void te_span_reset(te_span_t *span)
 {
     span->count = 0;
     span->total_us = 0;
@@ -282,7 +280,7 @@ static void te_span_reset(volatile te_span_t *span)
     span->max_us = 0;
 }
 
-static void IRAM_ATTR te_span_update(volatile te_span_t *span, int64_t delta_us)
+static void te_span_update(te_span_t *span, int64_t delta_us)
 {
     ++span->count;
     span->total_us += (uint64_t)delta_us;
@@ -294,12 +292,9 @@ static void IRAM_ATTR te_span_update(volatile te_span_t *span, int64_t delta_us)
     }
 }
 
-/* The LVGL port owns the GPIO ISR and passes the sampled level and timestamp
- * here. Keeping one handler prevents this diagnostic from replacing the
- * synchronization handler on GPIO16. */
-static void IRAM_ATTR display_te_observer(bool level, int64_t now_us, void *arg)
+static void display_te_record_edge(bool level, int64_t now_us,
+                                   te_probe_t *probe)
 {
-    volatile te_probe_t *probe = arg;
     const bool rising = level;
     probe->level = rising;
     if (rising) {
@@ -322,7 +317,7 @@ static void IRAM_ATTR display_te_observer(bool level, int64_t now_us, void *arg)
     }
 }
 
-static void te_span_print(const char *label, const volatile te_span_t *span)
+static void te_span_print(const char *label, const te_span_t *span)
 {
     if (span->count == 0) {
         printf("%s_us count=0 min=none avg=none max=none\n", label);
@@ -334,7 +329,7 @@ static void te_span_print(const char *label, const volatile te_span_t *span)
            span->total_us / span->count, span->max_us);
 }
 
-static void te_span_print_json(const char *label, const volatile te_span_t *span)
+static void te_span_print_json(const char *label, const te_span_t *span)
 {
     if (span->count == 0) {
         printf("\"%s_count\":0,\"%s_min_us\":null,\"%s_avg_us\":null,"
@@ -389,32 +384,28 @@ static int command_display_te(int argc, char **argv)
     const int initial_level = gpio_get_level(BSP_LCD_TE);
     s_te_probe.level = initial_level != 0;
 
-    /* The LVGL port remains the only GPIO ISR owner. Its observer mode changes
-     * the trigger to ANYEDGE while continuing to feed the TE semaphore only
-     * on rising edges. */
-    esp_err_t error = lvgl_port_display_te_observer_set(
-                          s_display, display_te_observer,
-                          (void *)&s_te_probe);
-
-    int final_level = -1;
-    if (error == ESP_OK) {
-        const int64_t deadline_us =
-            esp_timer_get_time() + window_ms * INT64_C(1000);
-        while (esp_timer_get_time() < deadline_us) {
-            vTaskDelay(pdMS_TO_TICKS(10));
+    int sampled_level = initial_level;
+    const int64_t deadline_us =
+        esp_timer_get_time() + window_ms * INT64_C(1000);
+    int64_t last_yield_us = esp_timer_get_time();
+    int64_t now_us = last_yield_us;
+    while (now_us < deadline_us) {
+        const int level = gpio_get_level(BSP_LCD_TE);
+        if (level != sampled_level) {
+            sampled_level = level;
+            display_te_record_edge(level != 0, now_us, &s_te_probe);
         }
-        const esp_err_t restore_error =
-            lvgl_port_display_te_observer_set(s_display, NULL, NULL);
-        final_level = gpio_get_level(BSP_LCD_TE);
-        if (restore_error != ESP_OK) {
-            error = restore_error;
+        now_us = esp_timer_get_time();
+        /* Let the idle task run often enough to service the task watchdog.
+         * A one-tick gap every 50 ms may omit an individual pulse, which is
+         * visible as a doubled period instead of corrupting GPIO ownership. */
+        if (now_us - last_yield_us >= 50000) {
+            vTaskDelay(1);
+            last_yield_us = esp_timer_get_time();
+            now_us = last_yield_us;
         }
     }
-    /* Fail only after observer teardown restored rising-edge operation. */
-    ESP_RETURN_ON_ERROR(error, "factory_display_te", "TE probe setup failed");
-
-    /* Observer removal waits for any in-flight callback, so one local copy is
-     * a coherent view even though ISR updates use volatile storage. */
+    const int final_level = gpio_get_level(BSP_LCD_TE);
     const te_probe_t probe = s_te_probe;
 
     printf("TE probe on GPIO%d, window=%ld ms\n", (int)BSP_LCD_TE, window_ms);
@@ -475,6 +466,16 @@ static int command_display_te(int argc, char **argv)
 #define DISPLAY_MOTION_SECONDS_DEFAULT 10
 #define DISPLAY_MOTION_SECONDS_MIN    2
 #define DISPLAY_MOTION_SECONDS_MAX    300
+#define DISPLAY_MOTION_LOCK_TIMEOUT_MS 1000
+#define DISPLAY_MOTION_CLEANUP_LOCK_ATTEMPTS 3
+
+#define DISPLAY_SLEEP_STRESS_CYCLES_DEFAULT 5
+#define DISPLAY_SLEEP_STRESS_CYCLES_MIN     1
+#define DISPLAY_SLEEP_STRESS_CYCLES_MAX     100
+#define DISPLAY_SLEEP_STRESS_WARMUP_MS      500
+#define DISPLAY_SLEEP_STRESS_ASLEEP_MS      250
+#define DISPLAY_SLEEP_STRESS_AWAKE_MS       500
+#define DISPLAY_SLEEP_STRESS_RECOVERY_MS    50
 
 typedef struct {
     lv_obj_t *ball;
@@ -487,6 +488,9 @@ typedef struct {
     uint32_t cycles_max;
     int64_t next_report_us;
     int64_t last_anim_us;
+    int64_t scroll_position_ups; /* micro-pixels, preserves sub-pixel motion */
+    int64_t ball_x_position_ups;
+    int64_t ball_y_position_ups;
     int scroll_offset_px;
     int ball_x_px;
     int ball_y_px;
@@ -496,6 +500,12 @@ typedef struct {
     bool running;
     bool flushed_in_cycle;
 } display_motion_ctx_t;
+
+typedef struct {
+    uint32_t frames_total;
+    uint32_t cycles_min;
+    uint32_t cycles_max;
+} display_motion_result_t;
 
 static display_motion_ctx_t s_motion;
 
@@ -565,30 +575,42 @@ static void display_motion_anim_cb(lv_timer_t *timer)
     ctx->last_anim_us = now_us;
 
     if (ctx->scroll) {
-        ctx->scroll_offset_px +=
-            (int)((int64_t)DISPLAY_MOTION_SCROLL_PX_S * elapsed_us / 1000000);
+        ctx->scroll_position_ups +=
+            (int64_t)DISPLAY_MOTION_SCROLL_PX_S * elapsed_us;
         /* The stripe pattern repeats every 6 stripes; wrap within one
          * period so the offset stays small. */
-        const int period = 6 * DISPLAY_MOTION_STRIPE_PX;
-        while (ctx->scroll_offset_px >= period) {
-            ctx->scroll_offset_px -= period;
+        const int64_t period_ups =
+            (int64_t)(6 * DISPLAY_MOTION_STRIPE_PX) * 1000000;
+        while (ctx->scroll_position_ups >= period_ups) {
+            ctx->scroll_position_ups -= period_ups;
         }
+        ctx->scroll_offset_px = (int)(ctx->scroll_position_ups / 1000000);
         /* Stripe geometry changed: repaint the whole screen this frame. */
         lv_obj_invalidate(lv_screen_active());
     }
 
-    ctx->ball_x_px += ctx->ball_dir_x *
-                      (int)((int64_t)DISPLAY_MOTION_BALL_X_PX_S * elapsed_us / 1000000);
-    ctx->ball_y_px += ctx->ball_dir_y *
-                      (int)((int64_t)DISPLAY_MOTION_BALL_Y_PX_S * elapsed_us / 1000000);
-    if (ctx->ball_x_px <= 0 || ctx->ball_x_px >= BSP_LCD_H_RES - DISPLAY_MOTION_BALL_PX) {
+    ctx->ball_x_position_ups += ctx->ball_dir_x *
+        (int64_t)DISPLAY_MOTION_BALL_X_PX_S * elapsed_us;
+    ctx->ball_y_position_ups += ctx->ball_dir_y *
+        (int64_t)DISPLAY_MOTION_BALL_Y_PX_S * elapsed_us;
+    const int64_t max_x_ups =
+        (int64_t)(BSP_LCD_H_RES - DISPLAY_MOTION_BALL_PX) * 1000000;
+    const int64_t max_y_ups =
+        (int64_t)(BSP_LCD_V_RES - DISPLAY_MOTION_BALL_PX) * 1000000;
+    if (ctx->ball_x_position_ups <= 0 ||
+            ctx->ball_x_position_ups >= max_x_ups) {
         ctx->ball_dir_x = -ctx->ball_dir_x;
-        ctx->ball_x_px = ctx->ball_x_px <= 0 ? 0 : BSP_LCD_H_RES - DISPLAY_MOTION_BALL_PX;
+        ctx->ball_x_position_ups =
+            ctx->ball_x_position_ups <= 0 ? 0 : max_x_ups;
     }
-    if (ctx->ball_y_px <= 0 || ctx->ball_y_px >= BSP_LCD_V_RES - DISPLAY_MOTION_BALL_PX) {
+    if (ctx->ball_y_position_ups <= 0 ||
+            ctx->ball_y_position_ups >= max_y_ups) {
         ctx->ball_dir_y = -ctx->ball_dir_y;
-        ctx->ball_y_px = ctx->ball_y_px <= 0 ? 0 : BSP_LCD_V_RES - DISPLAY_MOTION_BALL_PX;
+        ctx->ball_y_position_ups =
+            ctx->ball_y_position_ups <= 0 ? 0 : max_y_ups;
     }
+    ctx->ball_x_px = (int)(ctx->ball_x_position_ups / 1000000);
+    ctx->ball_y_px = (int)(ctx->ball_y_position_ups / 1000000);
     lv_obj_set_pos(ctx->ball, ctx->ball_x_px, ctx->ball_y_px);
 }
 
@@ -633,6 +655,154 @@ static void display_motion_report_cb(lv_timer_t *timer)
     s_prev_total_run = total_run;
 }
 
+/* All LVGL object/event/timer ownership stays behind the BSP LVGL lock.
+ * The animation callbacks themselves execute in taskLVGL.  Keeping this
+ * setup shared prevents the sleep stress command from drifting away from
+ * the standalone motion test that it is intended to exercise. */
+static esp_err_t display_motion_start(bool scroll)
+{
+    if (s_motion.running) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    ESP_RETURN_ON_ERROR(factory_display_ensure_started(), "factory_display",
+                        "display initialization failed");
+    if (!bsp_display_lock(DISPLAY_MOTION_LOCK_TIMEOUT_MS)) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    memset(&s_motion, 0, sizeof(s_motion));
+    s_motion.scroll = scroll;
+
+    lv_obj_t *screen = lv_screen_active();
+    lv_obj_clean(screen);
+    lv_obj_set_style_bg_color(screen, lv_color_black(), LV_PART_MAIN);
+
+    /* High-contrast horizontal stripes scrolling vertically make a tear
+     * line visible immediately: any scan/write race shows as a horizontal
+     * offset in the stripe edges. Drawn in the screen draw event. */
+    if (scroll) {
+        lv_obj_add_event_cb(screen, display_motion_draw_cb, LV_EVENT_DRAW_MAIN,
+                            NULL);
+    }
+
+    s_motion.ball = lv_obj_create(screen);
+    lv_obj_remove_style_all(s_motion.ball);
+    lv_obj_set_size(s_motion.ball, DISPLAY_MOTION_BALL_PX,
+                    DISPLAY_MOTION_BALL_PX);
+    lv_obj_set_style_bg_color(s_motion.ball, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_motion.ball, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_motion.ball, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_motion.ball, 2, LV_PART_MAIN);
+    s_motion.ball_x_px = 40;
+    s_motion.ball_y_px = 60;
+    s_motion.ball_x_position_ups = (int64_t)s_motion.ball_x_px * 1000000;
+    s_motion.ball_y_position_ups = (int64_t)s_motion.ball_y_px * 1000000;
+    s_motion.ball_dir_x = 1;
+    s_motion.ball_dir_y = 1;
+    lv_obj_set_pos(s_motion.ball, s_motion.ball_x_px, s_motion.ball_y_px);
+
+    s_motion.fps_label = lv_label_create(screen);
+    lv_obj_set_style_text_color(s_motion.fps_label,
+                                lv_color_make(0xFF, 0x40, 0x40), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_motion.fps_label, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_motion.fps_label, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_pos(s_motion.fps_label, 8, 8);
+    lv_label_set_text(s_motion.fps_label, "-- fps");
+
+    lv_display_add_event_cb(s_display, display_motion_refr_cb,
+                            LV_EVENT_FLUSH_START, NULL);
+    lv_display_add_event_cb(s_display, display_motion_refr_cb,
+                            LV_EVENT_REFR_READY, NULL);
+    s_motion.anim_timer = lv_timer_create(display_motion_anim_cb, 5, &s_motion);
+    s_motion.report_timer = lv_timer_create(display_motion_report_cb, 1000,
+                                            &s_motion);
+    if (s_motion.anim_timer == NULL || s_motion.report_timer == NULL) {
+        if (s_motion.anim_timer != NULL) {
+            lv_timer_delete(s_motion.anim_timer);
+        }
+        if (s_motion.report_timer != NULL) {
+            lv_timer_delete(s_motion.report_timer);
+        }
+        lv_display_remove_event_cb_with_user_data(s_display,
+                                                  display_motion_refr_cb, NULL);
+        if (scroll) {
+            lv_obj_remove_event_cb_with_user_data(screen,
+                                                  display_motion_draw_cb, NULL);
+        }
+        create_display_pattern();
+        memset(&s_motion, 0, sizeof(s_motion));
+        bsp_display_unlock();
+        return ESP_ERR_NO_MEM;
+    }
+
+    s_motion.running = true;
+    bsp_display_unlock();
+    return ESP_OK;
+}
+
+static bool display_motion_cleanup_lock(void)
+{
+    for (unsigned attempt = 0;
+            attempt < DISPLAY_MOTION_CLEANUP_LOCK_ATTEMPTS; ++attempt) {
+        if (bsp_display_lock(DISPLAY_MOTION_LOCK_TIMEOUT_MS)) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    return false;
+}
+
+static esp_err_t display_motion_stop(display_motion_result_t *result)
+{
+    if (!s_motion.running) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!display_motion_cleanup_lock()) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    s_motion.running = false;
+    if (s_motion.anim_timer != NULL) {
+        lv_timer_delete(s_motion.anim_timer);
+        s_motion.anim_timer = NULL;
+    }
+    if (s_motion.report_timer != NULL) {
+        lv_timer_delete(s_motion.report_timer);
+        s_motion.report_timer = NULL;
+    }
+    lv_display_remove_event_cb_with_user_data(s_display, display_motion_refr_cb,
+                                              NULL);
+    if (s_motion.scroll) {
+        lv_obj_remove_event_cb_with_user_data(lv_screen_active(),
+                                              display_motion_draw_cb, NULL);
+    }
+    if (result != NULL) {
+        result->frames_total = s_motion.frames_total;
+        result->cycles_min = s_motion.cycles_min;
+        result->cycles_max = s_motion.cycles_max;
+    }
+    create_display_pattern();
+    bsp_display_unlock();
+    return ESP_OK;
+}
+
+static esp_err_t display_motion_snapshot(uint32_t *frames_total)
+{
+    if (frames_total == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!bsp_display_lock(DISPLAY_MOTION_LOCK_TIMEOUT_MS)) {
+        return ESP_ERR_TIMEOUT;
+    }
+    if (!s_motion.running) {
+        bsp_display_unlock();
+        return ESP_ERR_INVALID_STATE;
+    }
+    *frames_total = s_motion.frames_total;
+    bsp_display_unlock();
+    return ESP_OK;
+}
+
 static int command_display_motion(int argc, char **argv)
 {
     long seconds = DISPLAY_MOTION_SECONDS_DEFAULT;
@@ -661,90 +831,302 @@ static int command_display_motion(int argc, char **argv)
             return ESP_ERR_INVALID_ARG;
         }
     }
-    if (s_motion.running) {
-        printf("display_motion already running\n");
-        return ESP_ERR_INVALID_STATE;
+    const esp_err_t start_error = display_motion_start(scroll);
+    if (start_error != ESP_OK) {
+        if (start_error == ESP_ERR_INVALID_STATE) {
+            printf("display_motion already running\n");
+        }
+        return start_error;
     }
-    ESP_RETURN_ON_ERROR(factory_display_ensure_started(), "factory_display",
-                        "display initialization failed");
-    if (!bsp_display_lock(1000)) {
-        return ESP_ERR_TIMEOUT;
-    }
-
-    memset(&s_motion, 0, sizeof(s_motion));
-    s_motion.scroll = scroll;
-    s_motion.running = true;
-
-    lv_obj_t *screen = lv_screen_active();
-    lv_obj_clean(screen);
-    lv_obj_set_style_bg_color(screen, lv_color_black(), LV_PART_MAIN);
-
-    /* High-contrast horizontal stripes scrolling vertically make a tear
-     * line visible immediately: any scan/write race shows as a horizontal
-     * offset in the stripe edges. Drawn in the screen draw event. */
-    if (scroll) {
-        lv_obj_add_event_cb(screen, display_motion_draw_cb, LV_EVENT_DRAW_MAIN,
-                            NULL);
-    }
-
-    s_motion.ball = lv_obj_create(screen);
-    lv_obj_remove_style_all(s_motion.ball);
-    lv_obj_set_size(s_motion.ball, DISPLAY_MOTION_BALL_PX, DISPLAY_MOTION_BALL_PX);
-    lv_obj_set_style_bg_color(s_motion.ball, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_motion.ball, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(s_motion.ball, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_motion.ball, 2, LV_PART_MAIN);
-    s_motion.ball_x_px = 40;
-    s_motion.ball_y_px = 60;
-    s_motion.ball_dir_x = 1;
-    s_motion.ball_dir_y = 1;
-    lv_obj_set_pos(s_motion.ball, s_motion.ball_x_px, s_motion.ball_y_px);
-
-    s_motion.fps_label = lv_label_create(screen);
-    lv_obj_set_style_text_color(s_motion.fps_label, lv_color_make(0xFF, 0x40, 0x40),
-                                LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_motion.fps_label, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_motion.fps_label, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_pos(s_motion.fps_label, 8, 8);
-    lv_label_set_text(s_motion.fps_label, "-- fps");
-
-    lv_display_add_event_cb(s_display, display_motion_refr_cb,
-                            LV_EVENT_FLUSH_START, NULL);
-    lv_display_add_event_cb(s_display, display_motion_refr_cb,
-                            LV_EVENT_REFR_READY, NULL);
-    s_motion.anim_timer = lv_timer_create(display_motion_anim_cb, 5, &s_motion);
-    s_motion.report_timer = lv_timer_create(display_motion_report_cb, 1000,
-                                            &s_motion);
-    bsp_display_unlock();
 
     printf("display_motion: %s mode for %ld s; watch the stripe edges for "
            "tearing\n", scroll ? "full-screen scroll" : "ball-only", seconds);
     vTaskDelay(pdMS_TO_TICKS(seconds * 1000));
 
-    if (!bsp_display_lock(1000)) {
-        return ESP_ERR_TIMEOUT;
+    display_motion_result_t result = {0};
+    const esp_err_t stop_error = display_motion_stop(&result);
+    if (stop_error != ESP_OK) {
+        return stop_error;
     }
-    s_motion.running = false;
-    lv_timer_delete(s_motion.anim_timer);
-    lv_timer_delete(s_motion.report_timer);
-    lv_display_remove_event_cb_with_user_data(s_display, display_motion_refr_cb,
-            NULL);
-    lv_obj_remove_event_cb_with_user_data(lv_screen_active(),
-                                          display_motion_draw_cb, NULL);    const uint32_t total = s_motion.frames_total;
-    const uint32_t cycles_min = s_motion.cycles_min;
-    const uint32_t cycles_max = s_motion.cycles_max;
-    const float avg_fps = (float)total / (float)seconds;
-    create_display_pattern();
-    bsp_display_unlock();
+    const float avg_fps = (float)result.frames_total / (float)seconds;
 
     printf("display_motion done: avg_fps=%.1f min=%" PRIu32 " max=%" PRIu32
-           " frames=%" PRIu32 "\n", avg_fps, cycles_min, cycles_max, total);
+           " frames=%" PRIu32 "\n", avg_fps, result.cycles_min,
+           result.cycles_max, result.frames_total);
     fputs("FACTORY_TE_MOTION {\"avg_fps\":", stdout);
     printf("%.1f,\"min_fps\":%" PRIu32 ",\"max_fps\":%" PRIu32
            ",\"frames\":%" PRIu32 ",\"seconds\":%ld,\"mode\":\"%s\"}\n",
-           avg_fps, cycles_min, cycles_max, total, seconds,
+           avg_fps, result.cycles_min, result.cycles_max,
+           result.frames_total, seconds,
            scroll ? "full" : "ball");
     return ESP_OK;
+}
+
+/* Recovery is intentionally more defensive for a failed deep-standby entry:
+ * enter_deep_standby() first completes normal sleep and only then sends 0x4F.
+ * If that final step fails, the BSP remains in normal sleep and rejects the
+ * deep exit with ESP_ERR_INVALID_STATE.  In that case a successful normal
+ * wake is the authoritative recovery result. */
+static esp_err_t display_sleep_stress_recover(bool deep)
+{
+    if (!deep) {
+        return bsp_display_exit_sleep();
+    }
+
+    const esp_err_t deep_error = bsp_display_exit_deep_standby();
+    if (deep_error == ESP_OK) {
+        return ESP_OK;
+    }
+
+    const esp_err_t sleep_error = bsp_display_exit_sleep();
+    if (sleep_error == ESP_OK) {
+        return ESP_OK;
+    }
+    /* A concrete deep-wake failure is more useful than the fallback error.
+     * INVALID_STATE only says the panel was not in deep standby, so retain
+     * the normal-wake failure in that expected fallback case. */
+    return deep_error != ESP_ERR_INVALID_STATE ? deep_error : sleep_error;
+}
+
+static int command_display_sleep_stress(int argc, char **argv)
+{
+    long cycles = DISPLAY_SLEEP_STRESS_CYCLES_DEFAULT;
+    bool deep = false;
+    if (argc > 3) {
+        printf("usage: display_sleep_stress [CYCLES 1-100] [deep]\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (argc >= 2) {
+        char *end = NULL;
+        cycles = strtol(argv[1], &end, 10);
+        if (end == argv[1] || *end != '\0' ||
+                cycles < DISPLAY_SLEEP_STRESS_CYCLES_MIN ||
+                cycles > DISPLAY_SLEEP_STRESS_CYCLES_MAX) {
+            printf("usage: display_sleep_stress [CYCLES %d-%d] [deep]\n",
+                   DISPLAY_SLEEP_STRESS_CYCLES_MIN,
+                   DISPLAY_SLEEP_STRESS_CYCLES_MAX);
+            return ESP_ERR_INVALID_ARG;
+        }
+    }
+    if (argc == 3) {
+        if (strcmp(argv[2], "deep") != 0) {
+            printf("usage: display_sleep_stress [CYCLES] [deep]\n");
+            return ESP_ERR_INVALID_ARG;
+        }
+        deep = true;
+    }
+
+    const char *mode = deep ? "deep" : "normal";
+    const esp_err_t start_error = display_motion_start(false);
+    if (start_error != ESP_OK) {
+        if (start_error == ESP_ERR_INVALID_STATE) {
+            printf("display_sleep_stress: another motion test is running\n");
+        }
+        return start_error;
+    }
+
+    printf("display_sleep_stress: mode=%s cycles=%ld; keep sliding on the "
+           "touch panel while the ball moves\n", mode, cycles);
+    const int64_t test_start_us = esp_timer_get_time();
+    vTaskDelay(pdMS_TO_TICKS(DISPLAY_SLEEP_STRESS_WARMUP_MS));
+
+    esp_err_t first_error = ESP_OK;
+    uint32_t frames_before = 0;
+    esp_err_t snapshot_error = display_motion_snapshot(&frames_before);
+    if (snapshot_error != ESP_OK) {
+        first_error = snapshot_error;
+    }
+
+    unsigned attempted = 0;
+    unsigned completed = 0;
+    bool panel_awake = true;
+    for (long cycle = 1; cycle <= cycles && first_error == ESP_OK; ++cycle) {
+        ++attempted;
+        const int64_t cycle_start_us = esp_timer_get_time();
+        const int64_t enter_start_us = cycle_start_us;
+        const esp_err_t enter_error = deep ?
+                                      bsp_display_enter_deep_standby() :
+                                      bsp_display_enter_sleep();
+        const int64_t enter_ms =
+            (esp_timer_get_time() - enter_start_us) / INT64_C(1000);
+
+        /* Even an error can occur after SLPIN succeeded (for example while
+         * putting touch to sleep), so conservatively require wake recovery. */
+        panel_awake = false;
+        bool leave_attempted = false;
+        esp_err_t leave_error = ESP_OK;
+        int64_t leave_ms = 0;
+        unsigned asleep_hold_ms = 0;
+        if (enter_error == ESP_OK) {
+            asleep_hold_ms = DISPLAY_SLEEP_STRESS_ASLEEP_MS;
+            vTaskDelay(pdMS_TO_TICKS(asleep_hold_ms));
+            leave_attempted = true;
+            const int64_t leave_start_us = esp_timer_get_time();
+            leave_error = deep ? bsp_display_exit_deep_standby() :
+                          bsp_display_exit_sleep();
+            leave_ms = (esp_timer_get_time() - leave_start_us) /
+                       INT64_C(1000);
+            panel_awake = leave_error == ESP_OK;
+        }
+
+        bool recovery_attempted = false;
+        esp_err_t recovery_error = ESP_OK;
+        if (!panel_awake) {
+            recovery_attempted = true;
+            vTaskDelay(pdMS_TO_TICKS(DISPLAY_SLEEP_STRESS_RECOVERY_MS));
+            recovery_error = display_sleep_stress_recover(deep);
+            panel_awake = recovery_error == ESP_OK;
+        }
+
+        unsigned awake_hold_ms = 0;
+        uint32_t frames_after = frames_before;
+        bool frames_valid = false;
+        snapshot_error = ESP_OK;
+        if (panel_awake) {
+            awake_hold_ms = DISPLAY_SLEEP_STRESS_AWAKE_MS;
+            vTaskDelay(pdMS_TO_TICKS(awake_hold_ms));
+            snapshot_error = display_motion_snapshot(&frames_after);
+            frames_valid = snapshot_error == ESP_OK;
+        }
+        const uint32_t frames_delta = frames_valid ?
+                                      frames_after - frames_before : 0;
+
+        esp_err_t cycle_error = enter_error;
+        if (cycle_error == ESP_OK && leave_error != ESP_OK) {
+            cycle_error = leave_error;
+        }
+        if (cycle_error == ESP_OK && recovery_error != ESP_OK) {
+            cycle_error = recovery_error;
+        }
+        if (cycle_error == ESP_OK && snapshot_error != ESP_OK) {
+            cycle_error = snapshot_error;
+        }
+        if (cycle_error == ESP_OK && frames_valid && frames_delta == 0) {
+            /* A successful API wake is insufficient if LVGL produced no
+             * actual flush during the full awake observation window. */
+            cycle_error = ESP_ERR_TIMEOUT;
+        }
+        const bool passed = cycle_error == ESP_OK;
+        if (passed) {
+            ++completed;
+        }
+
+        const int64_t cycle_ms =
+            (esp_timer_get_time() - cycle_start_us) / INT64_C(1000);
+        printf("display_sleep_stress: cycle=%ld/%ld mode=%s enter=%s "
+               "leave=%s recovery=%s frames_delta=%" PRIu32
+               " cycle_error=%s status=%s\n",
+               cycle, cycles, mode, esp_err_to_name(enter_error),
+               leave_attempted ? esp_err_to_name(leave_error) : "not-run",
+               recovery_attempted ? esp_err_to_name(recovery_error) :
+               "not-run", frames_delta, esp_err_to_name(cycle_error),
+               passed ? "pass" : "fail");
+        printf("FACTORY_DISPLAY_SLEEP_STRESS_CYCLE {\"cycle\":%ld,"
+               "\"requested\":%ld,\"mode\":\"%s\",\"enter_err\":%d,"
+               "\"enter_ms\":%" PRId64 ",\"asleep_hold_ms\":%u,"
+               "\"leave_attempted\":%s,\"leave_err\":%d,"
+               "\"leave_ms\":%" PRId64 ",\"recovery_attempted\":%s,"
+               "\"recovery_err\":%d,\"awake_hold_ms\":%u,"
+               "\"frames_valid\":%s,\"frames_delta\":%" PRIu32 ","
+               "\"frames_total\":%" PRIu32 ",\"cycle_err\":%d,"
+               "\"cycle_ms\":%" PRId64 ","
+               "\"status\":\"%s\"}\n",
+               cycle, cycles, mode, (int)enter_error, enter_ms,
+               asleep_hold_ms, leave_attempted ? "true" : "false",
+               (int)leave_error, leave_ms,
+               recovery_attempted ? "true" : "false", (int)recovery_error,
+               awake_hold_ms, frames_valid ? "true" : "false", frames_delta,
+               frames_after, (int)cycle_error, cycle_ms,
+               passed ? "pass" : "fail");
+
+        if (frames_valid) {
+            frames_before = frames_after;
+        }
+        if (!passed) {
+            first_error = cycle_error;
+            break;
+        }
+    }
+
+    bool final_recovery_attempted = false;
+    esp_err_t final_recovery_error = ESP_OK;
+    if (!panel_awake) {
+        final_recovery_attempted = true;
+        vTaskDelay(pdMS_TO_TICKS(DISPLAY_SLEEP_STRESS_RECOVERY_MS));
+        final_recovery_error = display_sleep_stress_recover(deep);
+        panel_awake = final_recovery_error == ESP_OK;
+        if (first_error == ESP_OK && final_recovery_error != ESP_OK) {
+            first_error = final_recovery_error;
+        }
+    }
+
+    display_motion_result_t result = {0};
+    esp_err_t cleanup_error = display_motion_stop(&result);
+    const esp_err_t first_cleanup_error = cleanup_error;
+    if (cleanup_error != ESP_OK) {
+        /* A panel recovery can unblock a flush that owned the LVGL mutex.
+         * Make one final bounded cleanup attempt so a failed diagnostic does
+         * not normally leave its timers or event callbacks installed. */
+        if (!panel_awake) {
+            final_recovery_attempted = true;
+            final_recovery_error = display_sleep_stress_recover(deep);
+            panel_awake = final_recovery_error == ESP_OK;
+        }
+        vTaskDelay(pdMS_TO_TICKS(DISPLAY_SLEEP_STRESS_RECOVERY_MS));
+        cleanup_error = display_motion_stop(&result);
+    }
+    if (first_error == ESP_OK && first_cleanup_error != ESP_OK) {
+        first_error = first_cleanup_error;
+    }
+
+    esp_err_t redraw_error = ESP_OK;
+    if (cleanup_error == ESP_OK && !panel_awake) {
+        final_recovery_attempted = true;
+        final_recovery_error = display_sleep_stress_recover(deep);
+        panel_awake = final_recovery_error == ESP_OK;
+        if (panel_awake) {
+            redraw_error = factory_display_show_pattern();
+        }
+    }
+    if (first_error == ESP_OK && final_recovery_error != ESP_OK) {
+        first_error = final_recovery_error;
+    }
+    if (first_error == ESP_OK && cleanup_error != ESP_OK) {
+        first_error = cleanup_error;
+    }
+    if (first_error == ESP_OK && redraw_error != ESP_OK) {
+        first_error = redraw_error;
+    }
+
+    const int64_t elapsed_ms =
+        (esp_timer_get_time() - test_start_us) / INT64_C(1000);
+    const bool passed = first_error == ESP_OK && completed == (unsigned)cycles &&
+                        cleanup_error == ESP_OK && panel_awake;
+    printf("display_sleep_stress done: mode=%s completed=%u/%ld frames=%" PRIu32
+           " cleanup=%s awake=%s elapsed_ms=%" PRId64 " status=%s\n",
+           mode, completed, cycles, result.frames_total,
+           esp_err_to_name(cleanup_error), panel_awake ? "yes" : "no",
+           elapsed_ms, passed ? "pass" : "fail");
+    printf("FACTORY_DISPLAY_SLEEP_STRESS {\"mode\":\"%s\","
+           "\"requested\":%ld,\"attempted\":%u,\"completed\":%u,"
+           "\"frames\":%" PRIu32 ",\"min_fps\":%" PRIu32 ","
+           "\"max_fps\":%" PRIu32 ",\"first_err\":%d,"
+           "\"first_cleanup_err\":%d,\"cleanup_err\":%d,"
+           "\"final_recovery_attempted\":%s,"
+           "\"final_recovery_err\":%d,\"redraw_err\":%d,"
+           "\"panel_awake\":%s,\"elapsed_ms\":%" PRId64 ","
+           "\"status\":\"%s\"}\n",
+           mode, cycles, attempted, completed, result.frames_total,
+           result.cycles_min, result.cycles_max, (int)first_error,
+           (int)first_cleanup_error, (int)cleanup_error,
+           final_recovery_attempted ? "true" : "false",
+           (int)final_recovery_error, (int)redraw_error,
+           panel_awake ? "true" : "false", elapsed_ms,
+           passed ? "pass" : "fail");
+    if (passed) {
+        return ESP_OK;
+    }
+    return first_error != ESP_OK ? first_error : ESP_FAIL;
 }
 
 
@@ -758,6 +1140,7 @@ esp_err_t factory_display_register(void)
         {.command = "display_sleep_test", .help = "Cycle AMOLED sleep and deep standby with operator checks.", .func = command_display_sleep_test},
         {.command = "display_te", .help = "Measure panel TE edges, starting the display if needed: display_te [WINDOW_MS 100-10000].", .func = command_display_te},
         {.command = "display_motion", .help = "Run a continuous-motion tearing/FPS demo: display_motion [SECONDS 2-300] [full|ball].", .func = command_display_motion},
+        {.command = "display_sleep_stress", .help = "Stress motion/touch during repeated panel sleep/wake: display_sleep_stress [CYCLES 1-100] [deep].", .func = command_display_sleep_stress},
     };
     for (size_t index = 0; index < sizeof(commands) / sizeof(commands[0]); ++index) {
         const esp_err_t error = esp_console_cmd_register(&commands[index]);

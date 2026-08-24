@@ -17,6 +17,44 @@
 #include "factory_modules.h"
 #include "factory_report.h"
 
+static esp_err_t print_pmic_early_snapshot(void)
+{
+    bsp_pmic_early_snapshot_t snapshot = {0};
+    const esp_err_t error = bsp_pmic_get_early_snapshot(&snapshot);
+    if (error != ESP_OK) {
+        printf("early_snapshot read failed: %s\n", esp_err_to_name(error));
+        return error;
+    }
+
+    printf("early_snapshot valid_mask=0x%02x", snapshot.valid_mask);
+    if ((snapshot.valid_mask & BSP_PMIC_EARLY_STATUS_VALID) != 0) {
+        printf(" REG00-01=%02x:%02x",
+               snapshot.status[0], snapshot.status[1]);
+    } else {
+        printf(" REG00-01=INVALID");
+    }
+    if ((snapshot.valid_mask & BSP_PMIC_EARLY_POWER_SOURCE_VALID) != 0) {
+        printf(" REG20-21=%02x:%02x",
+               snapshot.power_source[0], snapshot.power_source[1]);
+    } else {
+        printf(" REG20-21=INVALID");
+    }
+    if ((snapshot.valid_mask & BSP_PMIC_EARLY_ADC_CONTROL_VALID) != 0) {
+        printf(" REG30=%02x", snapshot.adc_control);
+    } else {
+        printf(" REG30=INVALID");
+    }
+    if ((snapshot.valid_mask & BSP_PMIC_EARLY_IRQ_STATUS_VALID) != 0) {
+        printf(" REG48-4A=%02x:%02x:%02x",
+               snapshot.irq_status[0], snapshot.irq_status[1],
+               snapshot.irq_status[2]);
+    } else {
+        printf(" REG48-4A=INVALID");
+    }
+    printf(" (post-create, before BSP writes/gauge reset/IRQ clear)\n");
+    return ESP_OK;
+}
+
 static int command_pmic_test(int argc, char **argv)
 {
     (void)argc;
@@ -44,6 +82,7 @@ static int command_pmic_test(int argc, char **argv)
            status.charging ? "yes" : "no", status.charge_done ? "yes" : "no",
            charge_current, power_on_source, status.common_status0,
            status.common_status1);
+    print_pmic_early_snapshot();
     const bool known_id = status.chip_id == 0x47 || status.chip_id == 0x4a;
     char detail[96];
     snprintf(detail, sizeof(detail), "id=0x%02x vbat=%u soc=%u battery=%s vbus=%s",
@@ -146,38 +185,135 @@ static int command_pmic(int argc, char **argv)
         if (error == ESP_OK) {
             printf("boot_irq_snapshot=0x%02x 0x%02x 0x%02x (%s)\n",
                    status[0], status[1], status[2],
-                   valid ? "captured at boot, pre-clear" : "no snapshot");
+                   valid ? "post-create, pre-config/pre-clear" : "no snapshot");
         }
         return error;
     }
+    if (argc == 2 && strcmp(argv[1], "early_snapshot") == 0) {
+        return print_pmic_early_snapshot();
+    }
     if (argc == 2 && strcmp(argv[1], "temperature") == 0) {
-        /* EVT1 has no battery NTC: the TS pin is a fixed input. TDIE is the
-         * die-temperature sensor voltage (not degC); watch its trend during
-         * the 500 mA charge test and monitor the cell externally. */
-        static const struct {
-            bsp_pmic_adc_channel_t channel;
-            const char *label;
-        } channels[] = {
-            { BSP_PMIC_ADC_VBAT, "vbat" },
-            { BSP_PMIC_ADC_VBUS, "vbus" },
-            { BSP_PMIC_ADC_VSYS, "vsys" },
-            { BSP_PMIC_ADC_TS,   "ts"   },
-            { BSP_PMIC_ADC_TDIE, "tdie" },
-        };
-        for (unsigned index = 0; index < sizeof(channels) / sizeof(channels[0]);
-                ++index) {
-            uint16_t millivolts = 0;
-            const esp_err_t error = bsp_pmic_read_adc_mv(channels[index].channel,
-                                                         &millivolts);
-            if (error != ESP_OK) {
-                printf("%s read failed: %s\n", channels[index].label,
-                       esp_err_to_name(error));
-                return error;
+        bsp_pmic_status_t status = {0};
+        esp_err_t status_error = bsp_pmic_get_status(&status);
+        if (status_error != ESP_OK) {
+            printf("PMIC status read failed before ADC diagnostic: %s\n",
+                   esp_err_to_name(status_error));
+            return status_error;
+        }
+
+        bsp_pmic_adc_diagnostic_t diagnostic = {0};
+        const esp_err_t diagnostic_error =
+            bsp_pmic_run_adc_diagnostic(&diagnostic);
+        printf("adc_control REG30 orig=0x%02x enabled_readback=0x%02x "
+               "enable_verified=%s restored_readback=0x%02x "
+               "restore_verified=%s samples=%u\n",
+               diagnostic.reg30_original, diagnostic.reg30_enabled,
+               diagnostic.enable_verified ? "yes" : "no",
+               diagnostic.reg30_restored,
+               diagnostic.restore_verified ? "yes" : "no",
+               (unsigned)diagnostic.sample_count);
+        bool vbus_stale_seen = false;
+        uint32_t vbus_last_stale_ms = 0;
+        uint32_t vbus_first_valid_ms = UINT32_MAX;
+        for (size_t index = 0; index < diagnostic.sample_count; ++index) {
+            const bsp_pmic_adc_diagnostic_sample_t *sample =
+                &diagnostic.samples[index];
+            printf("adc_sample t=%" PRIu32 "ms raw "
+                   "vbat=0x%04x ts=0x%04x vbus=0x%04x "
+                   "vsys=0x%04x tdie=0x%04x\n",
+                   sample->elapsed_ms,
+                   sample->raw[BSP_PMIC_ADC_VBAT],
+                   sample->raw[BSP_PMIC_ADC_TS],
+                   sample->raw[BSP_PMIC_ADC_VBUS],
+                   sample->raw[BSP_PMIC_ADC_VSYS],
+                   sample->raw[BSP_PMIC_ADC_TDIE]);
+            const uint16_t sample_vbus = sample->raw[BSP_PMIC_ADC_VBUS];
+            if (vbus_first_valid_ms == UINT32_MAX) {
+                if (sample_vbus == 0) {
+                    vbus_stale_seen = true;
+                    vbus_last_stale_ms = sample->elapsed_ms;
+                } else if (sample_vbus <= 0x2000) {
+                    vbus_first_valid_ms = sample->elapsed_ms;
+                }
             }
-            printf("%s_mv=%u%s\n", channels[index].label, millivolts,
-                   channels[index].channel == BSP_PMIC_ADC_TS ? " (fixed input)" :
-                   channels[index].channel == BSP_PMIC_ADC_TDIE ?
-                   " (die sensor voltage, not degC)" : "");
+        }
+        if (diagnostic_error != ESP_OK) {
+            printf("ADC diagnostic failed: %s\n",
+                   esp_err_to_name(diagnostic_error));
+            return diagnostic_error;
+        }
+        if (diagnostic.sample_count == 0) {
+            printf("ADC diagnostic produced no samples\n");
+            return ESP_FAIL;
+        }
+
+        bsp_pmic_status_t final_status = {0};
+        status_error = bsp_pmic_get_status(&final_status);
+        if (status_error != ESP_OK) {
+            printf("PMIC status read failed after ADC diagnostic: %s\n",
+                   esp_err_to_name(status_error));
+            return status_error;
+        }
+        if (status.vbus_present != final_status.vbus_present) {
+            printf("vbus_presence_changed_during_adc=%s->%s\n",
+                   status.vbus_present ? "present" : "absent",
+                   final_status.vbus_present ? "present" : "absent");
+        }
+        if (final_status.vbus_present && vbus_stale_seen &&
+                vbus_first_valid_ms != UINT32_MAX) {
+            printf("vbus_adc_settle=stale_through_%" PRIu32
+                   "ms first_valid_sample=%" PRIu32
+                   "ms; use >=%" PRIu32 "ms after REG30 enable\n",
+                   vbus_last_stale_ms, vbus_first_valid_ms,
+                   vbus_first_valid_ms);
+        }
+
+        const bsp_pmic_adc_diagnostic_sample_t *final =
+            &diagnostic.samples[diagnostic.sample_count - 1];
+        const uint16_t vbat_raw = final->raw[BSP_PMIC_ADC_VBAT];
+        const uint16_t ts_raw = final->raw[BSP_PMIC_ADC_TS];
+        const uint16_t vbus_raw = final->raw[BSP_PMIC_ADC_VBUS];
+        const uint16_t vsys_raw = final->raw[BSP_PMIC_ADC_VSYS];
+        const uint16_t tdie_raw = final->raw[BSP_PMIC_ADC_TDIE];
+
+        printf("adc_final t=%" PRIu32 "ms vbat=%u mV vbus=%u mV "
+               "vsys=%u mV\n",
+               final->elapsed_ms, vbat_raw, vbus_raw, vsys_raw);
+        if (final_status.vbus_present && vbus_raw == 0) {
+            printf("vbus_adc=INVALID/STALE (REG00 says VBUS present, raw=0)\n");
+        } else {
+            printf("vbus_adc=%s (REG00 VBUS=%s, raw=0x%04x)\n",
+                   vbus_raw > 0x2000 ? "INVALID/OVERFLOW" : "VALID",
+                   final_status.vbus_present ? "present" : "absent",
+                   vbus_raw);
+        }
+
+        /* EVT1 deliberately has no battery NTC and fixes TS to ground.
+         * TG28 FAQ 2.12 says raw > 0x2000 is the negative-offset/overflow
+         * signature (often near 0x3fff), not a large positive voltage. */
+        if (ts_raw > 0x2000) {
+            printf("ts_adc=INVALID (EVT1 fixed-GND input; "
+                   "negative-offset/overflow raw=0x%04x)\n", ts_raw);
+        } else {
+            printf("ts_adc=INVALID (EVT1 fixed-GND input, no battery NTC; "
+                   "raw=0x%04x)\n", ts_raw);
+        }
+
+        if (tdie_raw == 0) {
+            printf("tdie_adc=INVALID/STALE (raw=0)\n");
+        } else if (tdie_raw > 0x2000) {
+            printf("tdie_adc=INVALID/OVERFLOW (raw=0x%04x)\n", tdie_raw);
+        } else {
+            /* TG28 FAQ V1.0 section 2.8: T = 22 + (7274 - ADC) / 20.
+             * Keep 0.05 C/count exactly by calculating centi-degrees. */
+            const int32_t centi_c = 2200 +
+                (7274 - (int32_t)tdie_raw) * 5;
+            const uint32_t magnitude = centi_c < 0 ?
+                (uint32_t)(-centi_c) : (uint32_t)centi_c;
+            printf("tdie_c=%c%" PRIu32 ".%02" PRIu32
+                   " (raw=0x%04x; TG28 FAQ formula)\n",
+                   centi_c < 0 ? '-' : '+', magnitude / 100,
+                   magnitude % 100, tdie_raw);
         }
         return ESP_OK;
     }
@@ -266,7 +402,7 @@ static int command_pmic(int argc, char **argv)
         }
         return error;
     }
-    printf("usage: pmic regs | pmic power_on_source | pmic power_off_source | pmic irq_snapshot | pmic model_dump [rom|sram] | pmic input_limit [100 | {500|900|1000|1500|2000} source_verified] | pmic vindpm [MILLIVOLTS] | pmic charge_current [MILLIAMPS] | pmic temperature\n");
+    printf("usage: pmic regs | pmic power_on_source | pmic power_off_source | pmic early_snapshot | pmic irq_snapshot | pmic model_dump [rom|sram] | pmic input_limit [100 | {500|900|1000|1500|2000} source_verified] | pmic vindpm [MILLIVOLTS] | pmic charge_current [MILLIAMPS] | pmic temperature\n");
     return ESP_ERR_INVALID_ARG;
 }
 

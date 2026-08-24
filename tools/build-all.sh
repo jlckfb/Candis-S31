@@ -8,8 +8,8 @@
 #                    the esp-bsp convention
 #                    `-D SDKCONFIG_DEFAULTS=sdkconfig.bsp.candis_s31`,
 #                    build dir `build_candis_s31/` inside each example.
-#   testapp:<name>   4 driver component test_apps (tg28_sw, rx8130ce, fusb303b,
-#                    cst820), build dir `build_esp32s31/`.
+#   testapp:<name>   5 BSP/driver test_apps (candis_s31, tg28_sw, rx8130ce,
+#                    fusb303b, cst820), build dir `build_esp32s31/`.
 #   factory          firmware/factory, needs CANDIS_S31_BSP_PATH pointing at the
 #                    local esp-bsp worktree (bsp/candis_s31). Default build/ dir.
 #   getting-started  examples/esp-idf/getting-started. Default build/ dir.
@@ -65,7 +65,7 @@ command -v idf.py >/dev/null 2>&1 || die "idf.py still not available after activ
 
 # --- target table ------------------------------------------------------------
 BSP_EXAMPLES=(display display_camera_video display_lvgl_demos display_lvgl_benchmark display_sdcard audio display_audio_photo)
-TEST_APPS=(tg28_sw rx8130ce fusb303b cst820)
+TEST_APPS=(candis_s31 tg28_sw rx8130ce fusb303b cst820)
 
 ALL_TARGETS=()
 for ex in "${BSP_EXAMPLES[@]}"; do ALL_TARGETS+=("example:$ex"); done
@@ -74,6 +74,7 @@ ALL_TARGETS+=(factory getting-started low-power)
 
 testapp_dir() {
     case "$1" in
+        candis_s31) printf '%s\n' "$ESP_BSP_ROOT/bsp/candis_s31/test_apps" ;;
         cst820) printf '%s\n' "$ESP_BSP_ROOT/components/lcd_touch/esp_lcd_touch_cst820/test_apps" ;;
         *)      printf '%s\n' "$ESP_BSP_ROOT/components/$1/test_apps" ;;
     esac

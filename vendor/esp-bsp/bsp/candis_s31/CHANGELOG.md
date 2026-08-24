@@ -16,6 +16,7 @@
 
 ### Fixed
 
+* Storage: roll back the SPIFFS registration when the post-mount information query fails, preserving the original error so callers can retry cleanly; add fault-injection coverage for the mount lifecycle
 * Audio: require `esp_codec_dev` 1.6.2 and give the speaker/microphone instances one BCLK/no-DAC-reference policy. Version 1.5.11 reset the shared ES8389 for each logical instance; `mic -> speaker -> mic` left registers 0x02/0x23/0xF0 in the speaker policy and returned an exact-zero left ADC channel. The 1.6.x physical-codec reference manager plus matching configs removes that creation-order dependency
 * Audio: `bsp_audio_init()` built its default `i2s_std_config_t` from a hard-coded 22050 Hz and ignored `BSP_I2S_SAMPLE_RATE` entirely, so overriding the macro had no effect; it now derives the rate from the macro. The default itself moves from 22050 Hz to 16000 Hz: 22050 Hz has no row in the es8389 coefficient table (`coeff_div[]` holds only 8000/16000/24000/32000/44100/48000/88200/96000/192000 Hz). The shared BCLK policy now resolves the 16 kHz/16-bit x2 row exactly instead of leaving the codec clocks at their open-time defaults
 * Power: DLDO1 is modelled as the DC1SW load switch its OTP straps it to instead of as an adjustable LDO. The RGB LED rail is opened with `bsp_pmic_switch_enable(BSP_PMIC_SWITCH_DC1SW, true)` in `bsp_led_indicator_create()` and closed again in `bsp_power_safe_state()`; no voltage is programmed on DLDO1 any more

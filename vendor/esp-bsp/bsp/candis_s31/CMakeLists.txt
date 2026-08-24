@@ -19,6 +19,7 @@ idf_component_register(
         vfs
     PRIV_REQUIRES
         esp_psram
+        esp_timer
         fusb303b
         lwip
         tg28_sw

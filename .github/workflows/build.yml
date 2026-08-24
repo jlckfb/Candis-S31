@@ -37,9 +37,9 @@ jobs:
           idf.py --preview -C examples/esp-idf/getting-started set-target esp32s31
           idf.py --preview -C examples/esp-idf/getting-started build
 
-  # The four drivers are vendored at vendor/esp-bsp/components. Their test
-  # apps are the acceptance gate for the components that the BSP and
-  # firmware/factory depend on, so CI compiles them with the same flags
+  # The Candis-S31 BSP and four reusable drivers are vendored under
+  # vendor/esp-bsp. Their test apps are the acceptance gate for the code that
+  # firmware/factory depends on, so CI compiles them with the same flags that
   # tools/build-all.sh uses locally.
   drivers:
     runs-on: ubuntu-latest
@@ -67,10 +67,11 @@ jobs:
         if: steps.idf-cache.outputs.cache-hit == 'true'
         run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
 
-      - name: Build driver test apps (vendored snapshot)
+      - name: Build BSP and driver test apps (vendored snapshot)
         run: |
           . ~/esp-idf/export.sh
           for app in \
+            bsp/candis_s31/test_apps \
             components/tg28_sw/test_apps \
             components/rx8130ce/test_apps \
             components/fusb303b/test_apps \

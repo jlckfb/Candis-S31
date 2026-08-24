@@ -37,7 +37,7 @@
 #include "bsp/touch.h"
 
 #if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
-#include "esp_lv_adapter.h"
+#include "esp_lvgl_port.h"
 #include "lvgl.h"
 #endif
 
@@ -353,6 +353,50 @@ typedef enum {
     BSP_PMIC_ADC_TDIE,
     BSP_PMIC_ADC_COUNT,
 } bsp_pmic_adc_channel_t;
+
+/** Valid fields in bsp_pmic_early_snapshot_t. Each register group is read
+ *  independently so a transient I2C failure does not discard the other
+ *  power-loss evidence. */
+typedef enum {
+    BSP_PMIC_EARLY_STATUS_VALID = 1U << 0,
+    BSP_PMIC_EARLY_POWER_SOURCE_VALID = 1U << 1,
+    BSP_PMIC_EARLY_ADC_CONTROL_VALID = 1U << 2,
+    BSP_PMIC_EARLY_IRQ_STATUS_VALID = 1U << 3,
+} bsp_pmic_early_snapshot_valid_t;
+
+/** First TG28 register values captured immediately after tg28_sw_create().
+ *  This happens before the BSP writes the charge profile, programs or resets
+ *  the fuel gauge, clears IRQs, or changes TS configuration. The snapshot is
+ *  retained until the ESP resets; PMIC deinit/reinit never overwrites it. */
+typedef struct {
+    uint8_t status[2];       /**< REG00-01: PMU status */
+    uint8_t power_source[2]; /**< REG20-21: power-on/off sources */
+    uint8_t adc_control;     /**< REG30: ADC channel enables */
+    uint8_t irq_status[3];   /**< REG48-4A: latched IRQ status */
+    uint8_t valid_mask;      /**< OR of bsp_pmic_early_snapshot_valid_t */
+} bsp_pmic_early_snapshot_t;
+
+#define BSP_PMIC_ADC_DIAGNOSTIC_SAMPLE_COUNT 7
+
+/** One timestamped raw ADC acquisition. Raw values retain all 14 register
+ *  bits so negative-offset/overflow signatures near 0x3fff are observable. */
+typedef struct {
+    uint32_t elapsed_ms;
+    uint16_t raw[BSP_PMIC_ADC_COUNT];
+} bsp_pmic_adc_diagnostic_sample_t;
+
+/** Controlled multi-channel ADC diagnostic. The BSP enables VBAT, VBUS,
+ *  VSYS, and TDIE together, samples them for two seconds, then restores the
+ *  caller's exact REG30 value even if a sample fails. */
+typedef struct {
+    uint8_t reg30_original;
+    uint8_t reg30_enabled;
+    uint8_t reg30_restored;
+    bool enable_verified;
+    bool restore_verified;
+    size_t sample_count;
+    bsp_pmic_adc_diagnostic_sample_t samples[BSP_PMIC_ADC_DIAGNOSTIC_SAMPLE_COUNT];
+} bsp_pmic_adc_diagnostic_t;
 /** @} */
 
 /** @addtogroup g99_others
@@ -646,14 +690,23 @@ esp_err_t bsp_pmic_get_and_clear_interrupts(uint8_t status[3]);
  *  TG28 stayed alive on VBUS). *valid is false if the snapshot was never
  *  captured. */
 esp_err_t bsp_pmic_get_boot_irq_snapshot(uint8_t status[3], bool *valid);
+
+/** Copy the first post-create/pre-configuration register snapshot. */
+esp_err_t bsp_pmic_get_early_snapshot(bsp_pmic_early_snapshot_t *snapshot);
 const char *bsp_pmic_regulator_name(bsp_pmic_regulator_t regulator);
 
 /** Read one TG28_SW ADC channel in millivolts. The TDIE channel reports the
- *  die-temperature sensor voltage, not a temperature; the TS channel reads
- *  the fixed external input fitted on this board (no battery NTC). A
- *  channel disabled at the OTP level is enabled for the measurement and
- *  restored afterwards. */
+ *  die-temperature sensor voltage, not a temperature; EVT1 fixes TS to
+ *  ground and has no battery NTC, so a TS value is never a valid battery
+ *  temperature. A channel disabled at the OTP level is enabled for the
+ *  measurement and restored afterwards. Prefer bsp_pmic_run_adc_diagnostic()
+ *  when raw codes, conversion settling, or overflow validity matter. */
 esp_err_t bsp_pmic_read_adc_mv(bsp_pmic_adc_channel_t channel, uint16_t *millivolts);
+
+/** Capture raw ADC data at 0/50/100/200/500/1000/2000 ms after enabling
+ *  REG30 bits 0,2,3,4 in one write. The original control byte is restored
+ *  and verified before return. */
+esp_err_t bsp_pmic_run_adc_diagnostic(bsp_pmic_adc_diagnostic_t *diagnostic);
 /** @} */
 
 /** @addtogroup g99_others
@@ -758,12 +811,9 @@ esp_err_t bsp_led_set(led_indicator_handle_t handle, bool on);
  *  @{
  */
 typedef struct {
+    lvgl_port_cfg_t lvgl_port_cfg;
     uint32_t buffer_size;
     bool double_buffer;
-    /* With the esp_lvgl_adapter backend these flags follow the cross-BSP
-     * struct convention but only buffer_size is honored: the adapter owns
-     * the draw buffers and selects the TE_SYNC full-frame pipeline when
-     * CONFIG_BSP_LCD_TE_SYNC is enabled. */
     struct {
         unsigned int buff_dma : 1;
         unsigned int buff_spiram : 1;

@@ -46,36 +46,38 @@ menu "Board Support Package (Candis-S31)"
             bool "Synchronize LVGL flushes with the panel TE signal"
             default y
             help
-                Registers the CO5300 tearing-effect edge (GPIO16) with the
-                esp_lvgl_adapter TE_SYNC path. The adapter uses this profile
-                in LVGL RENDER_MODE_FULL: each TE-gated flush transfers the
-                whole frame. Disabling this removes TE gating entirely (the
-                adapter falls back to unsynchronized flushes).
+                Registers the CO5300 tearing-effect edge (GPIO16) with
+                esp_lvgl_port. In the default LVGL PARTIAL path only the first
+                flush of each refresh cycle waits for TE; later chunks are
+                pipelined without another frame-period wait. Disabling this
+                removes TE gating while retaining PARTIAL rendering.
 
         config BSP_LCD_DRAW_BUF_HEIGHT
             int "Display transfer buffer height (lines)"
-            default 80
+            default 48
             range 10 460
             help
-                With esp_lvgl_adapter the draw buffers are owned by the
-                adapter, so this value only sizes the QSPI bus
-                max_transfer_sz (460 x HEIGHT x 2 bytes of internal DMA).
+                Height of each internal-DMA LVGL PARTIAL draw buffer and the
+                matching QSPI maximum transfer. The 48-line default is the
+                measured 60 Hz local / 30 Hz full-screen baseline and keeps
+                internal RAM pressure below the earlier 80-line setting.
 
         config BSP_LCD_DRAW_BUF_DOUBLE
             bool "Use two LVGL draw buffers"
             default y
             help
-                Vestigial on the esp_lvgl_adapter path: the TE_SYNC profile
-                always uses a single full-frame PSRAM buffer. Kept so
-                existing sdkconfig files keep parsing.
+                Allocate two internal-DMA PARTIAL buffers so LVGL rendering
+                can overlap the QSPI transfer. Disable only when internal RAM
+                is constrained and revalidate display throughput afterward.
 
         config BSP_LCD_DIRECT_MODE
             bool "Full-frame PSRAM DIRECT rendering with per-cycle TE-gated flush"
             default n
             help
-                Historical esp_lvgl_port option. The current esp_lvgl_adapter
-                path ignores the DIRECT profile flags and always runs the
-                TE_SYNC full-frame pipeline; leave disabled.
+                Optional esp_lvgl_port full-frame path for applications that
+                require a persistent framebuffer. The validated default is
+                PARTIAL double buffering, which has lower local-update latency;
+                leave this disabled unless the DIRECT path is tested separately.
     endmenu
 
     menu "Storage"

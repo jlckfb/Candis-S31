@@ -138,6 +138,28 @@ void app_main(void)
                  esp_err_to_name(otp_boot_err));
     }
 
+    /* bsp_pmic_init() captured these before its first safety/profile write
+     * and before the fuel-gauge programming sequence clears or creates any
+     * evidence. Keep the validity mask in the log: each group is acquired
+     * independently and zero is a legitimate register value. */
+    bsp_pmic_early_snapshot_t pmic_early = {0};
+    const esp_err_t pmic_early_err =
+        bsp_pmic_get_early_snapshot(&pmic_early);
+    if (pmic_early_err == ESP_OK) {
+        ESP_LOGI(TAG,
+                 "TG28 early snapshot: valid=0x%02x REG00-01=%02x:%02x "
+                 "REG20-21=%02x:%02x REG30=%02x REG48-4A=%02x:%02x:%02x",
+                 pmic_early.valid_mask,
+                 pmic_early.status[0], pmic_early.status[1],
+                 pmic_early.power_source[0], pmic_early.power_source[1],
+                 pmic_early.adc_control,
+                 pmic_early.irq_status[0], pmic_early.irq_status[1],
+                 pmic_early.irq_status[2]);
+    } else {
+        ESP_LOGW(TAG, "TG28 early snapshot unavailable: %s",
+                 esp_err_to_name(pmic_early_err));
+    }
+
     /* bsp_board_init() first configures the interrupt inputs (GPIO2
      * PMIC/RTC, GPIO43 Type-C) as pulled-up inputs, then applies the power
      * safe state. Direct bsp_power_safe_state() would leave those lines

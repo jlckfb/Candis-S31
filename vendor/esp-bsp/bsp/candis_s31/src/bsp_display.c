@@ -22,28 +22,38 @@
 #include "bsp/candis_s31.h"
 
 #if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
-#include "esp_lv_adapter.h"
+#include "esp_lvgl_port.h"
 #endif
 
 static const char *TAG = "candis_display";
 
-/* EVT bring-up starts the panel at 30 % brightness and must never flash
- * 100 % on the first Display-On. The CO5300 brightness register (WRDISBV,
- * 0x51) takes percent * 255 / 100, so 30 % is 0x4C. The init sequence below
- * and the saved-level default here must stay in sync. The 0x63 (WRHBMDISBV)
- * init value only applies in HBM mode, which this board never enables. */
+/* EVT bring-up exposes the panel at 30 % brightness, but initialization and
+ * deep-wake keep WRDISBV at zero until a complete black/current UI frame has
+ * reached GRAM. This preserves TE output while preventing random GRAM or a
+ * fixed 30 % flash from becoming visible. The 0x63 (WRHBMDISBV) init value
+ * only applies in HBM mode, which this board never enables. */
 #define CO5300_FIRST_BRIGHTNESS_PERCENT  30
-#define CO5300_FIRST_BRIGHTNESS_HW       0x4C
+#define CO5300_HIDDEN_BRIGHTNESS_HW      0x00
 
 static bsp_lcd_handles_t s_display;
 static bool s_spi_initialized;
 static esp_lcd_touch_handle_t s_touch;
 static esp_lcd_panel_io_handle_t s_touch_io;
 static bool s_deep_standby;
+static bool s_panel_sleeping;
+static bool s_touch_sleeping;
+static bool s_recovery_required;
+#if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
+static bool s_lvgl_invalidation_suspended;
+#endif
+static void touch_clamp_coordinates(esp_lcd_touch_handle_t touch,
+                                    uint16_t *x, uint16_t *y,
+                                    uint16_t *strength, uint8_t *point_num,
+                                    uint8_t max_point_num);
 /* Last brightness chosen through bsp_display_brightness_set(); restored by
  * bsp_display_backlight_on() so a wake returns to the operator's level
- * instead of forcing 100 %. Defaults to the same 30 % the panel init
- * sequence programs, so first light never exceeds the EVT cap. */
+ * instead of forcing 100 %. The init sequence remains dark at 0 %, then this
+ * saved default is applied only after the first complete redraw. */
 static uint8_t s_brightness_percent = CO5300_FIRST_BRIGHTNESS_PERCENT;
 
 #define CO5300_CMD_DEEP_STANDBY_ON       0x4F
@@ -59,7 +69,11 @@ static uint8_t s_brightness_percent = CO5300_FIRST_BRIGHTNESS_PERCENT;
 #if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
 static lv_display_t *s_lvgl_display;
 static lv_indev_t *s_lvgl_touch;
+static lv_indev_read_cb_t s_lvgl_touch_read_cb;
 static bool s_lvgl_initialized;
+static bool s_lvgl_touch_suspended;
+static esp_err_t display_transition_lock(bool *locked);
+static void display_transition_unlock(bool locked);
 #endif
 
 /* Park peripheral-facing pins as floating inputs (no pull-up/pull-down) so
@@ -106,9 +120,10 @@ static const co5300_lcd_init_cmd_t s_panel_init[] = {
     {0xC4, (uint8_t[]){0x80}, 1, 0},
     {0x3A, (uint8_t[]){0x55}, 1, 0},
     {0x53, (uint8_t[]){0x20}, 1, 0},
-    /* WRDISBV capped at the EVT first-light level; 0x51 percent scaling is
-     * percent * 255 / 100. bsp_display_brightness_set() owns later changes. */
-    {0x51, (uint8_t[]){CO5300_FIRST_BRIGHTNESS_HW}, 1, 0},
+    /* Keep Display-On optically dark until LVGL has replaced unknown GRAM.
+     * Brightness 0 % was verified on EVT1 to leave the 60 Hz TE waveform
+     * running, so the hidden first redraw can still use normal TE sync. */
+    {0x51, (uint8_t[]){CO5300_HIDDEN_BRIGHTNESS_HW}, 1, 0},
     {0x63, (uint8_t[]){0xFF}, 1, 0},
     /* The active 460-pixel window starts at column 10. */
     {0x2A, (uint8_t[]){0x00, 0x0A, 0x01, 0xD5}, 4, 0},
@@ -144,28 +159,112 @@ esp_err_t bsp_display_brightness_set(int brightness_percent)
 {
     ESP_RETURN_ON_FALSE(brightness_percent >= 0 && brightness_percent <= 100,
                         ESP_ERR_INVALID_ARG, TAG, "brightness must be 0..100");
-    ESP_RETURN_ON_ERROR(brightness_hw_write(brightness_percent), TAG,
-                        "brightness update failed");
-    s_brightness_percent = (uint8_t)brightness_percent;
-    return ESP_OK;
+
+#if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
+    bool locked = false;
+    esp_err_t error = display_transition_lock(&locked);
+    if (error != ESP_OK) {
+        return error;
+    }
+#else
+    esp_err_t error = ESP_OK;
+#endif
+
+    /* A sleeping CO5300 must not receive WRDISBV, and deep wake must remain
+     * optically dark until its hidden full redraw has completed. Remember a
+     * concurrent caller's requested level and apply it at the normal wake
+     * commit point instead of exposing stale/unknown GRAM mid-transition. */
+    if (s_panel_sleeping || s_deep_standby || s_recovery_required) {
+        s_brightness_percent = (uint8_t)brightness_percent;
+    } else {
+        error = brightness_hw_write(brightness_percent);
+        if (error == ESP_OK) {
+            s_brightness_percent = (uint8_t)brightness_percent;
+        } else {
+            ESP_LOGE(TAG, "brightness update failed: %s",
+                     esp_err_to_name(error));
+        }
+    }
+
+#if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
+    display_transition_unlock(locked);
+#endif
+    return error;
 }
 
-esp_err_t bsp_display_backlight_off(void)
+static esp_err_t display_backlight_off_locked(void)
 {
     ESP_RETURN_ON_ERROR(brightness_hw_write(0), TAG,
                         "brightness update failed");
     return esp_lcd_panel_disp_on_off(s_display.panel, false);
 }
 
-esp_err_t bsp_display_backlight_on(void)
+static esp_err_t display_backlight_on_locked(void)
 {
     /* Re-assert the saved level BEFORE Display-On: the panel must never
-     * light at a stale value. First light therefore comes up at the 30 %
-     * programmed by the init sequence, and a wake restores whatever the
-     * operator last set through bsp_display_brightness_set(). */
+     * light at a stale value. The LVGL startup/deep-wake paths separately
+     * redraw at 0 % before restoring this saved operator level. */
     ESP_RETURN_ON_ERROR(brightness_hw_write(s_brightness_percent), TAG,
                         "brightness restore failed");
     return esp_lcd_panel_disp_on_off(s_display.panel, true);
+}
+
+esp_err_t bsp_display_backlight_off(void)
+{
+#if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
+    bool locked = false;
+    esp_err_t error = display_transition_lock(&locked);
+    if (error != ESP_OK) {
+        return error;
+    }
+#else
+    esp_err_t error = ESP_OK;
+#endif
+
+    if (s_display.panel == NULL) {
+        error = ESP_ERR_INVALID_STATE;
+    } else if (s_panel_sleeping || s_deep_standby) {
+        /* Both sleep modes are already optically dark. Avoid sending a DCS
+         * command while the panel cannot accept ordinary register writes. */
+        error = ESP_OK;
+    } else if (s_recovery_required) {
+        /* Recovery owns the panel's next command sequence. Do not change its
+         * active/off assumption from an unrelated public API. */
+        error = ESP_ERR_INVALID_STATE;
+    } else {
+        error = display_backlight_off_locked();
+    }
+
+#if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
+    display_transition_unlock(locked);
+#endif
+    return error;
+}
+
+esp_err_t bsp_display_backlight_on(void)
+{
+#if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
+    bool locked = false;
+    esp_err_t error = display_transition_lock(&locked);
+    if (error != ESP_OK) {
+        return error;
+    }
+#else
+    esp_err_t error = ESP_OK;
+#endif
+
+    if (s_display.panel == NULL || s_panel_sleeping || s_deep_standby ||
+            s_recovery_required) {
+        /* Only the matching wake path may expose GRAM after sleep/reset. */
+        error = ESP_ERR_INVALID_STATE;
+    } else {
+        error = display_backlight_on_locked();
+    }
+
+#if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
+    display_transition_unlock(locked);
+#endif
+    return error;
 }
 
 esp_err_t bsp_display_new(const bsp_display_config_t *config,
@@ -285,6 +384,14 @@ fail:
 void bsp_display_delete(void)
 {
     s_deep_standby = false;
+    s_panel_sleeping = false;
+    s_touch_sleeping = false;
+    s_recovery_required = false;
+#if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
+    s_lvgl_invalidation_suspended = false;
+    s_lvgl_touch_suspended = false;
+    s_lvgl_touch_read_cb = NULL;
+#endif
     if (s_display.panel != NULL) {
         /* Best-effort safe power-down: the CO5300 must see Display-Off and
          * Sleep-In while the display rail is still up, otherwise the panel
@@ -381,6 +488,7 @@ esp_err_t bsp_touch_new(const bsp_touch_config_t *config,
             .mirror_x = orientation->mirror_x,
             .mirror_y = orientation->mirror_y,
         },
+        .process_coordinates = touch_clamp_coordinates,
     };
     error = esp_lcd_touch_new_i2c_cst820(s_touch_io, &touch_config, &s_touch);
     if (error != ESP_OK) {
@@ -399,6 +507,7 @@ esp_err_t bsp_touch_new(const bsp_touch_config_t *config,
         bsp_peripheral_power_set(BSP_PERIPHERAL_TOUCH, false);
         return error;
     }
+    s_touch_sleeping = false;
     *ret_touch = s_touch;
     return ESP_OK;
 }
@@ -451,6 +560,9 @@ esp_err_t bsp_touch_delete(void)
             first_error = power_error;
         }
     }
+    if (s_touch == NULL) {
+        s_touch_sleeping = false;
+    }
     return first_error;
 }
 
@@ -459,7 +571,41 @@ esp_lcd_touch_handle_t bsp_touch_get_handle(void)
     return s_touch;
 }
 
+static void touch_clamp_coordinates(esp_lcd_touch_handle_t touch,
+                                    uint16_t *x, uint16_t *y,
+                                    uint16_t *strength, uint8_t *point_num,
+                                    uint8_t max_point_num)
+{
+    (void)touch;
+    (void)strength;
+    const uint8_t count = *point_num < max_point_num ? *point_num : max_point_num;
+    for (uint8_t index = 0; index < count; ++index) {
+        if (x[index] >= BSP_LCD_H_RES) {
+            x[index] = BSP_LCD_H_RES - 1;
+        }
+        if (y[index] >= BSP_LCD_V_RES) {
+            y[index] = BSP_LCD_V_RES - 1;
+        }
+    }
+}
+
 #if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
+static void co5300_rounder_cb(lv_area_t *area)
+{
+    /* The panel vendor requires every partial RAM-write window to start on
+     * an even coordinate and end on an odd coordinate (2 x 2 alignment). */
+    area->x1 &= ~1;
+    area->y1 &= ~1;
+    area->x2 |= 1;
+    area->y2 |= 1;
+    if (area->x2 >= BSP_LCD_H_RES) {
+        area->x2 = BSP_LCD_H_RES - 1;
+    }
+    if (area->y2 >= BSP_LCD_V_RES) {
+        area->y2 = BSP_LCD_V_RES - 1;
+    }
+}
+
 static lv_display_t *display_lvgl_init(const bsp_display_cfg_t *config)
 {
     const bsp_display_config_t panel_config = {
@@ -468,55 +614,83 @@ static lv_display_t *display_lvgl_init(const bsp_display_cfg_t *config)
     if (bsp_display_new(&panel_config, &s_display.panel, &s_display.io) != ESP_OK) {
         return NULL;
     }
-    if (bsp_display_backlight_on() != ESP_OK) {
+    /* bsp_display_new() deliberately returns with Display-Off. Turn scanning
+     * and TE back on while WRDISBV is still zero, so the first hidden redraw
+     * remains synchronized without exposing unknown GRAM. */
+    if (esp_lcd_panel_disp_on_off(s_display.panel, true) != ESP_OK) {
         return NULL;
     }
 
-    /* Official esp_lvgl_adapter (>=0.5.2): QSPI/OTHER + PSRAM + TE sync.
-     * The adapter owns the draw buffers, the CPU-to-DMA cache writeback
-     * (the 0.5.2 fix that our manual msync patch used to replicate), the
-     * TE-gated flush pacing and the LVGL task. CO5300 contract: 460x460,
-     * RGB565 byte order handled by the panel driver, TE on GPIO16. */
-#if CONFIG_BSP_LCD_TE_SYNC
-    esp_lv_adapter_display_config_t display_config =
-        ESP_LV_ADAPTER_DISPLAY_SPI_WITH_PSRAM_TE_DEFAULT_CONFIG(
-            s_display.panel, s_display.io,
-            BSP_LCD_H_RES, BSP_LCD_V_RES,
-            ESP_LV_ADAPTER_ROTATE_0,
-            BSP_LCD_TE,
-            CONFIG_BSP_LCD_PIXEL_CLOCK_MHZ * 1000000,
-            4 /* QSPI data lines */,
-            16 /* bits per pixel */);
-#else
-    esp_lv_adapter_display_config_t display_config =
-        ESP_LV_ADAPTER_DISPLAY_SPI_WITH_PSRAM_DEFAULT_CONFIG(
-            s_display.panel, s_display.io,
-            BSP_LCD_H_RES, BSP_LCD_V_RES,
-            ESP_LV_ADAPTER_ROTATE_0);
+    /* Keep the panel in LVGL PARTIAL mode.  Only the first chunk of each
+     * refresh cycle waits for the rising TE edge; the remaining chunks are
+     * pipelined through the second DMA buffer.  This preserves 60 Hz local
+     * updates while a 460x460 update remains bounded by the 48 MHz QSPI bus. */
+    const lvgl_port_display_cfg_t display_config = {
+        .io_handle = s_display.io,
+        .panel_handle = s_display.panel,
+        .buffer_size = config->buffer_size,
+        .double_buffer = config->double_buffer,
+        .hres = BSP_LCD_H_RES,
+        .vres = BSP_LCD_V_RES,
+        .monochrome = false,
+        .rounder_cb = co5300_rounder_cb,
+        .te_gpio_num = BSP_LCD_TE,
+        .rotation = {
+            .swap_xy = false,
+            .mirror_x = false,
+            .mirror_y = false,
+        },
+#if LVGL_VERSION_MAJOR >= 9
+        .color_format = BSP_LCD_BIGENDIAN ? LV_COLOR_FORMAT_RGB565_SWAPPED : LV_COLOR_FORMAT_RGB565,
 #endif
-    /* The TE profile selects TEAR_AVOID_MODE_TE_SYNC, which the adapter
-     * hard-maps to LVGL RENDER_MODE_FULL with a single full-frame PSRAM
-     * buffer: every invalidate merges into one TE-gated full redraw (see
-     * display_manager_pick_render_mode). SPI/QSPI (IF_OTHER) exposes no
-     * PARTIAL + TE double-buffer mode on this adapter version, so
-     * smoothness comes from keeping invalidations sparse and local plus
-     * PPA-accelerated fills/blends, not from partial redraws. */
-    /* PPA route: the adapter's SW blend/fill acceleration, NOT LVGL's
-     * native PPA draw unit. The native unit cannot compile on ESP32-S31:
-     * lv_draw_ppa_private.h requires CONFIG_LV_DRAW_BUF_ALIGN ==
-     * CONFIG_CACHE_L2_CACHE_LINE_SIZE, a Kconfig symbol that only exists
-     * on ESP32-P4, and LVGL's esp.cmake links esp_driver_ppa only for
-     * esp32p4. The adapter path is compile-clean here (its CMake adds
-     * esp_driver_ppa for esp32s31) and the two paths are mutually
-     * exclusive, so enable exactly this one. Needs
-     * CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT == 1. */
-    display_config.profile.enable_ppa_accel = true;
-    return esp_lv_adapter_register_display(&display_config);
+        .flags = {
+            .buff_dma = config->flags.buff_dma,
+            .buff_spiram = config->flags.buff_spiram,
+#if LVGL_VERSION_MAJOR >= 9
+            .swap_bytes = false,
+#endif
+            .sw_rotate = config->flags.sw_rotate,
+            .direct_mode = config->flags.direct_mode,
+#if CONFIG_BSP_LCD_TE_SYNC
+            .te_sync = true,
+#endif
+        },
+    };
+    lv_display_t *display = lvgl_port_add_disp(&display_config);
+    if (display == NULL) {
+        return NULL;
+    }
+
+    /* The init table has already enabled TE and Display-On at brightness 0.
+     * Replace unknown panel GRAM with a complete black default screen before
+     * restoring the saved visible level. */
+    if (!bsp_display_lock(0)) {
+        lvgl_port_remove_disp(display);
+        return NULL;
+    }
+    lv_obj_t *screen = lv_display_get_screen_active(display);
+    if (screen != NULL) {
+        /* The default LVGL theme may style a newly-created root screen light
+         * gray. Give the screen an explicit opaque black local style while
+         * WRDISBV is still zero so the first visible frame cannot flash gray. */
+        lv_obj_set_style_bg_color(screen, lv_color_black(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_invalidate(screen);
+    }
+    lv_refr_now(display);
+    bsp_display_unlock();
+
+    if (brightness_hw_write(s_brightness_percent) != ESP_OK) {
+        lvgl_port_remove_disp(display);
+        return NULL;
+    }
+    return display;
 }
 
 lv_display_t *bsp_display_start(void)
 {
     bsp_display_cfg_t config = {
+        .lvgl_port_cfg = ESP_LVGL_PORT_INIT_CONFIG(),
 #if CONFIG_BSP_LCD_DIRECT_MODE
         /* Optional full-frame DIRECT path for applications that require a
          * persistent framebuffer. The normal PARTIAL path below has lower
@@ -547,6 +721,9 @@ lv_display_t *bsp_display_start(void)
     /* A 1 ms LVGL timebase keeps animation phases and interrupt-driven touch
      * handling responsive; priority 5 keeps UI work ahead of normal factory
      * tasks without outranking system-critical services. */
+    config.lvgl_port_cfg.timer_period_ms = 1;
+    config.lvgl_port_cfg.task_priority = 5;
+    config.lvgl_port_cfg.task_affinity = 1;
     return bsp_display_start_with_config(&config);
 }
 
@@ -555,17 +732,7 @@ lv_display_t *bsp_display_start_with_config(const bsp_display_cfg_t *config)
     if (config == NULL || s_lvgl_initialized) {
         return NULL;
     }
-    esp_lv_adapter_config_t adapter_cfg = ESP_LV_ADAPTER_DEFAULT_CONFIG();
-    /* Keep the board-tuned LVGL task parameters: 1 ms timebase for
-     * responsive touch, priority 5 below system-critical services.
-     * task_core_id pins the LVGL worker to core 1; the net/NimBLE services
-     * are pinned to core 0, so rendering and radio work do not preempt each
-     * other. The adapter honors task_core_id through
-     * xTaskCreatePinnedToCoreWithCaps. */
-    adapter_cfg.tick_period_ms = 1;
-    adapter_cfg.task_priority = 5;
-    adapter_cfg.task_core_id = 1;
-    if (esp_lv_adapter_init(&adapter_cfg) != ESP_OK) {
+    if (lvgl_port_init(&config->lvgl_port_cfg) != ESP_OK) {
         return NULL;
     }
     s_lvgl_initialized = true;
@@ -577,19 +744,20 @@ lv_display_t *bsp_display_start_with_config(const bsp_display_cfg_t *config)
     /* Touch is optional: during EVT a loose touch FPC must not keep the
      * screen dark, so a touch failure only disables the input device. */
     if (bsp_touch_new(NULL, &s_touch) == ESP_OK) {
-        esp_lv_adapter_touch_config_t touch_cfg =
-            ESP_LV_ADAPTER_TOUCH_DEFAULT_CONFIG(s_lvgl_display, s_touch);
-        s_lvgl_touch = esp_lv_adapter_register_touch(&touch_cfg);
+        const lvgl_port_touch_cfg_t touch_config = {
+            .disp = s_lvgl_display,
+            .handle = s_touch,
+        };
+        s_lvgl_touch = lvgl_port_add_touch(&touch_config);
         if (s_lvgl_touch == NULL) {
             ESP_LOGW(TAG, "touch registration failed, continuing without touch");
+        } else {
+            s_lvgl_touch_suspended = false;
+            s_lvgl_touch_read_cb = NULL;
         }
     } else {
         s_touch = NULL;
         ESP_LOGW(TAG, "touch init failed, continuing without touch");
-    }
-    if (esp_lv_adapter_start() != ESP_OK) {
-        bsp_display_stop();
-        return NULL;
     }
     return s_lvgl_display;
 }
@@ -598,8 +766,13 @@ esp_err_t bsp_display_stop(void)
 {
     esp_err_t first_error = ESP_OK;
     if (s_lvgl_touch != NULL) {
-        const esp_err_t error = esp_lv_adapter_unregister_touch(s_lvgl_touch);
+        const esp_err_t error = lvgl_port_remove_touch(s_lvgl_touch);
+        /* Teardown is terminal. A removal failure may leave LVGL internals
+         * allocated, but the BSP must never expose a handle whose hardware is
+         * about to be deinitialized and unpowered. */
         s_lvgl_touch = NULL;
+        s_lvgl_touch_suspended = false;
+        s_lvgl_touch_read_cb = NULL;
         if (error != ESP_OK) {
             ESP_LOGE(TAG, "LVGL touch removal failed: %s",
                      esp_err_to_name(error));
@@ -607,7 +780,7 @@ esp_err_t bsp_display_stop(void)
         }
     }
     if (s_lvgl_display != NULL) {
-        const esp_err_t error = esp_lv_adapter_unregister_display(s_lvgl_display);
+        const esp_err_t error = lvgl_port_remove_disp(s_lvgl_display);
         s_lvgl_display = NULL;
         if (error != ESP_OK) {
             ESP_LOGE(TAG, "LVGL display removal failed: %s",
@@ -617,11 +790,13 @@ esp_err_t bsp_display_stop(void)
             }
         }
     }
-    if (s_lvgl_initialized) {
-        const esp_err_t error = esp_lv_adapter_deinit();
-        s_lvgl_initialized = false;
-        if (error != ESP_OK) {
-            ESP_LOGE(TAG, "LVGL adapter deinit failed: %s",
+    if (s_lvgl_initialized && s_lvgl_touch == NULL &&
+            s_lvgl_display == NULL) {
+        const esp_err_t error = lvgl_port_deinit();
+        if (error == ESP_OK) {
+            s_lvgl_initialized = false;
+        } else {
+            ESP_LOGE(TAG, "LVGL port deinit failed: %s",
                      esp_err_to_name(error));
             if (first_error == ESP_OK) {
                 first_error = error;
@@ -629,7 +804,9 @@ esp_err_t bsp_display_stop(void)
         }
     }
 
-    /* Power safety is not conditional on LVGL cleanup succeeding. */
+    /* Power safety is not conditional on LVGL cleanup succeeding. A failed
+     * remove may leak LVGL state until reboot, but every BSP handle above is
+     * invalidated before panel/touch objects and rails are torn down. */
     const esp_err_t touch_error = bsp_touch_delete();
     if (first_error == ESP_OK && touch_error != ESP_OK) {
         first_error = touch_error;
@@ -645,14 +822,12 @@ lv_indev_t *bsp_display_get_input_dev(void)
 
 bool bsp_display_lock(uint32_t timeout_ms)
 {
-    /* BSP contract: 0 means "wait forever", the adapter uses -1. */
-    const int32_t adapter_timeout = timeout_ms == 0 ? -1 : (int32_t)timeout_ms;
-    return esp_lv_adapter_lock(adapter_timeout) == ESP_OK;
+    return lvgl_port_lock(timeout_ms);
 }
 
 void bsp_display_unlock(void)
 {
-    esp_lv_adapter_unlock();
+    lvgl_port_unlock();
 }
 
 void bsp_display_rotate(lv_display_t *display, lv_display_rotation_t rotation)
@@ -669,120 +844,610 @@ void bsp_display_rotate(lv_display_t *display, lv_display_rotation_t rotation)
     lv_display_set_rotation(display, rotation);
 }
 
+/* Serialize every public panel power transition with taskLVGL. The port lock
+ * is recursive, so these APIs remain safe when an application already owns
+ * the BSP display lock. Raw-panel users have no LVGL task and need no lock. */
+static esp_err_t display_transition_lock(bool *locked)
+{
+    *locked = false;
+    if (s_lvgl_display != NULL) {
+        if (!bsp_display_lock(0)) {
+            return ESP_ERR_TIMEOUT;
+        }
+        *locked = true;
+    }
+    return ESP_OK;
+}
+
+static void display_transition_unlock(bool locked)
+{
+    if (locked) {
+        bsp_display_unlock();
+    }
+}
+
+static esp_err_t display_te_sync_set_locked(bool enable)
+{
+#if CONFIG_BSP_LCD_TE_SYNC
+    if (s_lvgl_display != NULL) {
+        const esp_err_t error =
+            lvgl_port_display_te_sync_enable(s_lvgl_display, enable);
+        if (error == ESP_ERR_INVALID_STATE ||
+                error == ESP_ERR_NOT_SUPPORTED) {
+            /* Match display bring-up semantics: if the TE ISR/semaphore was
+             * unavailable (or this LVGL major has no runtime gate), keep the
+             * panel usable with unsynchronized transfers. */
+            ESP_LOGW(TAG, "TE sync unavailable; continuing unsynchronized");
+            return ESP_OK;
+        }
+        return error;
+    }
+#else
+    (void)enable;
+#endif
+    return ESP_OK;
+}
+
+static void display_lvgl_suspend_locked(void)
+{
+    if (s_lvgl_display != NULL && !s_lvgl_invalidation_suspended) {
+        /* Finish invalid areas already accepted by LVGL while TE is still
+         * running. Disabling invalidation only blocks future areas; it does
+         * not discard areas already queued for the refresh timer. */
+        /* Refresh timers still consume areas accepted before an outer caller
+         * disabled invalidation, so drain unconditionally before sleep. */
+        lv_refr_now(s_lvgl_display);
+        lv_display_enable_invalidation(s_lvgl_display, false);
+        s_lvgl_invalidation_suspended = true;
+    }
+}
+
+/* Restore the pre-transition invalidation state when sleep entry fails. */
+static void display_lvgl_rollback_locked(void)
+{
+    if (s_lvgl_display == NULL || !s_lvgl_invalidation_suspended) {
+        return;
+    }
+    /* LVGL invalidation enable is a nesting counter, not an absolute bool.
+     * Balance exactly the one disable performed by this transition. */
+    lv_display_enable_invalidation(s_lvgl_display, true);
+    if (lv_display_is_invalidation_enabled(s_lvgl_display)) {
+        lv_obj_t *screen = lv_display_get_screen_active(s_lvgl_display);
+        if (screen != NULL) {
+            lv_obj_invalidate(screen);
+        }
+        lv_refr_now(s_lvgl_display);
+    }
+    s_lvgl_invalidation_suspended = false;
+}
+
+/* A successful wake releases this BSP transition's invalidation freeze. When
+ * no outer caller freeze remains, replace potentially stale panel GRAM before
+ * Display-On. lv_refr_now() uses the port's normal flush-wait protocol; this
+ * code never touches its private transfer semaphore. */
+static bool display_lvgl_resume_locked(void)
+{
+    bool redraw_completed = true;
+    if (s_lvgl_display != NULL) {
+        if (s_lvgl_invalidation_suspended) {
+            /* Balance only this BSP transition's disable; a caller's outer
+             * invalidation freeze remains intact until that caller releases
+             * it, preserving LVGL's nesting contract. */
+            lv_display_enable_invalidation(s_lvgl_display, true);
+        }
+        if (lv_display_is_invalidation_enabled(s_lvgl_display)) {
+            lv_obj_t *screen = lv_display_get_screen_active(s_lvgl_display);
+            if (screen != NULL) {
+                lv_obj_invalidate(screen);
+            } else {
+                redraw_completed = false;
+            }
+            if (redraw_completed) {
+                lv_refr_now(s_lvgl_display);
+            }
+        } else {
+            /* An application-owned outer invalidation freeze is still active.
+             * Normal sleep retains GRAM, but deep wake must remain optically
+             * dark until a complete redraw can run. */
+            redraw_completed = false;
+        }
+    }
+    s_lvgl_invalidation_suspended = false;
+    return redraw_completed;
+}
+
+/* Event-mode touch IRQs can already be queued when the controller enters
+ * sleep. Disable the LVGL input device while holding the same recursive lock
+ * used by taskLVGL, so a delayed event can never issue I2C to a sleeping
+ * CST820. Reset also clears a pressed/scroll target before power transition. */
+static void display_lvgl_touch_suspended_read_cb(lv_indev_t *indev,
+                                                  lv_indev_data_t *data)
+{
+    (void)indev;
+    data->state = LV_INDEV_STATE_RELEASED;
+}
+
+static esp_err_t display_lvgl_touch_suspend_locked(void)
+{
+    if (s_lvgl_touch != NULL && !s_lvgl_touch_suspended) {
+        s_lvgl_touch_read_cb = lv_indev_get_read_cb(s_lvgl_touch);
+        ESP_RETURN_ON_FALSE(s_lvgl_touch_read_cb != NULL,
+                            ESP_ERR_INVALID_STATE, TAG,
+                            "LVGL touch has no read callback");
+        /* taskLVGL and this transition share the recursive BSP lock. Any
+         * already-queued event therefore reaches this safe callback only
+         * after the hardware controller has entered sleep. */
+        lv_indev_set_read_cb(s_lvgl_touch,
+                             display_lvgl_touch_suspended_read_cb);
+        lv_indev_reset(s_lvgl_touch, NULL);
+        s_lvgl_touch_suspended = true;
+    }
+    return ESP_OK;
+}
+
+/* Ignore a finger that remained down across sleep until it is released. This
+ * prevents a stale PRESSED state from becoming a click immediately on wake. */
+static esp_err_t display_lvgl_touch_resume_locked(void)
+{
+    if (s_lvgl_touch != NULL && s_lvgl_touch_suspended) {
+        ESP_RETURN_ON_FALSE(s_lvgl_touch_read_cb != NULL,
+                            ESP_ERR_INVALID_STATE, TAG,
+                            "LVGL touch saved callback is missing");
+
+        /* wait_release must only be armed when a finger is physically still
+         * down. In EVENT mode arming it unconditionally would consume the
+         * first real press after a no-finger wake. */
+        bool pressed = false;
+        if (s_touch != NULL) {
+            uint8_t point_count = 0;
+            esp_lcd_touch_point_data_t point = {0};
+            ESP_RETURN_ON_ERROR(esp_lcd_touch_read_data(s_touch), TAG,
+                                "touch state read after wake failed");
+            ESP_RETURN_ON_ERROR(
+                esp_lcd_touch_get_data(s_touch, &point, &point_count, 1), TAG,
+                "touch state decode after wake failed");
+            pressed = point_count > 0;
+        }
+        if (pressed) {
+            lv_indev_wait_release(s_lvgl_touch);
+        }
+        lv_indev_set_read_cb(s_lvgl_touch, s_lvgl_touch_read_cb);
+        s_lvgl_touch_read_cb = NULL;
+        s_lvgl_touch_suspended = false;
+    }
+    return ESP_OK;
+}
+
+/* Caller owns the recursive LVGL lock when one exists. The first tx_param
+ * issued by backlight_off() after refresh submission stops is documented by
+ * IDF to wait for all queued color transactions, so it is also the DMA drain
+ * barrier without reaching into esp_lvgl_port internals. */
+static esp_err_t display_enter_sleep_panel_locked(void)
+{
+    if (s_deep_standby) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (s_panel_sleeping) {
+        return ESP_OK;
+    }
+
+    display_lvgl_suspend_locked();
+
+    esp_err_t error = display_te_sync_set_locked(false);
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "display TE sync disable failed: %s",
+                 esp_err_to_name(error));
+        display_lvgl_rollback_locked();
+        return error;
+    }
+
+    error = display_backlight_off_locked();
+    if (error != ESP_OK) {
+        /* SLPIN was not attempted. Restore the active path best-effort while
+         * retaining the first failure as the API result. */
+        const esp_err_t te_error = display_te_sync_set_locked(true);
+        if (te_error != ESP_OK) {
+            ESP_LOGE(TAG, "display TE sync rollback failed: %s",
+                     esp_err_to_name(te_error));
+        }
+        display_lvgl_rollback_locked();
+        const esp_err_t light_error = display_backlight_on_locked();
+        if (light_error != ESP_OK) {
+            ESP_LOGE(TAG, "display-on rollback failed: %s",
+                     esp_err_to_name(light_error));
+        }
+        return error;
+    }
+
+    error = esp_lcd_panel_io_tx_param(
+                s_display.io, CO5300_QSPI_WRITE_CMD(LCD_CMD_SLPIN),
+                NULL, 0);
+    /* Once 0x10 was attempted, an IO error cannot prove whether the panel
+     * accepted it. Observe the complete transition window and leave the
+     * state frozen/dark so the public caller can recover through SLPOUT. */
+    vTaskDelay(pdMS_TO_TICKS(CO5300_SLEEP_TRANSITION_MS));
+    s_panel_sleeping = true;
+    return error;
+}
+
+static esp_err_t display_enter_touch_sleep_locked(void)
+{
+    if (s_touch == NULL || s_touch_sleeping) {
+        return ESP_OK;
+    }
+    ESP_RETURN_ON_ERROR(display_lvgl_touch_suspend_locked(), TAG,
+                        "LVGL touch suspend failed");
+    const esp_err_t error = esp_lcd_touch_enter_sleep(s_touch);
+    if (error == ESP_OK || error == ESP_ERR_NOT_SUPPORTED) {
+        /* NOT_SUPPORTED is a successful no-op for the BSP contract and must
+         * still be remembered so a repeated enter remains idempotent. */
+        s_touch_sleeping = true;
+        return ESP_OK;
+    }
+    /* The controller state is unknown after a failed sleep command. Keep LVGL
+     * reads blocked and force the normal exit path to reset it before use. */
+    s_touch_sleeping = true;
+    return error;
+}
+
+/* Prepare an ordinary SLPIN wake but keep Display-Off and LVGL frozen. This
+ * lets the full variant reset the CST820 before any UI/input processing can
+ * resume, and lets the caller redraw before exposing stale GRAM. */
+static esp_err_t display_prepare_sleep_exit_locked(void)
+{
+    if (s_deep_standby) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!s_panel_sleeping) {
+        return ESP_OK;
+    }
+
+    esp_err_t error = esp_lcd_panel_io_tx_param(
+                          s_display.io,
+                          CO5300_QSPI_WRITE_CMD(LCD_CMD_SLPOUT), NULL, 0);
+    if (error != ESP_OK) {
+        return error;
+    }
+    vTaskDelay(pdMS_TO_TICKS(CO5300_SLEEP_TRANSITION_MS));
+
+    error = display_te_sync_set_locked(true);
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "display TE sync restore failed: %s",
+                 esp_err_to_name(error));
+        return error;
+    }
+    return brightness_hw_write(s_brightness_percent);
+}
+
+static esp_err_t display_exit_sleep_locked(bool wake_touch)
+{
+    const bool panel_was_sleeping = s_panel_sleeping;
+    const bool force_active_path = s_recovery_required &&
+                                   !panel_was_sleeping;
+    esp_err_t error = display_prepare_sleep_exit_locked();
+    if (error != ESP_OK) {
+        return error;
+    }
+
+    if (wake_touch && s_touch != NULL && s_touch_sleeping) {
+        error = esp_lcd_touch_exit_sleep(s_touch);
+        if (error != ESP_OK && error != ESP_ERR_NOT_SUPPORTED) {
+            return error;
+        }
+    }
+
+    if (force_active_path) {
+        /* A failed Display-Off/brightness command may have been accepted
+         * before its transport reported failure. Reassert the entire active
+         * path; doing only a no-op wake when panel_sleeping=false would leave
+         * an uncertain panel permanently dark. */
+        error = display_te_sync_set_locked(true);
+        if (error != ESP_OK) {
+            return error;
+        }
+        (void)display_lvgl_resume_locked();
+        error = brightness_hw_write(s_brightness_percent);
+        if (error == ESP_OK) {
+            error = esp_lcd_panel_disp_on_off(s_display.panel, true);
+        }
+        if (error != ESP_OK) {
+            display_lvgl_suspend_locked();
+            return error;
+        }
+    }
+
+    if (panel_was_sleeping) {
+        (void)display_lvgl_resume_locked();
+        /* tx_param inside disp_on_off drains the redraw DMA before exposing
+         * the panel. If Display-On fails, freeze invalidation again so a
+         * retry cannot race new frames against the unfinished transition. */
+        error = esp_lcd_panel_disp_on_off(s_display.panel, true);
+        if (error != ESP_OK) {
+            display_lvgl_suspend_locked();
+            return error;
+        }
+        s_panel_sleeping = false;
+    }
+    if (wake_touch) {
+        ESP_RETURN_ON_ERROR(display_lvgl_touch_resume_locked(), TAG,
+                            "LVGL touch resume failed");
+        s_touch_sleeping = false;
+    }
+    return ESP_OK;
+}
+
 esp_err_t bsp_display_enter_sleep_panel(void)
 {
-    ESP_RETURN_ON_FALSE(s_display.panel != NULL, ESP_ERR_INVALID_STATE, TAG,
-                        "display is not initialized");
-    /* SLPIN stops the panel TE output; suspend the TE gate first so LVGL
-     * flushes fall back to unsynchronized writes instead of timing out. */
-    /* The official adapter owns the TE gate and bounds its wait; a panel
-     * that stopped emitting TE (SLPIN) degrades to unsynchronized flushes
-     * instead of hanging (adapter 0.5.2 fix). No manual gate toggle. */
-    ESP_RETURN_ON_ERROR(bsp_display_backlight_off(), TAG, "display off failed");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(s_display.io,
-                        CO5300_QSPI_WRITE_CMD(LCD_CMD_SLPIN),
-                        NULL, 0), TAG, "display sleep-in failed");
-    vTaskDelay(pdMS_TO_TICKS(CO5300_SLEEP_TRANSITION_MS));
-    return ESP_OK;
+    bool locked = false;
+    bool transition_started = false;
+    esp_err_t error = display_transition_lock(&locked);
+    if (error == ESP_OK && s_display.panel == NULL) {
+        error = ESP_ERR_INVALID_STATE;
+    }
+    if (error == ESP_OK && s_recovery_required) {
+        error = ESP_ERR_INVALID_STATE;
+    }
+    if (error == ESP_OK && s_deep_standby) {
+        error = ESP_ERR_INVALID_STATE;
+    }
+    if (error == ESP_OK) {
+        transition_started = true;
+        error = display_enter_sleep_panel_locked();
+    }
+    if (error != ESP_OK && transition_started) {
+        s_recovery_required = true;
+        const esp_err_t recovery_error = display_exit_sleep_locked(false);
+        s_recovery_required = recovery_error != ESP_OK;
+        if (recovery_error != ESP_OK) {
+            ESP_LOGE(TAG, "panel sleep-entry recovery failed: %s",
+                     esp_err_to_name(recovery_error));
+        }
+    }
+    display_transition_unlock(locked);
+    return error;
 }
 
 esp_err_t bsp_display_exit_sleep_panel(void)
 {
-    ESP_RETURN_ON_FALSE(s_display.panel != NULL, ESP_ERR_INVALID_STATE, TAG,
-                        "display is not initialized");
-    ESP_RETURN_ON_FALSE(!s_deep_standby, ESP_ERR_INVALID_STATE, TAG,
-                        "display is in deep standby");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(s_display.io,
-                        CO5300_QSPI_WRITE_CMD(LCD_CMD_SLPOUT),
-                        NULL, 0),
-                        TAG, "display sleep-out failed");
-    vTaskDelay(pdMS_TO_TICKS(CO5300_SLEEP_TRANSITION_MS));
-    /* SLPOUT restarts TE; the adapter re-syncs on the next flush. */
-    return bsp_display_backlight_on();
+    bool locked = false;
+    bool wake_started = false;
+    esp_err_t error = display_transition_lock(&locked);
+    if (error == ESP_OK && s_display.panel == NULL) {
+        error = ESP_ERR_INVALID_STATE;
+    }
+    if (error == ESP_OK) {
+        wake_started = true;
+        error = display_exit_sleep_locked(false);
+    }
+    if (error != ESP_OK && wake_started && !s_deep_standby) {
+        s_recovery_required = true;
+    } else if (error == ESP_OK && !s_touch_sleeping &&
+               !s_lvgl_touch_suspended) {
+        s_recovery_required = false;
+    }
+    display_transition_unlock(locked);
+    return error;
 }
 
 esp_err_t bsp_display_enter_sleep(void)
 {
-    /* Panel first, then the touch controller: a touch-sleep failure can no
-     * longer skip the panel SLPIN (the old order left the panel awake with
-     * the backlight off). The panel and the touch controller sit on
-     * independent buses, so the relative order carries no hardware hazard. */
-    ESP_RETURN_ON_ERROR(bsp_display_enter_sleep_panel(), TAG,
-                        "panel sleep-in failed");
-    if (s_touch != NULL) {
-        const esp_err_t touch_error = esp_lcd_touch_enter_sleep(s_touch);
-        if (touch_error != ESP_OK && touch_error != ESP_ERR_NOT_SUPPORTED) {
-            return touch_error;
+    bool locked = false;
+    bool transition_started = false;
+    esp_err_t error = display_transition_lock(&locked);
+    if (error == ESP_OK && s_display.panel == NULL) {
+        error = ESP_ERR_INVALID_STATE;
+    }
+    if (error == ESP_OK && s_deep_standby) {
+        error = ESP_ERR_INVALID_STATE;
+    }
+    if (error == ESP_OK && s_recovery_required) {
+        error = ESP_ERR_INVALID_STATE;
+    }
+    if (error == ESP_OK) {
+        transition_started = true;
+        /* Block queued/event-driven LVGL reads before changing either
+         * hardware device. The official esp_lvgl_port component remains
+         * untouched; this BSP only swaps the public LVGL indev callback. */
+        error = display_lvgl_touch_suspend_locked();
+    }
+    if (error == ESP_OK) {
+        error = display_enter_sleep_panel_locked();
+    }
+    if (error == ESP_OK) {
+        error = display_enter_touch_sleep_locked();
+    }
+    if (error != ESP_OK && transition_started && !s_deep_standby) {
+        /* A failed CST820 sleep command leaves its state unknown, while a
+         * panel-entry failure may leave only the LVGL callback suspended.
+         * The normal wake path safely repairs both cases; retain the entry
+         * failure as the caller-visible result. */
+        s_recovery_required = true;
+        const esp_err_t recovery_error = display_exit_sleep_locked(true);
+        s_recovery_required = recovery_error != ESP_OK;
+        if (recovery_error != ESP_OK) {
+            ESP_LOGE(TAG, "sleep-entry recovery failed: %s",
+                     esp_err_to_name(recovery_error));
         }
     }
-    return ESP_OK;
+    display_transition_unlock(locked);
+    return error;
 }
 
 esp_err_t bsp_display_exit_sleep(void)
 {
-    ESP_RETURN_ON_ERROR(bsp_display_exit_sleep_panel(), TAG,
-                        "panel sleep-out failed");
-    if (s_touch != NULL) {
-        const esp_err_t touch_error = esp_lcd_touch_exit_sleep(s_touch);
-        if (touch_error != ESP_OK && touch_error != ESP_ERR_NOT_SUPPORTED) {
-            return touch_error;
-        }
+    bool locked = false;
+    bool wake_started = false;
+    esp_err_t error = display_transition_lock(&locked);
+    if (error == ESP_OK && s_display.panel == NULL) {
+        error = ESP_ERR_INVALID_STATE;
     }
-    return ESP_OK;
+    if (error == ESP_OK) {
+        wake_started = true;
+        error = display_exit_sleep_locked(true);
+    }
+    if (error == ESP_OK) {
+        s_recovery_required = false;
+    } else if (wake_started && !s_deep_standby) {
+        s_recovery_required = true;
+    }
+    display_transition_unlock(locked);
+    return error;
 }
 
 esp_err_t bsp_display_enter_deep_standby(void)
 {
-    ESP_RETURN_ON_FALSE(s_display.panel != NULL, ESP_ERR_INVALID_STATE, TAG,
-                        "display is not initialized");
-    if (s_deep_standby) {
-        return ESP_OK;
+    bool locked = false;
+    bool recover_uncertain_deep_entry = false;
+    esp_err_t error = display_transition_lock(&locked);
+    if (error == ESP_OK && s_display.panel == NULL) {
+        error = ESP_ERR_INVALID_STATE;
     }
-    ESP_RETURN_ON_ERROR(bsp_display_enter_sleep(), TAG,
-                        "display sleep-in before deep standby failed");
-    const uint8_t parameter = CO5300_DEEP_STANDBY_PARAMETER;
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_io_tx_param(s_display.io,
+    if (error == ESP_OK && s_recovery_required) {
+        error = ESP_ERR_INVALID_STATE;
+    }
+    if (error == ESP_OK && !s_deep_standby) {
+        error = display_lvgl_touch_suspend_locked();
+        if (error == ESP_OK) {
+            error = display_enter_sleep_panel_locked();
+        }
+        if (error == ESP_OK) {
+            error = display_enter_touch_sleep_locked();
+        }
+        if (error == ESP_OK) {
+            const uint8_t parameter = CO5300_DEEP_STANDBY_PARAMETER;
+            error = esp_lcd_panel_io_tx_param(
+                        s_display.io,
                         CO5300_QSPI_WRITE_CMD(CO5300_CMD_DEEP_STANDBY_ON),
-                        &parameter, sizeof(parameter)), TAG,
-                        "display deep-standby command failed");
-    s_deep_standby = true;
-    return ESP_OK;
+                        &parameter, sizeof(parameter));
+            /* A transport error cannot prove whether CO5300 accepted 0x4F.
+             * Treat the panel as deep once the command was attempted and
+             * force the reset/init recovery path before it can be exposed. */
+            s_deep_standby = true;
+            recover_uncertain_deep_entry = error != ESP_OK;
+            /* Close the interval between releasing the transition lock and
+             * the forced reset/init recovery below: no concurrent enter may
+             * report this uncertain hardware state as a successful deep
+             * standby. */
+            s_recovery_required = error != ESP_OK;
+        } else {
+            s_recovery_required = true;
+            const esp_err_t recovery_error = display_exit_sleep_locked(true);
+            s_recovery_required = recovery_error != ESP_OK;
+            if (recovery_error != ESP_OK) {
+                ESP_LOGE(TAG, "deep-entry rollback failed: %s",
+                         esp_err_to_name(recovery_error));
+            }
+        }
+    }
+    display_transition_unlock(locked);
+
+    if (recover_uncertain_deep_entry) {
+        const esp_err_t recovery_error = bsp_display_exit_deep_standby();
+        if (recovery_error != ESP_OK) {
+            ESP_LOGE(TAG, "uncertain deep-entry recovery failed: %s",
+                     esp_err_to_name(recovery_error));
+        }
+    }
+    return error;
 }
 
 esp_err_t bsp_display_exit_deep_standby(void)
 {
-    ESP_RETURN_ON_FALSE(s_display.panel != NULL, ESP_ERR_INVALID_STATE, TAG,
-                        "display is not initialized");
-    if (!s_deep_standby) {
-        return ESP_OK;
+    bool locked = false;
+    bool wake_started = false;
+    esp_err_t error = display_transition_lock(&locked);
+    if (error == ESP_OK && s_display.panel == NULL) {
+        error = ESP_ERR_INVALID_STATE;
     }
+    if (error == ESP_OK && !s_deep_standby && s_panel_sleeping) {
+        /* A normal SLPIN sleep must be paired with the normal wake API;
+         * silently accepting a deep-wake request would leave the panel dark. */
+        error = ESP_ERR_INVALID_STATE;
+    }
+    if (error != ESP_OK || !s_deep_standby) {
+        display_transition_unlock(locked);
+        return error;
+    }
+    wake_started = true;
 
-    /* Cycle RESX through the driver's own reset routine (10ms low, 150ms
-     * high) instead of hand-rolled 5ms/5ms timing: deep standby drops the
-     * panel's internal state and the wake reset needs the same margins the
-     * driver applies at first power-on. */
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(s_display.panel), TAG,
-                        "display deep-wake reset failed");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_init(s_display.panel), TAG,
-                        "display reinitialization failed");
-    ESP_RETURN_ON_ERROR(esp_lcd_panel_set_gap(s_display.panel,
-                        BSP_LCD_X_GAP, BSP_LCD_Y_GAP), TAG,
-                        "display gap restore failed");
-    if (s_touch != NULL) {
+    /* Unlike normal SLPIN entry, deep wake resets RESX without first sending
+     * a panel command. Use the documented no-command tx_param form as an
+     * explicit barrier so no queued color DMA can still target the panel
+     * while reset is asserted. */
+    error = esp_lcd_panel_io_tx_param(s_display.io, -1, NULL, 0);
+    if (error == ESP_OK) {
+        error = esp_lcd_panel_reset(s_display.panel);
+    }
+    if (error == ESP_OK) {
+        error = esp_lcd_panel_init(s_display.panel);
+    }
+    if (error == ESP_OK) {
+        error = esp_lcd_panel_set_gap(s_display.panel,
+                                      BSP_LCD_X_GAP, BSP_LCD_Y_GAP);
+    }
+    if (error == ESP_OK && s_touch != NULL && s_touch_sleeping) {
         const esp_err_t touch_error = esp_lcd_touch_exit_sleep(s_touch);
         if (touch_error != ESP_OK && touch_error != ESP_ERR_NOT_SUPPORTED) {
-            return touch_error;
+            error = touch_error;
         }
     }
-    s_deep_standby = false;
-    /* The panel re-initialization above re-enabled TE output (0x35).
-     * After the backlight, force one complete redraw so no stale GRAM
-     * from before deep standby survives the wake. */
-    if (s_lvgl_display != NULL && bsp_display_lock(0)) {
-        lv_obj_invalidate(lv_screen_active());
-        bsp_display_unlock();
-        esp_lv_adapter_refresh_now(s_lvgl_display);
+    if (error == ESP_OK) {
+        error = display_te_sync_set_locked(true);
+        if (error != ESP_OK) {
+            ESP_LOGE(TAG, "display TE sync restore failed: %s",
+                     esp_err_to_name(error));
+        }
     }
-    return bsp_display_backlight_on();
+    if (error == ESP_OK) {
+        /* panel_init() leaves Display-On at brightness 0. A caller-owned
+         * invalidation freeze can prevent the required full redraw; in that
+         * case keep the panel dark and preserve a retryable deep state. */
+        if (!display_lvgl_resume_locked()) {
+            display_lvgl_suspend_locked();
+            error = ESP_ERR_INVALID_STATE;
+            ESP_LOGE(TAG, "deep wake redraw is still externally frozen");
+        }
+    }
+    if (error == ESP_OK) {
+        error = display_lvgl_touch_resume_locked();
+        if (error != ESP_OK) {
+            display_lvgl_suspend_locked();
+            ESP_LOGE(TAG, "LVGL touch resume after deep wake failed: %s",
+                     esp_err_to_name(error));
+        }
+    }
+    if (error == ESP_OK) {
+        error = brightness_hw_write(s_brightness_percent);
+        if (error != ESP_OK) {
+            /* Keep both producers quiescent if the final optical commit
+             * fails. A later deep-wake retry will reset/init and redraw. */
+            const esp_err_t dark_error = brightness_hw_write(0);
+            if (dark_error != ESP_OK) {
+                ESP_LOGE(TAG, "deep-wake dark rollback failed: %s",
+                         esp_err_to_name(dark_error));
+            }
+            const esp_err_t touch_error =
+                display_lvgl_touch_suspend_locked();
+            if (touch_error != ESP_OK) {
+                ESP_LOGE(TAG, "deep-wake touch rollback failed: %s",
+                         esp_err_to_name(touch_error));
+            }
+            display_lvgl_suspend_locked();
+        }
+    }
+    if (error == ESP_OK) {
+        /* Clear the retry state only after panel redraw, touch restoration
+         * and brightness commit have all succeeded. */
+        s_panel_sleeping = false;
+        s_touch_sleeping = false;
+        s_deep_standby = false;
+    }
+
+    if (wake_started) {
+        s_recovery_required = error != ESP_OK;
+    }
+
+    display_transition_unlock(locked);
+    return error;
 }
 #endif

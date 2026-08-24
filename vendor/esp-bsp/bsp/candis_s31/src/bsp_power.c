@@ -327,8 +327,16 @@ esp_err_t bsp_power_domain_set(bsp_power_domain_t domain, bool enable)
     ESP_RETURN_ON_FALSE(domain_is_valid(domain), ESP_ERR_INVALID_ARG, TAG,
                         "invalid power domain");
     const power_domain_config_t *config = &s_power_domains[domain];
-    const esp_err_t error = configure_output(config->gpio,
-                            enable ? config->enabled_level : !config->enabled_level);
+    const uint32_t level = enable ? config->enabled_level
+                                  : !config->enabled_level;
+    /* gpio_config() reserves output GPIOs in ESP-IDF 6.1. Reconfiguring an
+     * already-owned direct power-domain pin works but emits a misleading
+     * "conflict found" warning. These enables stay as outputs for the BSP's
+     * lifetime, so configure each one once and use the output latch after
+     * that; this also avoids needless direction rewrites on live rails. */
+    const esp_err_t error = s_domain_states[domain] == BSP_POWER_DOMAIN_STATE_UNKNOWN
+                            ? configure_output(config->gpio, level)
+                            : gpio_set_level(config->gpio, level);
     if (error == ESP_OK) {
         s_domain_states[domain] = enable ? BSP_POWER_DOMAIN_STATE_ON
                                   : BSP_POWER_DOMAIN_STATE_OFF;

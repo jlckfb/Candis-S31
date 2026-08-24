@@ -30,8 +30,13 @@ dependencies:
     version: "^1.6.2"
     public: true
 
-  espressif/esp_lvgl_adapter:
-    version: "^0.6.4"
+  espressif/esp_lvgl_port:
+    version: "^2.9.0"
+    public: true
+    override_path: "../../components/esp_lvgl_port"
+
+  lvgl/lvgl:
+    version: "^9"
     public: true
 
   espressif/esp_lcd_co5300:

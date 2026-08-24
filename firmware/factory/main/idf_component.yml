@@ -2,8 +2,3 @@ dependencies:
   idf: ">=5.3"
   espressif/usb_host_msc: "^1.1.4"
   espressif/esp_asrc: "~1.1"
-  # The TE observer API is used by factory_display.c; the vendored snapshot
-  # in this repository carries it (esp_lvgl_port 2.9.0).
-  espressif/esp_lvgl_port:
-    version: "^2.9.0"
-    override_path: ../../../vendor/esp-bsp/components/esp_lvgl_port

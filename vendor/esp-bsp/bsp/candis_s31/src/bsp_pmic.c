@@ -6,6 +6,7 @@
 
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -18,8 +19,8 @@
 
 static const char *TAG = "candis_pmic";
 static tg28_sw_handle_t s_pmic;
-static uint8_t s_boot_irq_snapshot[3];
-static bool s_boot_irq_valid;
+static bsp_pmic_early_snapshot_t s_early_snapshot;
+static bool s_early_snapshot_attempted;
 /* Battery-model validity: the REGA1 128-byte model governs whether the
  * TG28 SOC estimate means anything, and which model is active: the BSP
  * reference default or a caller-supplied override. Both false unless a
@@ -38,8 +39,32 @@ _Static_assert((int)BSP_PMIC_SWITCH_DC1SW == (int)TG28_SW_SWITCH_DC1SW &&
                (int)BSP_PMIC_SWITCH_DC4SW == (int)TG28_SW_SWITCH_DC4SW,
                "BSP and TG28_SW switch order must stay aligned");
 
-/* Allow one conversion cycle when a channel had to be enabled first. */
-#define BSP_PMIC_ADC_SETTLE_MS 50
+/* EVT1 measurements show that TG28's low-speed ADC does not update every
+ * newly enabled channel within the old 50 ms delay: VSYS first became valid
+ * at 50 ms, TDIE at 100 ms, and VBUS only at 1000 ms. The compatibility
+ * single-channel API must favor correct data over a short blocking time. */
+#define BSP_PMIC_ADC_DEFAULT_SETTLE_MS 200
+#define BSP_PMIC_ADC_VBUS_SETTLE_MS    1000
+
+#define BSP_PMIC_REG_STATUS0            0x00
+#define BSP_PMIC_REG_POWER_ON_SOURCE    0x20
+#define BSP_PMIC_REG_ADC_CONTROL        0x30
+#define BSP_PMIC_REG_ADC_VBAT_H         0x34
+#define BSP_PMIC_REG_IRQ_STATUS0        0x48
+#define BSP_PMIC_ADC_DIAGNOSTIC_MASK    0x1D
+
+static const uint8_t s_adc_result_registers[BSP_PMIC_ADC_COUNT] = {
+    [BSP_PMIC_ADC_VBAT] = BSP_PMIC_REG_ADC_VBAT_H,
+    [BSP_PMIC_ADC_TS] = BSP_PMIC_REG_ADC_VBAT_H + 2,
+    [BSP_PMIC_ADC_VBUS] = BSP_PMIC_REG_ADC_VBAT_H + 4,
+    [BSP_PMIC_ADC_VSYS] = BSP_PMIC_REG_ADC_VBAT_H + 6,
+    [BSP_PMIC_ADC_TDIE] = BSP_PMIC_REG_ADC_VBAT_H + 8,
+};
+
+static const uint32_t s_adc_diagnostic_times_ms[
+    BSP_PMIC_ADC_DIAGNOSTIC_SAMPLE_COUNT] = {
+    0, 50, 100, 200, 500, 1000, 2000,
+};
 
 static tg28_sw_regulator_t to_tg28_regulator(bsp_pmic_regulator_t regulator)
 {
@@ -51,6 +76,51 @@ static tg28_sw_power_switch_t to_tg28_switch(bsp_pmic_switch_t sw)
     return (tg28_sw_power_switch_t)sw;
 }
 
+static uint32_t adc_settle_time_ms(bsp_pmic_adc_channel_t channel)
+{
+    return channel == BSP_PMIC_ADC_VBUS ?
+           BSP_PMIC_ADC_VBUS_SETTLE_MS : BSP_PMIC_ADC_DEFAULT_SETTLE_MS;
+}
+
+static void capture_early_snapshot(void)
+{
+    if (s_early_snapshot_attempted) {
+        return;
+    }
+    s_early_snapshot_attempted = true;
+    memset(&s_early_snapshot, 0, sizeof(s_early_snapshot));
+
+    if (tg28_sw_read_registers(s_pmic, BSP_PMIC_REG_STATUS0,
+                               s_early_snapshot.status,
+                               sizeof(s_early_snapshot.status)) == ESP_OK) {
+        s_early_snapshot.valid_mask |= BSP_PMIC_EARLY_STATUS_VALID;
+    }
+    if (tg28_sw_read_registers(s_pmic, BSP_PMIC_REG_POWER_ON_SOURCE,
+                               s_early_snapshot.power_source,
+                               sizeof(s_early_snapshot.power_source)) == ESP_OK) {
+        s_early_snapshot.valid_mask |= BSP_PMIC_EARLY_POWER_SOURCE_VALID;
+    }
+    if (tg28_sw_read_registers(s_pmic, BSP_PMIC_REG_ADC_CONTROL,
+                               &s_early_snapshot.adc_control,
+                               sizeof(s_early_snapshot.adc_control)) == ESP_OK) {
+        s_early_snapshot.valid_mask |= BSP_PMIC_EARLY_ADC_CONTROL_VALID;
+    }
+    if (tg28_sw_read_registers(s_pmic, BSP_PMIC_REG_IRQ_STATUS0,
+                               s_early_snapshot.irq_status,
+                               sizeof(s_early_snapshot.irq_status)) == ESP_OK) {
+        s_early_snapshot.valid_mask |= BSP_PMIC_EARLY_IRQ_STATUS_VALID;
+    }
+
+    if (s_early_snapshot.valid_mask !=
+            (BSP_PMIC_EARLY_STATUS_VALID |
+             BSP_PMIC_EARLY_POWER_SOURCE_VALID |
+             BSP_PMIC_EARLY_ADC_CONTROL_VALID |
+             BSP_PMIC_EARLY_IRQ_STATUS_VALID)) {
+        ESP_LOGW(TAG, "early PMIC snapshot incomplete: valid_mask=0x%02x",
+                 s_early_snapshot.valid_mask);
+    }
+}
+
 esp_err_t bsp_pmic_init(void)
 {
     if (s_pmic != NULL) {
@@ -58,8 +128,6 @@ esp_err_t bsp_pmic_init(void)
     }
     s_fuel_gauge_valid = false;
     s_fuel_gauge_reference_model = false;
-    memset(s_boot_irq_snapshot, 0, sizeof(s_boot_irq_snapshot));
-    s_boot_irq_valid = false;
 
     i2c_master_bus_handle_t bus = bsp_lp_i2c_get_handle();
     ESP_RETURN_ON_FALSE(bus != NULL, ESP_FAIL, TAG, "low-power I2C init failed");
@@ -69,6 +137,11 @@ esp_err_t bsp_pmic_init(void)
         .scl_speed_hz = TG28_SW_I2C_CLOCK_HZ,
     };
     esp_err_t error = tg28_sw_create(bus, &config, &s_pmic);
+    if (error == ESP_OK) {
+        /* Preserve the actual incoming state before any BSP write, fuel-gauge
+         * reset/programming sequence, or IRQ clear can destroy evidence. */
+        capture_early_snapshot();
+    }
     uint16_t previous_input_limit = 0;
     if (error == ESP_OK) {
         /* REG62 outlives an ESP-only reset, so any charge target a
@@ -206,16 +279,11 @@ esp_err_t bsp_pmic_init(void)
         /* Clear any latched interrupt status before enabling the power-key
          * IRQs, like the vendor axp-core driver does at irq-chip init
          * (write 1 to clear every pending bit), so stale events from the
-         * boot ROM or a previous reset do not fire immediately.
-         * Keep a snapshot for post-mortem diagnosis: events latched before
-         * this clear (e.g. an over-current lockout that killed the SoC while
-         * the TG28 stayed alive) are otherwise lost forever. */
+         * boot ROM or a previous reset do not fire immediately. REG48-4A
+         * were already preserved by capture_early_snapshot(), before the
+         * charge profile or fuel-gauge programming could alter them. */
         uint8_t pending[3] = {0};
         error = tg28_sw_get_and_clear_interrupts(s_pmic, pending);
-        if (error == ESP_OK) {
-            memcpy(s_boot_irq_snapshot, pending, sizeof(s_boot_irq_snapshot));
-            s_boot_irq_valid = true;
-        }
     }
     if (error == ESP_OK) {
         error = tg28_sw_configure_power_key_interrupts(s_pmic,
@@ -232,12 +300,12 @@ esp_err_t bsp_pmic_init(void)
     if (error != ESP_OK && s_pmic != NULL) {
         tg28_sw_delete(s_pmic);
         s_pmic = NULL;
-        /* A failed init/retry must never inherit model validity or stale
-         * boot-IRQ evidence from the attempt that just died. */
+        /* A failed init/retry must never inherit model validity. The early
+         * register snapshot intentionally survives: a retry would otherwise
+         * replace the incoming power-loss evidence with state changed by the
+         * failed attempt itself. */
         s_fuel_gauge_valid = false;
         s_fuel_gauge_reference_model = false;
-        memset(s_boot_irq_snapshot, 0, sizeof(s_boot_irq_snapshot));
-        s_boot_irq_valid = false;
     }
     return error;
 }
@@ -475,12 +543,22 @@ esp_err_t bsp_pmic_get_boot_irq_snapshot(uint8_t status[3], bool *valid)
 {
     ESP_RETURN_ON_FALSE(status != NULL && valid != NULL, ESP_ERR_INVALID_ARG,
                         TAG, "status/valid is NULL");
-    /* Only meaningful on a boot where bsp_pmic_init() ran; the snapshot was
-     * captured before the init-time clear, so it preserves events latched
-     * across an SoC power collapse. */
+    /* This compatibility accessor now returns the IRQ part of the stronger
+     * post-create/pre-configuration snapshot. */
     ESP_RETURN_ON_ERROR(bsp_pmic_init(), TAG, "TG28_SW is unavailable");
-    memcpy(status, s_boot_irq_snapshot, sizeof(s_boot_irq_snapshot));
-    *valid = s_boot_irq_valid;
+    memcpy(status, s_early_snapshot.irq_status,
+           sizeof(s_early_snapshot.irq_status));
+    *valid = (s_early_snapshot.valid_mask &
+              BSP_PMIC_EARLY_IRQ_STATUS_VALID) != 0;
+    return ESP_OK;
+}
+
+esp_err_t bsp_pmic_get_early_snapshot(bsp_pmic_early_snapshot_t *snapshot)
+{
+    ESP_RETURN_ON_FALSE(snapshot != NULL, ESP_ERR_INVALID_ARG, TAG,
+                        "snapshot is NULL");
+    ESP_RETURN_ON_ERROR(bsp_pmic_init(), TAG, "TG28_SW is unavailable");
+    *snapshot = s_early_snapshot;
     return ESP_OK;
 }
 
@@ -504,11 +582,116 @@ esp_err_t bsp_pmic_read_adc_mv(bsp_pmic_adc_channel_t channel,
         ESP_RETURN_ON_ERROR(tg28_sw_set_adc_channel_enable(s_pmic, adc, true),
                             TAG, "ADC channel enable failed");
         /* The result register only refreshes after a conversion cycle. */
-        vTaskDelay(pdMS_TO_TICKS(BSP_PMIC_ADC_SETTLE_MS));
+        vTaskDelay(pdMS_TO_TICKS(adc_settle_time_ms(channel)));
     }
     const esp_err_t error = tg28_sw_read_adc_channel(s_pmic, adc, millivolts);
     if (!was_enabled) {
         tg28_sw_set_adc_channel_enable(s_pmic, adc, false);
     }
     return error;
+}
+
+static esp_err_t read_adc_diagnostic_sample(
+    bsp_pmic_adc_diagnostic_sample_t *sample)
+{
+    for (int channel = 0; channel < BSP_PMIC_ADC_COUNT; ++channel) {
+        uint8_t value[2] = {0};
+        ESP_RETURN_ON_ERROR(
+            tg28_sw_read_registers(s_pmic, s_adc_result_registers[channel],
+                                   value, sizeof(value)),
+            TAG, "ADC raw channel %d read failed", channel);
+        /* Datasheet 6.10: read high first, then low; high[5:0] are bits
+         * 13:8. Preserve values through 0x3fff so the FAQ's negative-input
+         * overflow signature remains visible. */
+        sample->raw[channel] =
+            ((uint16_t)(value[0] & 0x3F) << 8) | value[1];
+    }
+    return ESP_OK;
+}
+
+esp_err_t bsp_pmic_run_adc_diagnostic(bsp_pmic_adc_diagnostic_t *diagnostic)
+{
+    ESP_RETURN_ON_FALSE(diagnostic != NULL, ESP_ERR_INVALID_ARG, TAG,
+                        "diagnostic is NULL");
+    ESP_RETURN_ON_ERROR(bsp_pmic_init(), TAG, "TG28_SW is unavailable");
+    memset(diagnostic, 0, sizeof(*diagnostic));
+
+    esp_err_t first_error = tg28_sw_read_registers(
+                                s_pmic, BSP_PMIC_REG_ADC_CONTROL,
+                                &diagnostic->reg30_original, 1);
+    bool control_write_attempted = false;
+    if (first_error == ESP_OK) {
+        diagnostic->reg30_enabled = diagnostic->reg30_original |
+                                    BSP_PMIC_ADC_DIAGNOSTIC_MASK;
+        control_write_attempted = true;
+        first_error = tg28_sw_write_register(s_pmic,
+                                             BSP_PMIC_REG_ADC_CONTROL,
+                                             diagnostic->reg30_enabled);
+    }
+    if (first_error == ESP_OK) {
+        first_error = tg28_sw_read_registers(
+                          s_pmic, BSP_PMIC_REG_ADC_CONTROL,
+                          &diagnostic->reg30_enabled, 1);
+        diagnostic->enable_verified = first_error == ESP_OK &&
+            (diagnostic->reg30_enabled & BSP_PMIC_ADC_DIAGNOSTIC_MASK) ==
+            BSP_PMIC_ADC_DIAGNOSTIC_MASK;
+        if (first_error == ESP_OK && !diagnostic->enable_verified) {
+            first_error = ESP_FAIL;
+        }
+    }
+
+    const int64_t start_us = esp_timer_get_time();
+    for (size_t index = 0;
+            first_error == ESP_OK &&
+            index < BSP_PMIC_ADC_DIAGNOSTIC_SAMPLE_COUNT;
+            ++index) {
+        const int64_t target_us = start_us +
+            (int64_t)s_adc_diagnostic_times_ms[index] * 1000;
+        for (;;) {
+            const int64_t remaining_us = target_us - esp_timer_get_time();
+            if (remaining_us <= 0) {
+                break;
+            }
+            TickType_t delay_ticks = pdMS_TO_TICKS(
+                (uint32_t)((remaining_us + 999) / 1000));
+            if (delay_ticks == 0) {
+                delay_ticks = 1;
+            }
+            vTaskDelay(delay_ticks);
+        }
+
+        bsp_pmic_adc_diagnostic_sample_t *sample =
+            &diagnostic->samples[index];
+        sample->elapsed_ms = (uint32_t)(
+            (esp_timer_get_time() - start_us) / 1000);
+        first_error = read_adc_diagnostic_sample(sample);
+        if (first_error == ESP_OK) {
+            diagnostic->sample_count = index + 1;
+        }
+    }
+
+    /* REG30 belongs to the caller. Restore it even after a failed enable or
+     * sample: an I2C write can have reached the PMIC despite a timeout. */
+    if (control_write_attempted) {
+        const esp_err_t restore_write_error = tg28_sw_write_register(
+            s_pmic, BSP_PMIC_REG_ADC_CONTROL,
+            diagnostic->reg30_original);
+        esp_err_t restore_read_error = restore_write_error;
+        if (restore_write_error == ESP_OK) {
+            restore_read_error = tg28_sw_read_registers(
+                s_pmic, BSP_PMIC_REG_ADC_CONTROL,
+                &diagnostic->reg30_restored, 1);
+        }
+        diagnostic->restore_verified = restore_read_error == ESP_OK &&
+            diagnostic->reg30_restored == diagnostic->reg30_original;
+        if (first_error == ESP_OK && !diagnostic->restore_verified) {
+            first_error = restore_read_error == ESP_OK ?
+                          ESP_FAIL : restore_read_error;
+        } else if (!diagnostic->restore_verified) {
+            ESP_LOGE(TAG, "REG30 restore failed after ADC diagnostic: %s",
+                     esp_err_to_name(restore_read_error));
+        }
+    }
+
+    return first_error;
 }
