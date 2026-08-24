@@ -25,6 +25,7 @@ idf_component_register(
         console
         esp_app_format
         esp_event
+        esp_mm
         esp_netif
         esp_phy
         esp_driver_jpeg
