@@ -15,9 +15,12 @@
  *   S1 SCREEN_OFF CO5300 in sleep, CST820 in monitor mode, HP in light sleep.
  *                 Wake sources: touch INT, shared IRQ line, RTC timer.
  *   DEEP_SLEEP    SoC deep sleep entered on S1 timeout, woken by the SoC RTC
- *                 timer or the shared IRQ line (EXT1 on GPIO2). Waking is a
- *                 reboot; a cycle counter kept in RTC memory decides whether
- *                 the machine gets another S0 pass or escalates to S2.
+ *                 timer or EXT1 (any low) on GPIO2 (shared IRQ) and GPIO3
+ *                 (touch INT - a real touch wake additionally needs the
+ *                 CST820 to stay powered through deep sleep; see the README).
+ *                 Waking is a reboot; a cycle counter kept in RTC memory
+ *                 decides whether the machine gets another S0 pass or
+ *                 escalates to S2.
  *   S2 SHUTDOWN   peripheral rails off, RX8130CE alarm armed, then the PMIC
  *                 performs a software power-off (bsp_pmic_power_off()). The
  *                 ESP loses power, so the "wake" from S2 is a cold boot after
@@ -390,15 +393,26 @@ static void drain_lp_reports(void)
  * Wake-source helpers
  * ------------------------------------------------------------------------- */
 
-/** Log which sources woke the HP core from the last light sleep. */
+/** Log which sources woke the HP core from the last sleep. */
 static void log_wakeup_causes(void)
 {
     const uint32_t causes = esp_sleep_get_wakeup_causes();
-    ESP_LOGI(TAG, "wake causes 0x%08x%s%s%s%s", (unsigned)causes,
+    ESP_LOGI(TAG, "wake causes 0x%08x%s%s%s%s%s", (unsigned)causes,
              (causes & BIT(ESP_SLEEP_WAKEUP_TIMER)) ? " timer" : "",
              (causes & BIT(ESP_SLEEP_WAKEUP_GPIO)) ? " gpio" : "",
              (causes & BIT(ESP_SLEEP_WAKEUP_ULP)) ? " ulp" : "",
+             (causes & BIT(ESP_SLEEP_WAKEUP_EXT1)) ? " ext1" : "",
              (causes & BIT(ESP_SLEEP_WAKEUP_UNDEFINED)) ? " undefined" : "");
+    if (causes & BIT(ESP_SLEEP_WAKEUP_EXT1)) {
+        /* The EXT1 status is the bit mask of the GPIO numbers that woke the
+         * chip: print it raw so a touch wake (BSP_TOUCH_INT) stays
+         * distinguishable from a shared-IRQ wake (BSP_PMIC_RTC_INT). */
+        const uint64_t ext1_pins = esp_sleep_get_ext1_wakeup_status();
+        ESP_LOGI(TAG, "EXT1 wake GPIO mask 0x%08llx%s%s",
+                 (unsigned long long)ext1_pins,
+                 (ext1_pins & BIT(BSP_PMIC_RTC_INT)) ? " shared-irq" : "",
+                 (ext1_pins & BIT(BSP_TOUCH_INT)) ? " touch" : "");
+    }
 }
 
 /**
@@ -815,6 +829,21 @@ static esp_err_t low_power_safe_state(void)
     return owner_error != ESP_OK ? owner_error : rail_error;
 }
 
+/** Route one pad to the RTC controller as a pulled-up EXT1 input. */
+static esp_err_t arm_ext1_pad(gpio_num_t pin)
+{
+    ESP_RETURN_ON_FALSE(rtc_gpio_is_valid_gpio(pin), ESP_ERR_NOT_SUPPORTED,
+                        TAG, "GPIO%d is not an RTC pad", pin);
+    ESP_RETURN_ON_ERROR(rtc_gpio_init(pin), TAG,
+                        "GPIO%d RTC pad init failed", pin);
+    ESP_RETURN_ON_ERROR(rtc_gpio_set_direction(pin,
+                        RTC_GPIO_MODE_INPUT_ONLY), TAG,
+                        "GPIO%d RTC pad direction failed", pin);
+    ESP_RETURN_ON_ERROR(rtc_gpio_pullup_en(pin), TAG,
+                        "GPIO%d RTC pad pull-up failed", pin);
+    return ESP_OK;
+}
+
 /**
  * Enter deep sleep, the step between S1 and S2.
  *
@@ -824,13 +853,20 @@ static esp_err_t low_power_safe_state(void)
  * state to survive. The always-on RX8130CE/TG28 behind the shared IRQ line do
  * not depend on an optional peripheral rail.
  *
- * Wake sources are the SoC RTC timer and EXT1 (any low) on the shared IRQ
- * line. Only PMIC/RTC events can assert that line: the CST820 touch INT is
- * GPIO3 and is NOT wired to GPIO2, so a touch cannot wake deep sleep in
- * this configuration. Waking from deep sleep reboots the chip, so this
- * function does not return on success; app_main reads the cycle counter
- * from RTC memory on the next boot and routes the machine back to S0 or on
- * to S2.
+ * Wake sources are the SoC RTC timer and EXT1 (any low) on two RTC pads:
+ * the shared IRQ line (GPIO2, PMIC/RTC events) and the CST820 touch INT
+ * (GPIO3). GPIO3 is a valid EXT1 pad on ESP32-S31 (8 RTCIO channels per
+ * soc_caps.h; GPIO3 is RTCIO channel 3 per rtc_io_channel.h), so arming it
+ * is a software configuration, not a hardware limit. A real touch wake
+ * additionally needs the CST820 powered and in monitor mode through deep
+ * sleep; the current safe-state flow removes its ALDO2 rail before entry,
+ * so the touch source is armed but not expected to fire until the power
+ * flow keeps the touch rail up (tracked in the README). The internal
+ * pull-up keeps GPIO3 at a defined high level meanwhile, so an unpowered
+ * controller can neither block sleep nor cause a spurious ANY_LOW wake.
+ * Waking from deep sleep reboots the chip, so this function does not
+ * return on success; app_main reads the cycle counter from RTC memory on
+ * the next boot and routes the machine back to S0 or on to S2.
  */
 static esp_err_t enter_deep_sleep(void)
 {
@@ -858,23 +894,22 @@ static esp_err_t enter_deep_sleep(void)
                  esp_err_to_name(timer_error));
     }
 
-    /* EXT1 on the shared IRQ line. GPIO2 is pulled up through R31 (10kOhm to
-     * TG28_VRTC, the always-on 3.0V rail); enable the internal pull-up as
-     * well so the pad keeps a defined level even without the external
-     * resistor. A floating EXT1 pin is exactly what keeps the chip in deep
-     * sleep forever. Only TG28/RX8130CE events assert this line;
-     * touch (GPIO3) is deliberately not armed - see the function comment. */
-    esp_err_t ext1_error = rtc_gpio_init(BSP_PMIC_RTC_INT);
+    /* EXT1 on the shared IRQ line and the touch INT line. Both sources are
+     * active low, so one ANY_LOW mask covers them. GPIO2 is pulled up
+     * through R31 (10kOhm to TG28_VRTC, the always-on 3.0V rail); GPIO3 is
+     * driven by the CST820 only while the controller is powered. Enable the
+     * internal pull-up on both pads as insurance so neither can float: a
+     * floating EXT1 pin is exactly what keeps the chip in deep sleep
+     * forever. GPIO3 also needs the CST820 powered and in monitor mode to
+     * actually assert - see the function comment. */
+    esp_err_t ext1_error = arm_ext1_pad(BSP_PMIC_RTC_INT);
     if (ext1_error == ESP_OK) {
-        ext1_error = rtc_gpio_set_direction(BSP_PMIC_RTC_INT,
-                                            RTC_GPIO_MODE_INPUT_ONLY);
+        ext1_error = arm_ext1_pad(BSP_TOUCH_INT);
     }
     if (ext1_error == ESP_OK) {
-        ext1_error = rtc_gpio_pullup_en(BSP_PMIC_RTC_INT);
-    }
-    if (ext1_error == ESP_OK) {
-        ext1_error = esp_sleep_enable_ext1_wakeup_io(BIT(BSP_PMIC_RTC_INT),
-                                                     ESP_EXT1_WAKEUP_ANY_LOW);
+        ext1_error = esp_sleep_enable_ext1_wakeup_io(
+            BIT(BSP_PMIC_RTC_INT) | BIT(BSP_TOUCH_INT),
+            ESP_EXT1_WAKEUP_ANY_LOW);
     }
     if (ext1_error != ESP_OK) {
         ESP_LOGE(TAG, "deep-sleep EXT1 wake-up arm failed: %s",
@@ -891,11 +926,11 @@ static esp_err_t enter_deep_sleep(void)
     s_deep_sleep_counter.cycles++;
 
     ESP_LOGW(TAG, "deep sleep: cycle %u/%u, wake on RTC timer (%u s) or "
-             "GPIO%d low (EXT1)",
+             "GPIO%d/GPIO%d low (EXT1)",
              (unsigned)s_deep_sleep_counter.cycles,
              (unsigned)DEEP_SLEEP_MAX_CYCLES,
              (unsigned)(DEEP_SLEEP_WAKE_US / 1000000ULL),
-             BSP_PMIC_RTC_INT);
+             BSP_PMIC_RTC_INT, BSP_TOUCH_INT);
     vTaskDelay(pdMS_TO_TICKS(50));   /* let the log drain */
     esp_deep_sleep_start();
 
@@ -1046,9 +1081,10 @@ void app_main(void)
      * fresh cycle with the counter zeroed.
      *
      * Within a deep-sleep wake, the source matters:
-     * - EXT1 on GPIO2 means an external event (power key, RTC alarm) — the
-     *   user or an alarm explicitly wants the board, so reset the counter
-     *   and return to S0 regardless of how many idle cycles elapsed.
+     * - EXT1 means an external event (power key or RTC alarm on the GPIO2
+     *   shared IRQ line, or a touch on GPIO3) — the user or an alarm
+     *   explicitly wants the board, so reset the counter and return to S0
+     *   regardless of how many idle cycles elapsed.
      * - TIMER means idle timeout — honour the escalation budget: another S0
      *   pass if the counter is within budget, S2 otherwise.
      * Both sources can fire simultaneously; EXT1 takes precedence so a
@@ -1060,7 +1096,8 @@ void app_main(void)
         state = CANDIS_STATE_RUN;
     } else if (wake_causes & BIT(ESP_SLEEP_WAKEUP_EXT1)) {
         ESP_LOGI(TAG, "woke from deep sleep by EXT1 (external event: "
-                 "power key or RTC alarm), resetting counter and returning to S0");
+                 "power key, RTC alarm, or touch), resetting counter and "
+                 "returning to S0");
         deep_sleep_counter_reset();
         state = CANDIS_STATE_RUN;
     } else if (deep_sleep_cycles_done() >= DEEP_SLEEP_MAX_CYCLES) {
