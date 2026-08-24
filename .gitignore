@@ -2,6 +2,7 @@
 **/build/
 **/build-*/
 sdkconfig
+/firmware/factory/sdkconfig.qio80_psram200
 sdkconfig.old
 **/managed_components/
 .manifest_sha
