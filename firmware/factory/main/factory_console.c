@@ -387,16 +387,16 @@ static void wifi_connect_event_handler(void *arg, esp_event_base_t base,
     }
 }
 
-static int command_wifi_connect(int argc, char **argv)
+static int wifi_connect_core(const char *ssid, size_t ssid_len,
+                             const char *password)
 {
-    if (argc != 3) {
-        printf("usage: wifi_connect SSID PASSWORD\n");
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (strlen(argv[1]) > 31 || strlen(argv[2]) > 63) {
+    if (ssid_len > 31 || strlen(password) > 63) {
         printf("ssid/password too long\n");
         return ESP_ERR_INVALID_ARG;
     }
+    char ssid_print[33];
+    memcpy(ssid_print, ssid, ssid_len);
+    ssid_print[ssid_len] = '\0';
 
     esp_err_t error = factory_console_ensure_nvs();
     if (error == ESP_OK) {
@@ -437,8 +437,8 @@ static int command_wifi_connect(int argc, char **argv)
     }
     wifi_config_t config = {0};
     if (error == ESP_OK) {
-        memcpy(config.sta.ssid, argv[1], strlen(argv[1]));
-        memcpy(config.sta.password, argv[2], strlen(argv[2]));
+        memcpy(config.sta.ssid, ssid, ssid_len);
+        memcpy(config.sta.password, password, strlen(password));
         config.sta.threshold.authmode = WIFI_AUTH_WPA_PSK;
         error = esp_wifi_set_config(WIFI_IF_STA, &config);
     }
@@ -463,7 +463,7 @@ static int command_wifi_connect(int argc, char **argv)
             const int rssi = esp_wifi_sta_get_ap_info(&ap) == ESP_OK ?
                              ap.rssi : 0;
             printf("wifi_connect: ssid=%s ip=" IPSTR " gw=" IPSTR
-                   " netmask=" IPSTR " rssi=%d elapsed=%lld ms\n", argv[1],
+                   " netmask=" IPSTR " rssi=%d elapsed=%lld ms\n", ssid_print,
                    IP2STR(&s_wifi_ip_info.ip), IP2STR(&s_wifi_ip_info.gw),
                    IP2STR(&s_wifi_ip_info.netmask), rssi,
                    (long long)elapsed_ms);
@@ -493,7 +493,7 @@ static int command_wifi_connect(int argc, char **argv)
     char detail[96];
     if (error == ESP_OK && connected) {
         snprintf(detail, sizeof(detail), "ssid=%s ip=" IPSTR " elapsed=%lldms",
-                 argv[1], IP2STR(&s_wifi_ip_info.ip), (long long)elapsed_ms);
+                 ssid_print, IP2STR(&s_wifi_ip_info.ip), (long long)elapsed_ms);
         factory_report_set(FACTORY_TEST_WIFI, FACTORY_STATUS_PASS, detail);
     } else {
         snprintf(detail, sizeof(detail), "connect failed: %s reason=%ld",
@@ -502,6 +502,42 @@ static int command_wifi_connect(int argc, char **argv)
     }
     factory_report_print_one(FACTORY_TEST_WIFI);
     return connected ? ESP_OK : ESP_FAIL;
+}
+
+static int command_wifi_connect(int argc, char **argv)
+{
+    if (argc != 3) {
+        printf("usage: wifi_connect SSID PASSWORD\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+    return wifi_connect_core(argv[1], strlen(argv[1]), argv[2]);
+}
+
+/* SSIDs with non-ASCII bytes (e.g. CJK) cannot be typed through the serial
+ * console line editor intact; this variant takes the SSID as hex bytes. */
+static int command_wifi_connect_hex(int argc, char **argv)
+{
+    if (argc != 3) {
+        printf("usage: wifi_connect_hex SSID_HEX PASSWORD\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+    const size_t hex_len = strlen(argv[1]);
+    if (hex_len == 0 || hex_len > 64 || hex_len % 2 != 0) {
+        printf("ssid hex length must be even and 2..64\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+    uint8_t ssid[32];
+    for (size_t i = 0; i < hex_len / 2; ++i) {
+        char byte[3] = {argv[1][2 * i], argv[1][2 * i + 1], '\0'};
+        char *end = NULL;
+        const long value = strtol(byte, &end, 16);
+        if (end != byte + 2 || value < 0 || value > 0xff) {
+            printf("invalid hex byte '%s'\n", byte);
+            return ESP_ERR_INVALID_ARG;
+        }
+        ssid[i] = (uint8_t)value;
+    }
+    return wifi_connect_core((const char *)ssid, hex_len / 2, argv[2]);
 }
 
 #if CONFIG_BT_NIMBLE_ENABLED
@@ -1087,6 +1123,7 @@ esp_err_t factory_console_start(void)
             .help = "Join a WPA2 AP and report IP/RSSI: wifi_connect SSID PASSWORD.",
             .func = command_wifi_connect,
         },
+        {.command = "wifi_connect_hex", .help = "Join a WPA2 AP with the SSID given as hex bytes: wifi_connect_hex SSID_HEX PASSWORD.", .func = command_wifi_connect_hex},
         {
             .command = "ble_smoke",
             .help = "Initialize and release the BLE controller.",
