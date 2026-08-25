@@ -388,7 +388,7 @@ static void wifi_connect_event_handler(void *arg, esp_event_base_t base,
 }
 
 static int wifi_connect_core(const char *ssid, size_t ssid_len,
-                             const char *password)
+                             const char *password, int hold_seconds)
 {
     if (ssid_len > 31 || strlen(password) > 63) {
         printf("ssid/password too long\n");
@@ -458,6 +458,15 @@ static int wifi_connect_core(const char *ssid, size_t ssid_len,
         }
         elapsed_ms = (esp_timer_get_time() - start_us) / 1000;
         connected = s_wifi_got_ip;
+        if (connected && hold_seconds > 0) {
+            printf("wifi_connect: holding connection for %d s...\n",
+                   hold_seconds);
+            const int64_t hold_deadline_us =
+                esp_timer_get_time() + (int64_t)hold_seconds * 1000000;
+            while (esp_timer_get_time() < hold_deadline_us) {
+                vTaskDelay(pdMS_TO_TICKS(500));
+            }
+        }
         if (connected) {
             wifi_ap_record_t ap = {0};
             const int rssi = esp_wifi_sta_get_ap_info(&ap) == ESP_OK ?
@@ -506,19 +515,21 @@ static int wifi_connect_core(const char *ssid, size_t ssid_len,
 
 static int command_wifi_connect(int argc, char **argv)
 {
-    if (argc != 3) {
-        printf("usage: wifi_connect SSID PASSWORD\n");
+    const int hold = argc > 3 ? atoi(argv[3]) : 0;
+    if (argc < 3 || argc > 4 || hold < 0 || hold > 120) {
+        printf("usage: wifi_connect SSID PASSWORD [HOLD_S 0-120]\n");
         return ESP_ERR_INVALID_ARG;
     }
-    return wifi_connect_core(argv[1], strlen(argv[1]), argv[2]);
+    return wifi_connect_core(argv[1], strlen(argv[1]), argv[2], hold);
 }
 
 /* SSIDs with non-ASCII bytes (e.g. CJK) cannot be typed through the serial
  * console line editor intact; this variant takes the SSID as hex bytes. */
 static int command_wifi_connect_hex(int argc, char **argv)
 {
-    if (argc != 3) {
-        printf("usage: wifi_connect_hex SSID_HEX PASSWORD\n");
+    const int hold = argc > 3 ? atoi(argv[3]) : 0;
+    if (argc < 3 || argc > 4 || hold < 0 || hold > 120) {
+        printf("usage: wifi_connect_hex SSID_HEX PASSWORD [HOLD_S 0-120]\n");
         return ESP_ERR_INVALID_ARG;
     }
     const size_t hex_len = strlen(argv[1]);
@@ -537,7 +548,7 @@ static int command_wifi_connect_hex(int argc, char **argv)
         }
         ssid[i] = (uint8_t)value;
     }
-    return wifi_connect_core((const char *)ssid, hex_len / 2, argv[2]);
+    return wifi_connect_core((const char *)ssid, hex_len / 2, argv[2], hold);
 }
 
 #if CONFIG_BT_NIMBLE_ENABLED
