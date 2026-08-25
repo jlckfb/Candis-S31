@@ -38,11 +38,21 @@ CONFIG_LV_DEF_REFR_PERIOD=15
 CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=48
 CONFIG_BSP_LCD_DRAW_BUF_DOUBLE=y
 
-# Keep PSRAM at the currently validated 100 MHz baseline for this image.
-# The physical capacity and part rating are not closed: startup reports 32 MB
-# while product/NRV16 records point to 16 MB. Do not raise the clock until the
-# capacity/alias test and BOM/top-mark check are complete; 200/250 MHz must be
-# qualified later as separate official, non-overclocked test grades.
+# Drive the OV5640 XCLK from LEDC. The esp_video DVP clock path only supports
+# integer dividers and no S31 CAM controller clock source is an integer
+# multiple of the required 24 MHz (PLL_F160M 160 % 24 = 16, XTAL 40 % 24 = 16),
+# so the controller path hard-fails before sensor detection. The BSP skips it
+# when this is set (bsp/candis_s31 Kconfig default y; pinned here for
+# visibility because existing sdkconfig files mask Kconfig default changes).
+CONFIG_BSP_CAMERA_XCLK_USE_LEDC=y
+
+# Keep PSRAM at the validated 100 MHz baseline for this image.
+# Capacity is closed: the in-package device is 32 MB (2026-08-25 BOM confirmed
+# by the user; factory mem_psram_verify probe reports TRUE_32MB). The 200 MHz
+# official grade is validated on this board (boot MEMTEST + display regression
+# + repeated reboots via sdkconfig.qio80_psram200.defaults); 250 MHz is
+# validated as a separate official grade (sdkconfig.qio80_psram250.defaults).
+# The product/NRV16 "16 MB" naming is a documentation error to fix there.
 CONFIG_SPIRAM_SPEED_100M=y
 CONFIG_SPIRAM_MEMTEST=y
 
@@ -93,7 +103,9 @@ CONFIG_CAM_CTRL_SPI_ENABLE=n
 # BLE controller smoke test (ble_smoke command). The factory firmware talks
 # to the controller directly, so no host stack is built.
 CONFIG_BT_ENABLED=y
-CONFIG_BT_CONTROLLER_ONLY=y
+# M5 matrix: BLE observer scan needs a host stack; controller-only cannot scan.
+# CONFIG_BT_CONTROLLER_ONLY is not set
+CONFIG_BT_NIMBLE_ENABLED=y
 
 # Expose Espressif PHY certification TX/RX commands for controlled RF bench
 # measurements. These commands are manual-only and must be stopped with rf_stop.

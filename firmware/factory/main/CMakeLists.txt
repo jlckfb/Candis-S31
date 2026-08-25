@@ -29,6 +29,7 @@ idf_component_register(
         esp_netif
         esp_phy
         esp_driver_jpeg
+        esp_driver_pcnt
         esp_driver_cordic
         esp_driver_ppa
         esp_driver_bitscrambler
@@ -43,6 +44,7 @@ idf_component_register(
         spi_flash
         usb
         usb_host_msc
+        espressif__esp_cam_sensor
 )
 
 target_bitscrambler_add_src("factory_bitscrambler.bsasm")

@@ -29,6 +29,12 @@
 #if CONFIG_BT_ENABLED
 #include "esp_bt.h"
 #endif
+#if CONFIG_BT_NIMBLE_ENABLED
+#include "nimble/nimble_port.h"
+#include "nimble/nimble_port_freertos.h"
+#include "host/ble_gap.h"
+#include "host/ble_hs_adv.h"
+#endif
 
 #include "factory_console.h"
 #include "factory_peripherals.h"
@@ -354,6 +360,274 @@ static int command_ble_smoke(int argc, char **argv)
     return ESP_OK;
 #endif
 }
+
+/* ---- M5 matrix: wifi_connect / ble_scan (station + BLE observer) ---- */
+
+static volatile bool s_wifi_got_ip;
+static volatile bool s_wifi_disconnected;
+static volatile int32_t s_wifi_disconnect_reason;
+static esp_netif_ip_info_t s_wifi_ip_info;
+
+static void wifi_connect_event_handler(void *arg, esp_event_base_t base,
+                                       int32_t id, void *data)
+{
+    (void)arg;
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        const wifi_event_sta_disconnected_t *event = data;
+        s_wifi_disconnect_reason = event ? event->reason : -1;
+        s_wifi_disconnected = true;
+    } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        const ip_event_got_ip_t *event = data;
+        if (event) {
+            s_wifi_ip_info = event->ip_info;
+        }
+        s_wifi_got_ip = true;
+    }
+}
+
+static int command_wifi_connect(int argc, char **argv)
+{
+    if (argc != 3) {
+        printf("usage: wifi_connect SSID PASSWORD\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (strlen(argv[1]) > 31 || strlen(argv[2]) > 63) {
+        printf("ssid/password too long\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t error = factory_console_ensure_nvs();
+    if (error == ESP_OK) {
+        error = esp_netif_init(); /* repeat init is a harmless no-op */
+    }
+    bool event_loop_created = false;
+    if (error == ESP_OK) {
+        error = esp_event_loop_create_default();
+        if (error == ESP_ERR_INVALID_STATE) {
+            error = ESP_OK; /* another test already created the loop */
+        } else {
+            event_loop_created = error == ESP_OK;
+        }
+    }
+    esp_netif_t *station = NULL;
+    if (error == ESP_OK) {
+        station = esp_netif_create_default_wifi_sta();
+        if (station == NULL) {
+            error = ESP_FAIL;
+        }
+    }
+    bool wifi_inited = false;
+    if (error == ESP_OK) {
+        wifi_init_config_t init_config = WIFI_INIT_CONFIG_DEFAULT();
+        error = esp_wifi_init(&init_config);
+        wifi_inited = error == ESP_OK;
+    }
+    if (error == ESP_OK) {
+        error = esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
+                                           wifi_connect_event_handler, NULL);
+    }
+    if (error == ESP_OK) {
+        error = esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                           wifi_connect_event_handler, NULL);
+    }
+    if (error == ESP_OK) {
+        error = esp_wifi_set_mode(WIFI_MODE_STA);
+    }
+    wifi_config_t config = {0};
+    if (error == ESP_OK) {
+        memcpy(config.sta.ssid, argv[1], strlen(argv[1]));
+        memcpy(config.sta.password, argv[2], strlen(argv[2]));
+        config.sta.threshold.authmode = WIFI_AUTH_WPA_PSK;
+        error = esp_wifi_set_config(WIFI_IF_STA, &config);
+    }
+
+    bool connected = false;
+    int64_t elapsed_ms = 0;
+    if (error == ESP_OK) {
+        s_wifi_got_ip = false;
+        s_wifi_disconnected = false;
+        s_wifi_disconnect_reason = 0;
+        const int64_t start_us = esp_timer_get_time();
+        error = esp_wifi_start();
+        const int64_t deadline_us = start_us + 25LL * 1000 * 1000;
+        while (error == ESP_OK && !s_wifi_got_ip &&
+               esp_timer_get_time() < deadline_us) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        elapsed_ms = (esp_timer_get_time() - start_us) / 1000;
+        connected = s_wifi_got_ip;
+        if (connected) {
+            wifi_ap_record_t ap = {0};
+            const int rssi = esp_wifi_sta_get_ap_info(&ap) == ESP_OK ?
+                             ap.rssi : 0;
+            printf("wifi_connect: ssid=%s ip=" IPSTR " gw=" IPSTR
+                   " netmask=" IPSTR " rssi=%d elapsed=%lld ms\n", argv[1],
+                   IP2STR(&s_wifi_ip_info.ip), IP2STR(&s_wifi_ip_info.gw),
+                   IP2STR(&s_wifi_ip_info.netmask), rssi,
+                   (long long)elapsed_ms);
+        } else {
+            printf("wifi_connect: %s after %lld ms (last disconnect reason=%ld)\n",
+                   s_wifi_disconnected ? "disconnected" : "timeout",
+                   (long long)elapsed_ms, (long)s_wifi_disconnect_reason);
+        }
+    }
+
+    esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                 wifi_connect_event_handler);
+    esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
+                                 wifi_connect_event_handler);
+    if (wifi_inited) {
+        esp_wifi_disconnect();
+        esp_wifi_stop();
+        esp_wifi_deinit();
+    }
+    if (station != NULL) {
+        esp_netif_destroy_default_wifi(station);
+    }
+    if (event_loop_created) {
+        esp_event_loop_delete_default();
+    }
+
+    char detail[96];
+    if (error == ESP_OK && connected) {
+        snprintf(detail, sizeof(detail), "ssid=%s ip=" IPSTR " elapsed=%lldms",
+                 argv[1], IP2STR(&s_wifi_ip_info.ip), (long long)elapsed_ms);
+        factory_report_set(FACTORY_TEST_WIFI, FACTORY_STATUS_PASS, detail);
+    } else {
+        snprintf(detail, sizeof(detail), "connect failed: %s reason=%ld",
+                 esp_err_to_name(error), (long)s_wifi_disconnect_reason);
+        factory_report_set(FACTORY_TEST_WIFI, FACTORY_STATUS_FAIL, detail);
+    }
+    factory_report_print_one(FACTORY_TEST_WIFI);
+    return connected ? ESP_OK : ESP_FAIL;
+}
+
+#if CONFIG_BT_NIMBLE_ENABLED
+static volatile bool s_ble_host_synced;
+static unsigned s_ble_scan_found;
+
+static volatile bool s_ble_host_task_done;
+
+static void ble_scan_on_sync(void)
+{
+    s_ble_host_synced = true;
+}
+
+/* nimble_port_freertos_init() passes its argument straight to
+ * xTaskCreatePinnedToCore() as the task entry; NULL crashes with an
+ * instruction-access fault at PC=0 once the "nimble_host" task runs. */
+static void ble_scan_host_task(void *param)
+{
+    (void)param;
+    nimble_port_run(); /* returns only after nimble_port_stop() */
+    s_ble_host_task_done = true;
+    nimble_port_freertos_deinit(); /* vTaskDelete()s this task from inside */
+}
+
+static int ble_scan_gap_event(struct ble_gap_event *event, void *arg)
+{
+    (void)arg;
+    if (event->type != BLE_GAP_EVENT_DISC) {
+        return 0;
+    }
+    struct ble_hs_adv_fields fields;
+    char name[BLE_HS_ADV_MAX_SZ] = {0};
+    if (ble_hs_adv_parse_fields(&fields, event->disc.data,
+                                event->disc.length_data) == 0 &&
+        fields.name_len > 0) {
+        const size_t copy = fields.name_len < sizeof(name) - 1 ?
+                            fields.name_len : sizeof(name) - 1;
+        memcpy(name, fields.name, copy);
+    }
+    ++s_ble_scan_found;
+    printf("ble_scan: addr=%02x:%02x:%02x:%02x:%02x:%02x addr_type=%u rssi=%d name=\"%s\"\n",
+           event->disc.addr.val[5], event->disc.addr.val[4],
+           event->disc.addr.val[3], event->disc.addr.val[2],
+           event->disc.addr.val[1], event->disc.addr.val[0],
+           event->disc.addr.type, event->disc.rssi, name);
+    return 0;
+}
+
+static int command_ble_scan(int argc, char **argv)
+{
+    const int seconds = argc > 1 ? atoi(argv[1]) : 8;
+    if (seconds < 1 || seconds > 60) {
+        printf("usage: ble_scan [SECONDS 1-60]\n");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t error = factory_console_ensure_nvs();
+    /* nimble_port_init() brings up the BT controller, the VHCI transport and
+     * the host in one call on this IDF (nimble_port.c); the legacy
+     * esp_bt_controller/esp_nimble_hci sequence does not apply to the S31
+     * esp_ipc transport and its headers are not exported there. */
+    bool host_up = false;
+    if (error == ESP_OK) {
+        error = nimble_port_init();
+        host_up = error == ESP_OK;
+    }
+    if (error == ESP_OK) {
+        s_ble_host_synced = false;
+        s_ble_host_task_done = false;
+        s_ble_scan_found = 0;
+        ble_hs_cfg.sync_cb = ble_scan_on_sync;
+        nimble_port_freertos_init(ble_scan_host_task);
+        const int64_t deadline_us = esp_timer_get_time() + 5LL * 1000 * 1000;
+        while (!s_ble_host_synced && esp_timer_get_time() < deadline_us) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+        if (!s_ble_host_synced) {
+            error = ESP_ERR_TIMEOUT;
+        }
+    }
+    if (error == ESP_OK) {
+        struct ble_gap_disc_params disc_params = {0};
+        disc_params.passive = 0; /* active scan: also get scan response names */
+        disc_params.filter_duplicates = 1;
+        error = ble_gap_disc(BLE_OWN_ADDR_PUBLIC, seconds * 1000,
+                             &disc_params, ble_scan_gap_event, NULL);
+    }
+    if (error == ESP_OK) {
+        const int64_t deadline_us =
+            esp_timer_get_time() + (int64_t)seconds * 1000 * 1000 + 1500000;
+        while (esp_timer_get_time() < deadline_us && ble_gap_disc_active()) {
+            vTaskDelay(pdMS_TO_TICKS(200));
+        }
+        if (ble_gap_disc_active()) {
+            ble_gap_disc_cancel();
+        }
+        printf("ble_scan: done, %u unique advertiser(s) in %d s\n",
+               s_ble_scan_found, seconds);
+    }
+
+    if (host_up) {
+        nimble_port_stop();
+        const int64_t exit_deadline_us = esp_timer_get_time() + 1000000;
+        while (!s_ble_host_task_done && esp_timer_get_time() < exit_deadline_us) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        nimble_port_deinit();
+    }
+
+    char detail[96];
+    if (error != ESP_OK) {
+        snprintf(detail, sizeof(detail), "ble scan failed: %s",
+                 esp_err_to_name(error));
+        factory_report_set(FACTORY_TEST_BLE, FACTORY_STATUS_FAIL, detail);
+        factory_report_print_one(FACTORY_TEST_BLE);
+        return error;
+    }
+    snprintf(detail, sizeof(detail), "advertisers=%u in %ds",
+             s_ble_scan_found, seconds);
+    factory_report_set(FACTORY_TEST_BLE,
+                       s_ble_scan_found > 0 ? FACTORY_STATUS_PASS : FACTORY_STATUS_WARN,
+                       detail);
+    factory_report_print_one(FACTORY_TEST_BLE);
+    return ESP_OK;
+}
+#endif /* CONFIG_BT_NIMBLE_ENABLED */
 
 esp_err_t factory_console_capture_otp_boot_snapshot(char *out, size_t out_size)
 {
@@ -809,10 +1083,22 @@ esp_err_t factory_console_start(void)
             .func = command_wifi_scan,
         },
         {
+            .command = "wifi_connect",
+            .help = "Join a WPA2 AP and report IP/RSSI: wifi_connect SSID PASSWORD.",
+            .func = command_wifi_connect,
+        },
+        {
             .command = "ble_smoke",
             .help = "Initialize and release the BLE controller.",
             .func = command_ble_smoke,
         },
+#if CONFIG_BT_NIMBLE_ENABLED
+        {
+            .command = "ble_scan",
+            .help = "Scan BLE advertisers: ble_scan [SECONDS 1-60].",
+            .func = command_ble_scan,
+        },
+#endif
         {
             .command = "report",
             .help = "Print all test results and the JSON summary.",
