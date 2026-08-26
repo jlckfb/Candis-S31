@@ -10,6 +10,7 @@
 #include "bsp/esp-bsp.h"
 #include "esp_cache.h"
 #include "esp_console.h"
+#include "esp_flash.h"
 #include "esp_heap_caps.h"
 #include "esp_psram.h"
 #include "esp_timer.h"
@@ -441,6 +442,113 @@ static int command_mem_psram_verify(int argc, char **argv)
     }
     return full ? psram_verify_full() : psram_verify_probe();
 }
+/* ---- mem_bandwidth -----------------------------------------------------
+ * Application-visible throughput at the currently configured clocks
+ * (QIO 80 MHz flash, octal PSRAM 250 MHz). These numbers measure the
+ * cache/heap/driver path, not controller peak ratings, and exist to catch
+ * signal-integrity regressions when the speed grade changes. */
+
+#define MEM_BW_CHUNK_BYTES  (64U * 1024U)
+#define MEM_BW_SPAN_MAX     (8U * 1024U * 1024U)
+#define MEM_BW_FLASH_BYTES  (4U * 1024U * 1024U)
+#define MEM_BW_FLASH_OFFSET (1024U * 1024U)
+
+static double mem_bw_mbps(size_t bytes, int64_t elapsed_us)
+{
+    return elapsed_us > 0 ? (double)bytes / (double)elapsed_us : 0.0;
+}
+
+static int command_mem_bandwidth(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    if (!esp_psram_is_initialized()) {
+        printf("mem_bandwidth: PSRAM not initialized this boot\n");
+        return ESP_FAIL;
+    }
+
+    size_t span = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM |
+                                                   MALLOC_CAP_8BIT);
+    if (span > MEM_BW_SPAN_MAX) {
+        span = MEM_BW_SPAN_MAX;
+    }
+    span &= ~(size_t)4095U;
+    uint32_t *psram = heap_caps_malloc(span, MALLOC_CAP_SPIRAM |
+                                       MALLOC_CAP_8BIT);
+    uint8_t *iram = heap_caps_malloc(MEM_BW_CHUNK_BYTES, MALLOC_CAP_INTERNAL |
+                                     MALLOC_CAP_8BIT);
+    if (psram == NULL || iram == NULL || span < 2U * MEM_BW_CHUNK_BYTES) {
+        printf("mem_bandwidth: allocation failed (psram=%p span=%zu iram=%p)\n",
+               (void *)psram, span, (void *)iram);
+        heap_caps_free(psram);
+        heap_caps_free(iram);
+        return ESP_ERR_NO_MEM;
+    }
+    const size_t words = span / sizeof(*psram);
+    printf("mem_bandwidth: psram window %zu bytes at %p\n", span,
+           (void *)psram);
+
+    int64_t t0 = esp_timer_get_time();
+    for (size_t w = 0; w < words; ++w) {
+        psram[w] = (uint32_t)w ^ PSRAM_VERIFY_PATTERN;
+    }
+    const int64_t write_us = esp_timer_get_time() - t0;
+
+    volatile uint32_t sink = 0;
+    t0 = esp_timer_get_time();
+    for (size_t w = 0; w < words; ++w) {
+        sink += ((const volatile uint32_t *)psram)[w];
+    }
+    const int64_t read_us = esp_timer_get_time() - t0;
+
+    const size_t half = span / 2U;
+    t0 = esp_timer_get_time();
+    memcpy((uint8_t *)psram + half, psram, half);
+    const int64_t copy_us = esp_timer_get_time() - t0;
+
+    size_t flash_done = 0;
+    uint32_t flash_sink = 0;
+    t0 = esp_timer_get_time();
+    esp_err_t flash_error = ESP_OK;
+    while (flash_done < MEM_BW_FLASH_BYTES) {
+        flash_error = esp_flash_read(esp_flash_default_chip, iram,
+                                     MEM_BW_FLASH_OFFSET + flash_done,
+                                     MEM_BW_CHUNK_BYTES);
+        if (flash_error != ESP_OK) {
+            break;
+        }
+        flash_sink += ((const uint32_t *)iram)[0] +
+                      ((const uint32_t *)iram)[MEM_BW_CHUNK_BYTES / 4U - 1U];
+        flash_done += MEM_BW_CHUNK_BYTES;
+    }
+    const int64_t flash_us = esp_timer_get_time() - t0;
+
+    printf("psram_write  %8.1f MB/s (%zu bytes in %" PRId64 " us)\n",
+           mem_bw_mbps(span, write_us), span, write_us);
+    printf("psram_read   %8.1f MB/s (%zu bytes in %" PRId64 " us)\n",
+           mem_bw_mbps(span, read_us), span, read_us);
+    printf("psram_memcpy %8.1f MB/s (%zu bytes in %" PRId64 " us)\n",
+           mem_bw_mbps(half, copy_us), half, copy_us);
+    if (flash_error == ESP_OK) {
+        printf("flash_read   %8.1f MB/s (%zu bytes in %" PRId64 " us)\n",
+               mem_bw_mbps(flash_done, flash_us), flash_done, flash_us);
+    } else {
+        printf("flash_read   FAILED %s after %zu bytes\n",
+               esp_err_to_name(flash_error), flash_done);
+    }
+    printf("FACTORY_BANDWIDTH {\"span\":%zu,\"psram_write_mbps\":%.1f,"
+           "\"psram_read_mbps\":%.1f,\"psram_memcpy_mbps\":%.1f,"
+           "\"flash_read_mbps\":%.1f,\"sink\":%u}\n", span,
+           mem_bw_mbps(span, write_us), mem_bw_mbps(span, read_us),
+           mem_bw_mbps(half, copy_us),
+           flash_error == ESP_OK ? mem_bw_mbps(flash_done, flash_us) : 0.0,
+           (unsigned)(sink + flash_sink));
+
+    heap_caps_free(psram);
+    heap_caps_free(iram);
+    return flash_error;
+}
+
 
 
 esp_err_t factory_diag_register(void)
@@ -449,6 +557,7 @@ esp_err_t factory_diag_register(void)
         {.command = "sys_tasks", .help = "Print per-task CPU usage and stack high-water marks: sys_tasks [PERIOD_MS 100-10000].", .func = command_sys_tasks},
         {.command = "mark", .help = "Record a manual result: mark TEST pass|fail|skip [detail].", .func = command_mark},
         {.command = "mem_psram_verify", .help = "Adjudicate 16 vs 32 MB physical PSRAM by address-alias evidence: mem_psram_verify [probe|full]; probe (default) saves/restores, full is DESTRUCTIVE and may crash after progress lands on the UART.", .func = command_mem_psram_verify},
+        {.command = "mem_bandwidth", .help = "Measure PSRAM write/read/copy and flash read throughput at the current clocks.", .func = command_mem_bandwidth},
     };
     for (size_t index = 0; index < sizeof(commands) / sizeof(commands[0]); ++index) {
         const esp_err_t error = esp_console_cmd_register(&commands[index]);
