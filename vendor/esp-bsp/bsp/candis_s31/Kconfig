@@ -118,17 +118,26 @@ menu "Board Support Package (Candis-S31)"
     menu "Camera"
         config BSP_CAMERA_XCLK_USE_LEDC
             bool "Generate the camera XCLK with LEDC"
-            default n
+            default y
             help
-                Leave this disabled. The ESP32-S31 CAM controller derives XCLK
-                itself from PLL_F160M and drives it on the pin passed as
-                dvp_pin.xclk_io, which esp_video does whenever xclk_io >= 0 and
-                xclk_freq > 0 (esp_cam_ctlr_dvp_output_clock in
-                esp_video_init.c). An extra LEDC channel on the same GPIO is
-                redundant: the GPIO output matrix only keeps the signal
-                attached last, so the LEDC output is disconnected anyway and
-                merely occupies a LEDC timer and channel. Enable this only to
-                drive XCLK from LEDC for a diagnostic experiment.
+                Keep this enabled. The esp_video DVP clock path
+                (esp_cam_ctlr_dvp_output_clock, called by init_dvp_clk_func
+                in esp_video_init.c whenever xclk_io >= 0 and xclk_freq > 0)
+                only supports integer clock dividers, and no ESP32-S31 CAM
+                controller clock source (PLL_F160M, XTAL, APLL) is an integer
+                multiple of the 24 MHz the OV5640 register tables require
+                (160 % 24 = 16, 40 % 24 = 16). esp_cam_ctlr_dvp_output_clock
+                hard-fails with "calculated frequency divider is not integer"
+                and aborts esp_video_init_with_flags() before sensor
+                detection. APLL could provide 96 MHz = 4 x 24 MHz, but
+                esp_video hardcodes CAM_CLK_SRC_DEFAULT (PLL_F160M), so the
+                controller path cannot be fixed without patching official
+                components. With this option enabled the BSP drives the
+                24 MHz XCLK from a fractional LEDC channel and passes
+                xclk_io=GPIO_NUM_NC / xclk_freq=0 to esp_video, which skips
+                the failing controller clock path entirely. Disable only for
+                a diagnostic experiment with a controller-driven XCLK at a
+                frequency that evenly divides PLL_F160M (e.g. 20 MHz).
 
         config BSP_CAMERA_XCLK_LEDC_CH
             int "LEDC channel used for camera XCLK"

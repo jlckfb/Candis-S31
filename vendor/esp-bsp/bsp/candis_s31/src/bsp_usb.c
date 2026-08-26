@@ -126,6 +126,21 @@ static esp_err_t usb_host_stop_locked(void)
             }
         }
     }
+    /* Quiesce the root port while the host library object is still alive.
+     * The upstream USB 1.5.0 teardown can leave a deferred HCD port callback;
+     * powering the root port down first lets the event task drain it before
+     * usb_host_uninstall() clears its global object. */
+    if (first_error == ESP_OK && s_host_installed) {
+        const esp_err_t root_stop_error =
+            usb_host_lib_set_root_port_power(false);
+        if (root_stop_error != ESP_OK &&
+                root_stop_error != ESP_ERR_INVALID_STATE) {
+            record_first_error(root_stop_error, &first_error);
+        }
+        if (root_stop_error == ESP_OK) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+    }
 
     if (first_error == ESP_OK && s_host_installed && !s_task_exited) {
         s_stop_requested = true;

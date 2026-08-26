@@ -1451,11 +1451,3 @@ esp_err_t bsp_display_exit_deep_standby(void)
     return error;
 }
 #endif
-
-/* Application-level accessor for direct panel rendering (e.g. video).
- * This is intentionally read-only and does not change the panel state
- * managed by the BSP/LVGL port. */
-esp_lcd_panel_handle_t bsp_display_get_panel_handle(void)
-{
-    return s_display.panel;
-}

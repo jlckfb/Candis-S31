@@ -229,13 +229,18 @@ OV5640 register tables in `esp_cam_sensor` assume 24 MHz, and `bsp_camera.c`
 enforces this with a compile-time check. Only the DVP video device is
 initialized (`ESP_VIDEO_INIT_FLAGS_DVP`).
 
-XCLK comes from the CAM controller, which divides it down from PLL_F160M and
-drives it on `dvp_pin.xclk_io` whenever `xclk_io >= 0` and `xclk_freq > 0`
-(`esp_cam_ctlr_dvp_output_clock()` in `esp_video_init.c`). No LEDC channel is
-needed: the GPIO output matrix only keeps the signal attached last, so a second
-source on the same pin is disconnected in practice. `CONFIG_BSP_CAMERA_XCLK_USE_LEDC`
-can still route XCLK through LEDC for a diagnostic experiment and is disabled
-by default; `CONFIG_BSP_CAMERA_XCLK_LEDC_CH` only applies when it is enabled.
+XCLK comes from LEDC, not from the CAM controller. The esp_video DVP clock
+path (`esp_cam_ctlr_dvp_output_clock()`, called by `init_dvp_clk_func()` in
+`esp_video_init.c` whenever `xclk_io >= 0` and `xclk_freq > 0`) only supports
+integer clock dividers, and no ESP32-S31 CAM controller clock source
+(PLL_F160M, XTAL, APLL) is an integer multiple of the required 24 MHz
+(160 % 24 = 16, 40 % 24 = 16), so that path hard-fails with
+"calculated frequency divider is not integer" before sensor detection. With
+`CONFIG_BSP_CAMERA_XCLK_USE_LEDC=y` (the default) the BSP drives the 24 MHz
+XCLK from a fractional LEDC channel (`CONFIG_BSP_CAMERA_XCLK_LEDC_CH`) and
+passes `xclk_io=GPIO_NUM_NC` / `xclk_freq=0` to esp_video, which then skips
+the failing controller clock path; the DVP video device creates its
+controller with `pin_dont_init=true`, so the capture path is unaffected.
 
 This board has no autofocus hardware: the schematic carries no VCM driver and
 the camera FPC's AF_VCC pin is tied to the 2.8 V camera rail through a 0 ohm

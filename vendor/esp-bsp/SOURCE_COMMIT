@@ -1,4 +1,4 @@
-source: ../../espressif-Prj/esp-bsp
-commit: c2459454ef19666661e24ff2ec45f3cd9ef94955
+source: /home/lipeng/Redmi-U26/Candis-S31/espressif-Prj/esp-bsp
+commit: f5f681aff3ebdf4b0ae968ba543764dbc92a58e5
 dirty_files: 0
-synced_at: 2026-08-24T12:19:20Z
+synced_at: 2026-08-26T09:41:20Z

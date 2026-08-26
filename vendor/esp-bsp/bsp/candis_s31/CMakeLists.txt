@@ -18,6 +18,7 @@ idf_component_register(
         spiffs
         vfs
     PRIV_REQUIRES
+        esp_driver_ledc
         esp_psram
         esp_timer
         fusb303b
