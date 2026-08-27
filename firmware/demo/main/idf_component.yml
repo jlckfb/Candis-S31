@@ -7,3 +7,5 @@ dependencies:
   # (lock resolves esp_tinyusb 2.2.1 + tinyusb 0.21.0~1, esp32s31 in
   # both target lists).
   espressif/esp_tinyusb: "^2.0.1~1"
+  # HW ASRC for the accel.asrc test (version pinned like firmware/factory).
+  espressif/esp_asrc: "~1.1"

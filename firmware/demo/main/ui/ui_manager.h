@@ -26,19 +26,14 @@
 
 #include "lvgl.h"
 
+#include "ui_theme.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Theme palette (AMOLED dark). */
-#define UI_COLOR_BG        0x000000
-#define UI_COLOR_SURFACE   0x1A1A1E
-#define UI_COLOR_ACCENT    0x4A9EFF
-#define UI_COLOR_TEXT      0xF0F0F0
-#define UI_COLOR_TEXT_DIM  0x8A8A92
-#define UI_COLOR_WARN      0xFFB020
-#define UI_COLOR_OK        0x30D158
-#define UI_COLOR_ERR       0xFF453A
+/* Theme palette lives in ui_theme.h (redesign spec B.1); every page
+ * uses the UI_COL_* tokens directly. */
 
 #define UI_STATUS_BAR_HEIGHT 32
 #define UI_CONTENT_Y        UI_STATUS_BAR_HEIGHT
@@ -85,6 +80,13 @@ void ui_nav_open(const char *app_id);    /**< open registered app */
 void ui_nav_open_menu(void);             /**< open launcher (watchface only) */
 void ui_nav_back(void);                  /**< pop current app screen */
 bool ui_nav_at_home(void);               /**< true when watchface is active */
+
+/**
+ * Push a shell-owned screen that is not a registered app (e.g. test-center
+ * detail/run views, spec A.1-5). The screen is auto-deleted on pop like an
+ * app screen. Safe to call only with ui_lock held (or from LVGL ctx).
+ */
+void ui_nav_push_screen(lv_obj_t *screen);
 
 typedef enum {
     UI_NAV_REQUEST_BACK_OR_MENU = 0,

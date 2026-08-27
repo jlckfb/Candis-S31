@@ -38,7 +38,7 @@ void demo_apps_register_all(void)
         { "led", "LED", LV_SYMBOL_TINT, app_led_create, false,
           "Color+fx", UI_APP_AVAILABLE, NULL },
         { "camera", "Camera", LV_SYMBOL_IMAGE, app_camera_create, false,
-          "Preview+capture", UI_APP_UNAVAILABLE, "FPC adapter pending" },
+          "Preview+capture", UI_APP_AVAILABLE, NULL },
         { "settings", "Settings", LV_SYMBOL_SETTINGS, app_settings_create, false,
           "Display+audio", UI_APP_AVAILABLE, NULL },
         { "power", "Power", LV_SYMBOL_POWER, app_power_create, false,

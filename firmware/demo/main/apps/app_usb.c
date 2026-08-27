@@ -46,6 +46,7 @@
 #include "usb/msc_host_vfs.h"
 
 #include "demo_apps.h"
+#include "tests/svc_test.h"
 #include "ui/ui_manager.h"
 
 #define USB_POLL_MS          200
@@ -1145,6 +1146,11 @@ static void mount_btn_cb(lv_event_t *event)
                                  memory_order_acquire)) {
         return;
     }
+    /* C.5 arbitration: a storage-domain test owns the USB host stack. */
+    if (svc_test_domain_busy(TEST_DOM_STORAGE)) {
+        ui_toast("Storage test running");
+        return;
+    }
     bool expected = false;
     if (!atomic_compare_exchange_strong_explicit(
             &s_worker_busy, &expected, true, memory_order_acq_rel,
@@ -1321,6 +1327,21 @@ static void usb_delete_cb(lv_event_t *event)
     usb_file_list_free(abandoned.files);
 }
 
+/* C.5 arbitration query: true while the USB host stack, an MSC
+ * mount/teardown worker or a CDC device session owns the peripheral.
+ * Storage-domain tests (usb_enum / usb_msc_rw) must SKIP when busy. */
+bool app_usb_host_busy(void)
+{
+    return atomic_load_explicit(&s_host_running, memory_order_acquire) ||
+           atomic_load_explicit(&s_worker_busy, memory_order_acquire) ||
+           atomic_load_explicit(&s_msc_driver_installed,
+                                memory_order_acquire) ||
+           atomic_load_explicit(&s_dev_task_live, memory_order_acquire) ||
+           atomic_load_explicit(&s_dev_start_requested,
+                                memory_order_acquire) ||
+           atomic_load_explicit(&s_dev_running, memory_order_acquire);
+}
+
 lv_obj_t *app_usb_create(void)
 {
     memset(&s_usb, 0, sizeof(s_usb));
@@ -1370,7 +1391,7 @@ lv_obj_t *app_usb_create(void)
     lv_obj_set_width(s_usb.sink_lbl, 428);
     lv_obj_set_pos(s_usb.sink_lbl, 0, 110);
     lv_obj_set_style_text_color(s_usb.sink_lbl,
-                                lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+                                lv_color_hex(UI_COL_TEXT_DIM), 0);
     lv_label_set_text(s_usb.sink_lbl,
                       "Device mode\n\n"
                       "The peer host powers this device.\n"
@@ -1396,7 +1417,7 @@ lv_obj_t *app_usb_create(void)
     s_usb.list = lv_list_create(content);
     lv_obj_set_size(s_usb.list, 428, 284);
     lv_obj_set_pos(s_usb.list, 0, 56);
-    lv_obj_set_style_bg_color(s_usb.list, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(s_usb.list, lv_color_hex(UI_COL_SURFACE), 0);
 
     usb_visibility(true, false, false, false, false);
 

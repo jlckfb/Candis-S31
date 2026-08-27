@@ -18,6 +18,7 @@
 #include "services/svc_net.h"
 #include "services/svc_power.h"
 #include "services/svc_storage.h"
+#include "tests/svc_test.h"
 #include "ui/ui_manager.h"
 
 static const char *TAG = "candis_demo";
@@ -107,6 +108,7 @@ void app_main(void)
     svc_log_start("storage", svc_storage_start(on_sd, NULL));
     svc_log_start("audio", svc_audio_start());
     svc_log_start("net", svc_net_start());
+    svc_log_start("test", svc_test_start());
 
     ESP_LOGI(TAG, "Candis-S31 watch demo started");
 }

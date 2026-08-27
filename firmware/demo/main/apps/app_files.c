@@ -650,30 +650,30 @@ lv_obj_t *app_files_create(void)
     lv_obj_set_pos(s_files.path_lbl, 0, 0);
     lv_label_set_long_mode(s_files.path_lbl, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(s_files.path_lbl,
-                                lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+                                lv_color_hex(UI_COL_TEXT_DIM), 0);
 
     lv_obj_t *gesture_hint = lv_label_create(content);
     lv_label_set_text(gesture_hint, "Tap details, hold file to delete");
     lv_obj_set_pos(gesture_hint, 0, 28);
     lv_obj_set_style_text_color(gesture_hint,
-                                lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+                                lv_color_hex(UI_COL_TEXT_DIM), 0);
 
     s_files.list = lv_list_create(content);
     lv_obj_set_size(s_files.list, LV_PCT(100), 228);
     lv_obj_set_pos(s_files.list, 0, 56);
-    lv_obj_set_style_bg_color(s_files.list, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(s_files.list, lv_color_hex(UI_COL_SURFACE), 0);
 
     s_files.cap_lbl = lv_label_create(content);
     lv_obj_set_pos(s_files.cap_lbl, 0, 292);
     lv_obj_set_style_text_color(s_files.cap_lbl,
-                                lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+                                lv_color_hex(UI_COL_TEXT_DIM), 0);
 
     s_files.cap_bar = lv_bar_create(content);
     lv_obj_set_size(s_files.cap_bar, LV_PCT(100), 12);
     lv_obj_set_pos(s_files.cap_bar, 0, 320);
     lv_bar_set_range(s_files.cap_bar, 0, 100);
-    lv_obj_set_style_bg_color(s_files.cap_bar, lv_color_hex(UI_COLOR_SURFACE), 0);
-    lv_obj_set_style_bg_color(s_files.cap_bar, lv_color_hex(UI_COLOR_ACCENT),
+    lv_obj_set_style_bg_color(s_files.cap_bar, lv_color_hex(UI_COL_SURFACE), 0);
+    lv_obj_set_style_bg_color(s_files.cap_bar, lv_color_hex(UI_COL_ACCENT),
                               LV_PART_INDICATOR);
 
     s_files.empty_lbl = lv_label_create(content);

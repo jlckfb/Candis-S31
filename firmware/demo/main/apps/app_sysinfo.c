@@ -19,6 +19,7 @@
 #include "esp_chip_info.h"
 #include "esp_heap_caps.h"
 #include "esp_idf_version.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -26,6 +27,7 @@
 #include "demo_apps.h"
 #include "esp_flash.h"
 #include "services/svc_power.h"
+#include "tests/sleep_record.h"
 #include "ui/ui_manager.h"
 
 #define SYSINFO_ROW_WIDTH   428
@@ -64,11 +66,11 @@ static lv_obj_t *info_row(lv_obj_t *parent, const char *name,
 
     lv_obj_t *name_lbl = lv_label_create(row);
     lv_label_set_text(name_lbl, name);
-    lv_obj_set_style_text_color(name_lbl, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(name_lbl, lv_color_hex(UI_COL_TEXT_DIM), 0);
     lv_obj_align(name_lbl, LV_ALIGN_LEFT_MID, 8, 0);
 
     lv_obj_t *value_lbl = lv_label_create(row);
-    lv_obj_set_style_text_color(value_lbl, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(value_lbl, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_align(value_lbl, LV_ALIGN_RIGHT_MID, -8, 0);
     if (value_out) {
         *value_out = value_lbl;
@@ -206,6 +208,8 @@ lv_obj_t *app_sysinfo_create(void)
                    chip_model_name(chip.model), chip.cores);
     info_row_fixed(content, "IDF version", "%s", esp_get_idf_version());
     info_row_fixed(content, "BSP version", "%s", CANDIS_S31_BSP_GIT_REV);
+    info_row_fixed(content, "Reset reason", "%s",
+                   demo_reset_reason_str(esp_reset_reason()));
 
     uint32_t flash_bytes = 0;
     if (esp_flash_get_size(NULL, &flash_bytes) == ESP_OK) {
@@ -224,7 +228,7 @@ lv_obj_t *app_sysinfo_create(void)
 
     lv_obj_t *head = lv_label_create(content);
     lv_label_set_text(head, "Task stack high-water (bytes free)");
-    lv_obj_set_style_text_color(head, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_text_color(head, lv_color_hex(UI_COL_ACCENT), 0);
     lv_obj_set_style_pad_left(head, 8, 0);
     lv_obj_set_style_pad_top(head, 8, 0);
 

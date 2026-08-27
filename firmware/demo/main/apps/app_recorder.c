@@ -134,7 +134,7 @@ static void route_refresh(void)
     for (int index = 0; index < 4; ++index) {
         const bool selected = index == (int)s.route;
         lv_obj_set_style_bg_color(s.route_btn[index],
-                lv_color_hex(selected ? UI_COLOR_ACCENT : UI_COLOR_SURFACE),
+                lv_color_hex(selected ? UI_COL_ACCENT : UI_COL_SURFACE),
                 0);
         lv_obj_set_style_border_width(s.route_btn[index], selected ? 0 : 1, 0);
     }
@@ -145,19 +145,19 @@ static void rec_btn_refresh(void)
     if (s.saving) {
         lv_label_set_text(s.rec_icon, LV_SYMBOL_SAVE);
         lv_obj_set_style_radius(s.rec_btn, 14, 0);
-        lv_obj_set_style_bg_color(s.rec_btn, lv_color_hex(UI_COLOR_WARN), 0);
+        lv_obj_set_style_bg_color(s.rec_btn, lv_color_hex(UI_COL_WARN), 0);
         lv_obj_add_state(s.rec_btn, LV_STATE_DISABLED);
         lv_label_set_text(s.time_label, "Saving...");
     } else if (s.recording) {
         lv_label_set_text(s.rec_icon, LV_SYMBOL_STOP);
         lv_obj_set_style_radius(s.rec_btn, 14, 0);
-        lv_obj_set_style_bg_color(s.rec_btn, lv_color_hex(UI_COLOR_ERR), 0);
+        lv_obj_set_style_bg_color(s.rec_btn, lv_color_hex(UI_COL_FAIL), 0);
         lv_obj_remove_state(s.rec_btn, LV_STATE_DISABLED);
     } else {
         lv_label_set_text(s.rec_icon, LV_SYMBOL_AUDIO);
         lv_obj_set_style_radius(s.rec_btn, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_color(s.rec_btn,
-                lv_color_hex(s.sd_mounted ? UI_COLOR_ERR : UI_COLOR_SURFACE),
+                lv_color_hex(s.sd_mounted ? UI_COL_FAIL : UI_COL_SURFACE),
                 0);
         if (s.sd_mounted) {
             lv_obj_remove_state(s.rec_btn, LV_STATE_DISABLED);
@@ -194,7 +194,7 @@ static lv_obj_t *row_create(int index)
     lv_obj_t *row = lv_button_create(s.list);
     lv_obj_set_size(row, ROW_WIDTH, ROW_HEIGHT);
     lv_obj_set_pos(row, 0, index * ROW_PITCH);
-    lv_obj_set_style_bg_color(row, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(row, lv_color_hex(UI_COL_SURFACE), 0);
     lv_obj_set_style_radius(row, 10, 0);
     lv_obj_set_style_border_width(row, 0, 0);
 
@@ -212,7 +212,7 @@ static lv_obj_t *row_create(int index)
     lv_obj_t *meta = lv_label_create(row);
     lv_label_set_text_fmt(meta, "%u KB", (unsigned)s.sizes_kb[index]);
     lv_obj_align(meta, LV_ALIGN_RIGHT_MID, -12, 0);
-    lv_obj_set_style_text_color(meta, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(meta, lv_color_hex(UI_COL_TEXT_DIM), 0);
 
     lv_obj_add_event_cb(row, row_click_cb, LV_EVENT_CLICKED,
                         (void *)(intptr_t)index);
@@ -225,7 +225,7 @@ static void list_placeholder(const char *text)
 {
     lv_obj_t *label = lv_label_create(s.list);
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(label, lv_color_hex(UI_COL_TEXT_DIM), 0);
     lv_obj_center(label);
 }
 
@@ -814,7 +814,7 @@ static lv_obj_t *route_button_create(lv_obj_t *parent, int index,
     lv_obj_set_pos(button, index * 109, 0);
     lv_obj_set_style_pad_hor(button, 4, 0);
     lv_obj_set_style_radius(button, 10, 0);
-    lv_obj_set_style_border_color(button, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_border_color(button, lv_color_hex(UI_COL_TEXT_DIM), 0);
     lv_obj_t *label = lv_label_create(button);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_font(label, ui_font_body(), 0);
@@ -886,7 +886,7 @@ lv_obj_t *app_recorder_create(void)
     lv_obj_set_size(s.rec_btn, 76, 76);
     lv_obj_set_pos(s.rec_btn, (428 - 76) / 2, 144);
     lv_obj_set_style_radius(s.rec_btn, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(s.rec_btn, lv_color_hex(UI_COLOR_ERR), 0);
+    lv_obj_set_style_bg_color(s.rec_btn, lv_color_hex(UI_COL_FAIL), 0);
     lv_obj_set_style_border_width(s.rec_btn, 0, 0);
     lv_obj_add_event_cb(s.rec_btn, record_button_cb, LV_EVENT_CLICKED, NULL);
     s.rec_icon = lv_label_create(s.rec_btn);

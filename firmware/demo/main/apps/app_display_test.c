@@ -10,9 +10,11 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "demo_apps.h"
 #include "ui/ui_manager.h"
+#include "tests/display_diag.h"
 
 typedef enum {
     DISPLAY_MODE_COLOR = 0,
@@ -29,6 +31,11 @@ static struct {
     lv_obj_t *fullscreen_dot;
     lv_timer_t *hint_timer;
     int color_index;
+    /* motion mode diagnostics (display_diag) */
+    lv_obj_t *motion_stats_lbl;
+    lv_timer_t *motion_stats_timer;
+    bool te_owned;
+    bool motion_diag;
 } s_display;
 
 static const struct {
@@ -164,13 +171,13 @@ static void fullscreen_open(display_mode_t mode)
     lv_label_set_text(s_display.fullscreen_hint,
                       "Swipe edges/corners to check coords, hold to exit");
     lv_obj_set_style_text_color(s_display.fullscreen_hint,
-                                lv_color_hex(UI_COLOR_TEXT), 0);
+                                lv_color_hex(UI_COL_TEXT), 0);
     s_display.fullscreen_dot = lv_obj_create(panel);
     lv_obj_set_size(s_display.fullscreen_dot, 28, 28);
     lv_obj_set_pos(s_display.fullscreen_dot, 216, 216);
     lv_obj_set_style_radius(s_display.fullscreen_dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(s_display.fullscreen_dot,
-                              lv_color_hex(UI_COLOR_ACCENT), 0);
+                              lv_color_hex(UI_COL_ACCENT), 0);
     lv_obj_set_style_bg_opa(s_display.fullscreen_dot, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(s_display.fullscreen_dot,
                                   lv_color_hex(0xFFFFFF), 0);
@@ -181,13 +188,69 @@ static void fullscreen_open(display_mode_t mode)
     lv_obj_add_event_cb(panel, fullscreen_touch_cb, LV_EVENT_PRESSING, NULL);
 }
 
+static void motion_diag_teardown(void)
+{
+    if (s_display.motion_stats_timer) {
+        lv_timer_delete(s_display.motion_stats_timer);
+        s_display.motion_stats_timer = NULL;
+    }
+    s_display.motion_stats_lbl = NULL;
+    if (s_display.te_owned) {
+        display_diag_te_detach();
+        s_display.te_owned = false;
+    }
+    if (s_display.motion_diag) {
+        display_diag_motion_stop(NULL);
+        s_display.motion_diag = false;
+    }
+}
+
 static void stage_clear(void)
 {
+    motion_diag_teardown();
     if (s_display.motion_dot) {
         lv_anim_delete(s_display.motion_dot, NULL);
     }
     lv_obj_clean(s_display.stage);
     s_display.motion_dot = NULL;
+}
+
+/* 2 Hz FPS/TE statistics line (motion mode). FPS comes from the
+ * display_diag flush-cycle counter; TE period/jitter from the port TE
+ * observer (C3 - the GPIO16 ISR stays owned by the LVGL port). */
+static void motion_stats_tick(lv_timer_t *timer)
+{
+    (void)timer;
+    if (!s_display.motion_stats_lbl) {
+        return;
+    }
+    display_diag_motion_stats_t motion;
+    display_diag_motion_snapshot(&motion);
+
+    char te_part[48];
+    if (s_display.te_owned) {
+        display_diag_te_stats_t te;
+        display_diag_te_snapshot(&te);
+        if (te.period_count > 0) {
+            const int64_t avg =
+                (int64_t)(te.period_total_us / te.period_count);
+            const int64_t jit = te.period_max_us - te.period_min_us;
+            snprintf(te_part, sizeof(te_part), "TE %lld us j%lld us",
+                     (long long)avg, (long long)jit);
+        } else {
+            strlcpy(te_part, "TE --", sizeof(te_part));
+        }
+        /* Sliding window: re-arm for the next 500 ms slice. */
+        display_diag_te_reset();
+    } else {
+        strlcpy(te_part, "TE busy", sizeof(te_part));
+    }
+
+    lv_label_set_text_fmt(s_display.motion_stats_lbl,
+                          "FPS %lu min %lu max %lu | %s",
+                          (unsigned long)motion.fps_last,
+                          (unsigned long)motion.cycles_min,
+                          (unsigned long)motion.cycles_max, te_part);
 }
 
 static void show_motion_mode(void)
@@ -197,45 +260,26 @@ static void show_motion_mode(void)
     lv_obj_set_style_bg_opa(s_display.stage, LV_OPA_COVER, 0);
 
     lv_obj_t *title = lv_label_create(s_display.stage);
-    lv_label_set_text(title, "Partial-refresh motion, ~400 x 96 px dirty area");
-    lv_obj_set_style_text_color(title, lv_color_hex(UI_COLOR_TEXT), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 26);
+    lv_label_set_text(title, "Ball motion: watch for tearing and dropped frames");
+    lv_obj_set_style_text_color(title, lv_color_hex(UI_COL_TEXT), 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
 
-    lv_obj_t *track = lv_obj_create(s_display.stage);
-    lv_obj_set_size(track, 390, 96);
-    lv_obj_align(track, LV_ALIGN_CENTER, 0, -10);
-    lv_obj_set_style_bg_color(track, lv_color_hex(0x17171C), 0);
-    lv_obj_set_style_bg_opa(track, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(track, lv_color_hex(0x2C2C34), 0);
-    lv_obj_set_style_border_width(track, 1, 0);
-    lv_obj_set_style_radius(track, 48, 0);
-    lv_obj_remove_flag(track, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    /* Shared diagnostics module (tests/display_diag): bouncing 48 px
+     * ball + flush-cycle frame counting (factory motion context port).
+     * It draws the ball and an fps label inside the stage itself. */
+    if (display_diag_motion_start(s_display.stage, false) == ESP_OK) {
+        s_display.motion_diag = true;
+    }
 
-    s_display.motion_dot = lv_obj_create(track);
-    lv_obj_set_size(s_display.motion_dot, 72, 72);
-    lv_obj_set_pos(s_display.motion_dot, 4, 4);
-    lv_obj_set_style_radius(s_display.motion_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(s_display.motion_dot,
-                              lv_color_hex(UI_COLOR_ACCENT), 0);
-    lv_obj_set_style_bg_opa(s_display.motion_dot, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(s_display.motion_dot, 0, 0);
-    lv_obj_remove_flag(s_display.motion_dot,
-                       LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-
-    lv_anim_t anim;
-    lv_anim_init(&anim);
-    lv_anim_set_var(&anim, s_display.motion_dot);
-    lv_anim_set_exec_cb(&anim, (lv_anim_exec_xcb_t)lv_obj_set_x);
-    lv_anim_set_values(&anim, 4, 310);
-    lv_anim_set_duration(&anim, 900);
-    lv_anim_set_playback_duration(&anim, 900);
-    lv_anim_set_repeat_count(&anim, LV_ANIM_REPEAT_INFINITE);
-    lv_anim_set_path_cb(&anim, lv_anim_path_ease_in_out);
-    lv_anim_start(&anim);
+    /* TE edge statistics via the esp_lvgl_port observer. */
+    if (display_diag_te_attach() == ESP_OK) {
+        s_display.te_owned = true;
+        display_diag_te_reset();
+    }
 
     lv_obj_t *hint = lv_label_create(s_display.stage);
     lv_label_set_text(hint, "Watch for tearing, dropped frames, touch response");
-    lv_obj_set_style_text_color(hint, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(UI_COL_TEXT_DIM), 0);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -48);
 
     lv_obj_t *gradient = lv_obj_create(s_display.stage);
@@ -249,6 +293,23 @@ static void show_motion_mode(void)
     lv_obj_set_style_radius(gradient, 10, 0);
     lv_obj_remove_flag(gradient,
                        LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+
+    /* 2 Hz FPS/TE statistics line (B.5: counters at 2-4 Hz). */
+    s_display.motion_stats_lbl = lv_label_create(s_display.stage);
+    lv_obj_set_style_text_font(s_display.motion_stats_lbl, ui_font_text(), 0);
+    lv_obj_set_style_text_color(s_display.motion_stats_lbl,
+                                lv_color_hex(UI_COL_TEXT_DIM), 0);
+    lv_obj_set_style_bg_color(s_display.motion_stats_lbl,
+                              lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(s_display.motion_stats_lbl, LV_OPA_50, 0);
+    lv_obj_set_style_pad_hor(s_display.motion_stats_lbl, 8, 0);
+    lv_obj_set_style_pad_ver(s_display.motion_stats_lbl, 4, 0);
+    lv_obj_set_style_radius(s_display.motion_stats_lbl, 8, 0);
+    lv_obj_align(s_display.motion_stats_lbl, LV_ALIGN_BOTTOM_MID, 0, -84);
+    lv_label_set_text(s_display.motion_stats_lbl, "FPS -- | TE --");
+
+    s_display.motion_stats_timer =
+        lv_timer_create(motion_stats_tick, 500, NULL);
 }
 
 static void mode_click_cb(lv_event_t *event)
@@ -268,8 +329,8 @@ static lv_obj_t *mode_button(lv_obj_t *parent, const char *text,
 {
     lv_obj_t *button = lv_button_create(parent);
     lv_obj_set_size(button, 128, UI_TOUCH_MIN);
-    lv_obj_set_style_bg_color(button, lv_color_hex(UI_COLOR_SURFACE), 0);
-    lv_obj_set_style_bg_color(button, lv_color_hex(UI_COLOR_ACCENT),
+    lv_obj_set_style_bg_color(button, lv_color_hex(UI_COL_SURFACE), 0);
+    lv_obj_set_style_bg_color(button, lv_color_hex(UI_COL_ACCENT),
                               LV_STATE_PRESSED);
     lv_obj_set_style_radius(button, 16, 0);
     lv_obj_set_style_border_color(button, lv_color_hex(0x2C2C34), 0);
@@ -291,6 +352,7 @@ static void root_delete_cb(lv_event_t *event)
         lv_timer_delete(s_display.hint_timer);
         s_display.hint_timer = NULL;
     }
+    motion_diag_teardown();
     if (s_display.motion_dot) {
         lv_anim_delete(s_display.motion_dot, NULL);
     }

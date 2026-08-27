@@ -180,9 +180,9 @@ static void wf_rebuild_list(void)
     if (s.saved_ssid[0] != '\0') {
         lv_obj_t *row = lv_button_create(s.list);
         lv_obj_set_size(row, LV_PCT(100), 56);
-        lv_obj_set_style_bg_color(row, lv_color_hex(UI_COLOR_SURFACE), 0);
+        lv_obj_set_style_bg_color(row, lv_color_hex(UI_COL_SURFACE), 0);
         lv_obj_set_style_radius(row, 12, 0);
-        lv_obj_set_style_border_color(row, lv_color_hex(UI_COLOR_ACCENT), 0);
+        lv_obj_set_style_border_color(row, lv_color_hex(UI_COL_ACCENT), 0);
         lv_obj_set_style_border_width(row, 1, 0);
         lv_obj_add_event_cb(row, wf_saved_row_cb, LV_EVENT_CLICKED, NULL);
 
@@ -194,13 +194,13 @@ static void wf_rebuild_list(void)
 
         lv_obj_t *go = lv_label_create(row);
         lv_label_set_text(go, LV_SYMBOL_PLAY);
-        lv_obj_set_style_text_color(go, lv_color_hex(UI_COLOR_ACCENT), 0);
+        lv_obj_set_style_text_color(go, lv_color_hex(UI_COL_ACCENT), 0);
         lv_obj_align(go, LV_ALIGN_RIGHT_MID, -12, 0);
     }
     if (s.ap_count == 0) {
         lv_obj_t *empty = lv_label_create(s.list);
         lv_label_set_text(empty, "No networks found");
-        lv_obj_set_style_text_color(empty, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+        lv_obj_set_style_text_color(empty, lv_color_hex(UI_COL_TEXT_DIM), 0);
         lv_obj_set_width(empty, LV_PCT(100));
         lv_obj_set_style_text_align(empty, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_pad_top(empty, 40, 0);
@@ -210,7 +210,7 @@ static void wf_rebuild_list(void)
         const svc_wifi_ap_t *ap = &s.aps[i];
         lv_obj_t *row = lv_button_create(s.list);
         lv_obj_set_size(row, LV_PCT(100), 56);
-        lv_obj_set_style_bg_color(row, lv_color_hex(UI_COLOR_SURFACE), 0);
+        lv_obj_set_style_bg_color(row, lv_color_hex(UI_COL_SURFACE), 0);
         lv_obj_set_style_radius(row, 12, 0);
         lv_obj_set_layout(row, LV_LAYOUT_FLEX);
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
@@ -230,7 +230,7 @@ static void wf_rebuild_list(void)
         if (ap->authmode != 0 /* WIFI_AUTH_OPEN */) {
             lv_obj_t *lock = lv_label_create(row);
             lv_label_set_text(lock, LV_SYMBOL_EYE_CLOSE);
-            lv_obj_set_style_text_color(lock, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+            lv_obj_set_style_text_color(lock, lv_color_hex(UI_COL_TEXT_DIM), 0);
         }
 
         lv_obj_t *spacer = lv_obj_create(row);
@@ -250,12 +250,12 @@ static void wf_rebuild_list(void)
             pct = 100;
         }
         lv_bar_set_value(bar, pct, LV_ANIM_OFF);
-        lv_obj_set_style_bg_color(bar, lv_color_hex(UI_COLOR_ACCENT),
+        lv_obj_set_style_bg_color(bar, lv_color_hex(UI_COL_ACCENT),
                                   LV_PART_INDICATOR);
 
         lv_obj_t *lbl_dbm = lv_label_create(row);
         lv_label_set_text_fmt(lbl_dbm, "%d", ap->rssi);
-        lv_obj_set_style_text_color(lbl_dbm, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+        lv_obj_set_style_text_color(lbl_dbm, lv_color_hex(UI_COL_TEXT_DIM), 0);
         lv_obj_set_width(lbl_dbm, 48);
         lv_obj_set_style_text_align(lbl_dbm, LV_TEXT_ALIGN_RIGHT, 0);
     }
@@ -270,12 +270,12 @@ static void wf_apply_scan(void *arg)
             s.state == WF_STATE_SCANNING) {
         s.state = WF_STATE_IDLE;
         if (res->count < 0) {
-            wf_status_set("Scan failed", UI_COLOR_ERR);
+            wf_status_set("Scan failed", UI_COL_FAIL);
         } else {
             s.ap_count = res->count;
             memcpy(s.aps, res->aps, sizeof(s.aps[0]) * res->count);
             wf_status_set(res->count ? "Select network" : "No networks found",
-                          UI_COLOR_TEXT);
+                          UI_COL_TEXT);
             wf_rebuild_list();
         }
         wf_spinner_show(false, NULL);
@@ -299,7 +299,7 @@ static void wf_apply_conn_event(uint32_t seq, svc_wifi_event_t event,
             svc_wifi_is_connected(s.ip, sizeof(s.ip));
         }
         wf_spinner_show(false, NULL);
-        wf_status_set("Connected", UI_COLOR_OK);
+        wf_status_set("Connected", UI_COL_PASS);
         if (s.lbl_status != NULL) {
             lv_label_set_text_fmt(s.lbl_status, "Connected, IP %s",
                                   s.ip[0] ? s.ip : "Fetching");
@@ -310,7 +310,7 @@ static void wf_apply_conn_event(uint32_t seq, svc_wifi_event_t event,
     case SVC_WIFI_EV_CONNECT_FAILED:
         s.state = WF_STATE_IDLE;
         wf_spinner_show(false, NULL);
-        wf_status_set("Connect failed", UI_COLOR_ERR);
+        wf_status_set("Connect failed", UI_COL_FAIL);
         wf_action_button("Scan", true);
         ui_status_set_wifi(0);
         ui_msgbox("Connect failed", detail && detail[0] ? detail : "Retry",
@@ -321,7 +321,7 @@ static void wf_apply_conn_event(uint32_t seq, svc_wifi_event_t event,
         s.state = WF_STATE_IDLE;
         s.ip[0] = '\0';
         wf_spinner_show(false, NULL);
-        wf_status_set("Disconnected", UI_COLOR_TEXT_DIM);
+        wf_status_set("Disconnected", UI_COL_TEXT_DIM);
         wf_action_button("Scan", true);
         ui_status_set_wifi(0);
         break;
@@ -350,7 +350,7 @@ static void wf_fallback_timer_cb(lv_timer_t *timer)
         if (s.state == WF_STATE_SCANNING) {
             s.state = WF_STATE_IDLE;
             wf_spinner_show(false, NULL);
-            wf_status_set("Busy, retry after disconnect", UI_COLOR_WARN);
+            wf_status_set("Busy, retry after disconnect", UI_COL_WARN);
             wf_action_button("Scan", true);
         }
     } else if (event != WF_FALLBACK_NONE && session == s.session) {
@@ -376,14 +376,14 @@ static void wf_fallback_timer_cb(lv_timer_t *timer)
             s.state = WF_STATE_CONNECTED;
             snprintf(s.ip, sizeof(s.ip), "%s", ip);
             wf_spinner_show(false, NULL);
-            wf_status_set("Connected", UI_COLOR_OK);
+            wf_status_set("Connected", UI_COL_PASS);
             lv_label_set_text_fmt(s.lbl_status, "Connected, IP %s",
                                   s.ip[0] ? s.ip : "Fetching");
             wf_action_button("Disconnect", true);
         } else if (!connected && s.state == WF_STATE_CONNECTED) {
             s.state = WF_STATE_IDLE;
             s.ip[0] = '\0';
-            wf_status_set("Disconnected", UI_COLOR_TEXT_DIM);
+            wf_status_set("Disconnected", UI_COL_TEXT_DIM);
             wf_action_button("Scan", true);
         } else if (!connected && s.state == WF_STATE_CONNECTING &&
                    !svc_wifi_is_connecting()) {
@@ -391,7 +391,7 @@ static void wf_fallback_timer_cb(lv_timer_t *timer)
              * outcome event was lost, converge back to IDLE. */
             s.state = WF_STATE_IDLE;
             wf_spinner_show(false, NULL);
-            wf_status_set("Connect failed", UI_COLOR_ERR);
+            wf_status_set("Connect failed", UI_COL_FAIL);
             wf_action_button("Scan", true);
         }
         ui_status_set_wifi(connected ? 2 : 0);
@@ -467,7 +467,7 @@ static void wf_start_connect(void)
     char line[48];
     snprintf(line, sizeof(line), "Connecting %.28s...", s.ssid);
     wf_spinner_show(true, line);
-    wf_status_set("Connecting", UI_COLOR_WARN);
+    wf_status_set("Connecting", UI_COL_WARN);
     wf_action_button(NULL, false);
     ui_status_set_wifi(1);
 }
@@ -478,7 +478,7 @@ static void wf_try_connect(const char *password)
                          (void *)(uintptr_t)s.session) != ESP_OK) {
         s.state = WF_STATE_IDLE;
         wf_spinner_show(false, NULL);
-        wf_status_set("Connect failed", UI_COLOR_ERR);
+        wf_status_set("Connect failed", UI_COL_FAIL);
         wf_action_button("Scan", true);
         return;
     }
@@ -536,7 +536,7 @@ static void wf_on_scan(lv_event_t *event)
     s.state = WF_STATE_SCANNING;
     s.ap_count = 0;
     wf_action_button(NULL, false);
-    wf_status_set("Scanning...", UI_COLOR_TEXT_DIM);
+    wf_status_set("Scanning...", UI_COL_TEXT_DIM);
     wf_spinner_show(true, "Scanning...");
 }
 
@@ -549,7 +549,7 @@ static void wf_on_disconnect(lv_event_t *event)
     svc_wifi_disconnect();
     s.state = WF_STATE_IDLE;
     s.ip[0] = '\0';
-    wf_status_set("Disconnected", UI_COLOR_TEXT_DIM);
+    wf_status_set("Disconnected", UI_COL_TEXT_DIM);
     wf_action_button("Scan", true);
     ui_status_set_wifi(0);
 }
@@ -614,7 +614,7 @@ lv_obj_t *app_wifi_create(void)
     s.btn_action = lv_button_create(content);
     lv_obj_set_size(s.btn_action, 132, UI_TOUCH_MIN);
     lv_obj_align(s.btn_action, LV_ALIGN_TOP_RIGHT, 0, 0);
-    lv_obj_set_style_bg_color(s.btn_action, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_bg_color(s.btn_action, lv_color_hex(UI_COL_ACCENT), 0);
     lv_obj_set_style_radius(s.btn_action, 12, 0);
     lv_obj_add_event_cb(s.btn_action, wf_on_action, LV_EVENT_CLICKED, NULL);
     s.lbl_action = lv_label_create(s.btn_action);
@@ -642,7 +642,7 @@ lv_obj_t *app_wifi_create(void)
     lv_label_set_text(s.lbl_connecting, "");
     lv_obj_align(s.lbl_connecting, LV_ALIGN_CENTER, 0, 50);
     lv_obj_set_style_text_color(s.lbl_connecting,
-                                lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+                                lv_color_hex(UI_COL_TEXT_DIM), 0);
     lv_obj_add_flag(s.lbl_connecting, LV_OBJ_FLAG_HIDDEN);
 
     /* Saved credentials are loaded up front so the direct-reconnect row
@@ -656,16 +656,16 @@ lv_obj_t *app_wifi_create(void)
         s.state = WF_STATE_CONNECTED;
         snprintf(s.ip, sizeof(s.ip), "%s", ip);
         lv_label_set_text_fmt(s.lbl_status, "Connected, IP %s", ip);
-        lv_obj_set_style_text_color(s.lbl_status, lv_color_hex(UI_COLOR_OK), 0);
+        lv_obj_set_style_text_color(s.lbl_status, lv_color_hex(UI_COL_PASS), 0);
         wf_action_button("Disconnect", true);
         ui_status_set_wifi(2);
     } else if (s.saved_ssid[0] != '\0') {
         /* Saved credentials: one-tap reconnect instead of scan+keyboard. */
         lv_obj_t *row = lv_button_create(s.list);
         lv_obj_set_size(row, LV_PCT(100), 56);
-        lv_obj_set_style_bg_color(row, lv_color_hex(UI_COLOR_SURFACE), 0);
+        lv_obj_set_style_bg_color(row, lv_color_hex(UI_COL_SURFACE), 0);
         lv_obj_set_style_radius(row, 12, 0);
-        lv_obj_set_style_border_color(row, lv_color_hex(UI_COLOR_ACCENT), 0);
+        lv_obj_set_style_border_color(row, lv_color_hex(UI_COL_ACCENT), 0);
         lv_obj_set_style_border_width(row, 1, 0);
         lv_obj_add_event_cb(row, wf_saved_row_cb, LV_EVENT_CLICKED, NULL);
 
@@ -677,16 +677,16 @@ lv_obj_t *app_wifi_create(void)
 
         lv_obj_t *go = lv_label_create(row);
         lv_label_set_text(go, LV_SYMBOL_PLAY);
-        lv_obj_set_style_text_color(go, lv_color_hex(UI_COLOR_ACCENT), 0);
+        lv_obj_set_style_text_color(go, lv_color_hex(UI_COL_ACCENT), 0);
         lv_obj_align(go, LV_ALIGN_RIGHT_MID, -12, 0);
 
         lv_obj_t *hint = lv_label_create(s.list);
         lv_label_set_text(hint, "Tap top-right to scan for others");
-        lv_obj_set_style_text_color(hint, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+        lv_obj_set_style_text_color(hint, lv_color_hex(UI_COL_TEXT_DIM), 0);
     } else {
         lv_obj_t *hint = lv_label_create(s.list);
         lv_label_set_text(hint, "Tap top-right to scan");
-        lv_obj_set_style_text_color(hint, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+        lv_obj_set_style_text_color(hint, lv_color_hex(UI_COL_TEXT_DIM), 0);
     }
 
     return root;

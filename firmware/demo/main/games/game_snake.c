@@ -229,13 +229,13 @@ static void snake_draw_cb(lv_event_t *event)
 
     lv_area_t area;
     snake_cell_area(&s.food, &board, &area);
-    dsc.bg_color = lv_color_hex(UI_COLOR_WARN);
+    dsc.bg_color = lv_color_hex(UI_COL_WARN);
     lv_draw_rect(layer, &dsc, &area);
 
     for (int i = 0; i < s.length; ++i) {
         const int idx = (s.head - i + SNAKE_CELLS) % SNAKE_CELLS;
         snake_cell_area(&s.body[idx], &board, &area);
-        dsc.bg_color = lv_color_hex(i == 0 ? UI_COLOR_OK : 0x2A9D44);
+        dsc.bg_color = lv_color_hex(i == 0 ? UI_COL_PASS : 0x2A9D44);
         lv_draw_rect(layer, &dsc, &area);
     }
 }
@@ -335,7 +335,7 @@ lv_obj_t *game_snake_create(void)
     lv_obj_t *back = lv_button_create(root);
     lv_obj_set_size(back, 56, 56);
     lv_obj_set_pos(back, 4, 4);
-    lv_obj_set_style_bg_color(back, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(UI_COL_SURFACE), 0);
     lv_obj_add_event_cb(back, snake_back_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *back_lbl = lv_label_create(back);
     lv_label_set_text(back_lbl, LV_SYMBOL_LEFT);
@@ -348,7 +348,7 @@ lv_obj_t *game_snake_create(void)
     lv_obj_t *restart = lv_button_create(root);
     lv_obj_set_size(restart, 100, 56);
     lv_obj_set_pos(restart, 356, 4);
-    lv_obj_set_style_bg_color(restart, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(restart, lv_color_hex(UI_COL_SURFACE), 0);
     lv_obj_add_event_cb(restart, snake_restart_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *restart_lbl = lv_label_create(restart);
     lv_label_set_text(restart_lbl, "Restart");
@@ -381,7 +381,7 @@ lv_obj_t *game_snake_create(void)
         lv_obj_t *btn = lv_button_create(root);
         lv_obj_set_size(btn, 60, 56);
         lv_obj_set_pos(btn, 98 + i * 68, 400);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COLOR_SURFACE), 0);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COL_SURFACE), 0);
         lv_obj_add_event_cb(btn, snake_key_cb, LV_EVENT_CLICKED,
                             (void *)(intptr_t)keys[i].dir);
         lv_obj_t *label = lv_label_create(btn);

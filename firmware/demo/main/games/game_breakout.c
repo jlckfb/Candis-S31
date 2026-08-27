@@ -347,7 +347,7 @@ static void brk_draw_cb(lv_event_t *event)
 
     /* Bricks: one dimmer tier per row, anchored on the accent hue. */
     static const uint32_t row_colors[BRK_MAX_ROWS] = {
-        UI_COLOR_ACCENT, 0x3E86D6, 0x346FB0, 0x2B5A8E,
+        UI_COL_ACCENT, 0x3E86D6, 0x346FB0, 0x2B5A8E,
         0x244870, 0x1D3A5A,
     };
     lv_area_t area;
@@ -364,7 +364,7 @@ static void brk_draw_cb(lv_event_t *event)
 
     /* Paddle. */
     dsc.radius = 4;
-    dsc.bg_color = lv_color_hex(UI_COLOR_TEXT);
+    dsc.bg_color = lv_color_hex(UI_COL_TEXT);
     area.x1 = board.x1 + s.paddle_x;
     area.y1 = board.y1 + BRK_PADDLE_Y;
     area.x2 = area.x1 + BRK_PADDLE_W - 1;
@@ -373,7 +373,7 @@ static void brk_draw_cb(lv_event_t *event)
 
     /* Ball. */
     dsc.radius = LV_RADIUS_CIRCLE;
-    dsc.bg_color = lv_color_hex(UI_COLOR_WARN);
+    dsc.bg_color = lv_color_hex(UI_COL_WARN);
     area.x1 = board.x1 + (int)s.ball_x;
     area.y1 = board.y1 + (int)s.ball_y;
     area.x2 = area.x1 + BRK_BALL_SIZE - 1;
@@ -476,7 +476,7 @@ lv_obj_t *game_breakout_create(void)
     lv_obj_t *back = lv_button_create(root);
     lv_obj_set_size(back, 56, 56);
     lv_obj_set_pos(back, 4, 4);
-    lv_obj_set_style_bg_color(back, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(UI_COL_SURFACE), 0);
     lv_obj_add_event_cb(back, brk_back_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *back_lbl = lv_label_create(back);
     lv_label_set_text(back_lbl, LV_SYMBOL_LEFT);
@@ -488,13 +488,13 @@ lv_obj_t *game_breakout_create(void)
     s.lbl_level = lv_label_create(root);
     lv_label_set_text(s.lbl_level, "Level 1/6");
     lv_obj_set_pos(s.lbl_level, 72, 32);
-    lv_obj_set_style_text_color(s.lbl_level, lv_color_hex(UI_COLOR_TEXT_DIM),
+    lv_obj_set_style_text_color(s.lbl_level, lv_color_hex(UI_COL_TEXT_DIM),
                                 0);
 
     lv_obj_t *restart = lv_button_create(root);
     lv_obj_set_size(restart, 100, 56);
     lv_obj_set_pos(restart, 356, 4);
-    lv_obj_set_style_bg_color(restart, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(restart, lv_color_hex(UI_COL_SURFACE), 0);
     lv_obj_add_event_cb(restart, brk_restart_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *restart_lbl = lv_label_create(restart);
     lv_label_set_text(restart_lbl, "Restart");
@@ -503,7 +503,7 @@ lv_obj_t *game_breakout_create(void)
     s.lbl_lives = lv_label_create(root);
     lv_label_set_text(s.lbl_lives, "Lives 3");
     lv_obj_set_pos(s.lbl_lives, 236, 22);
-    lv_obj_set_style_text_color(s.lbl_lives, lv_color_hex(UI_COLOR_WARN), 0);
+    lv_obj_set_style_text_color(s.lbl_lives, lv_color_hex(UI_COL_WARN), 0);
 
     s.board = lv_obj_create(root);
     lv_obj_set_size(s.board, BRK_BOARD_W, BRK_BOARD_H);
@@ -539,7 +539,7 @@ lv_obj_t *game_breakout_create(void)
     lv_obj_t *again = lv_button_create(s.overlay);
     lv_obj_set_size(again, 120, 56);
     lv_obj_align(again, LV_ALIGN_BOTTOM_MID, 0, -12);
-    lv_obj_set_style_bg_color(again, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_bg_color(again, lv_color_hex(UI_COL_ACCENT), 0);
     lv_obj_add_event_cb(again, brk_restart_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *again_lbl = lv_label_create(again);
     lv_label_set_text(again_lbl, "Play again");

@@ -263,7 +263,7 @@ static lv_obj_t *header_button(lv_obj_t *parent, const char *text,
     lv_obj_t *btn = lv_button_create(parent);
     lv_obj_set_size(btn, width, 56);
     lv_obj_set_pos(btn, x, 4);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COL_SURFACE), 0);
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, text);
@@ -299,7 +299,7 @@ lv_obj_t *game_2048_create(void)
     lv_obj_set_pos(s.lbl_score, 72, 8);
     s.lbl_best = lv_label_create(root);
     lv_obj_set_pos(s.lbl_best, 72, 30);
-    lv_obj_set_style_text_color(s.lbl_best, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(s.lbl_best, lv_color_hex(UI_COL_TEXT_DIM), 0);
 
     lv_obj_t *board = lv_obj_create(root);
     lv_obj_set_size(board, G2048_BOARD_PX, G2048_BOARD_PX);
@@ -328,7 +328,7 @@ lv_obj_t *game_2048_create(void)
 
         lv_obj_t *label = lv_label_create(cell);
         lv_obj_set_style_text_font(label, ui_font_mid(), 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_TEXT), 0);
+        lv_obj_set_style_text_color(label, lv_color_hex(UI_COL_TEXT), 0);
         lv_obj_set_width(label, G2048_CELL - 8);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
         lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
@@ -350,7 +350,7 @@ lv_obj_t *game_2048_create(void)
         lv_obj_t *btn = lv_button_create(root);
         lv_obj_set_size(btn, 60, 56);
         lv_obj_set_pos(btn, 98 + i * 68, 400);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COLOR_SURFACE), 0);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COL_SURFACE), 0);
         lv_obj_add_event_cb(btn, g2048_key_cb, LV_EVENT_CLICKED,
                             (void *)(intptr_t)keys[i].dir);
         lv_obj_t *label = lv_label_create(btn);

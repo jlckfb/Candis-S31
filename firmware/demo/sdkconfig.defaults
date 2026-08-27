@@ -133,3 +133,33 @@ CONFIG_BT_CTRL_BLE_ADV_REPORT_FLOW_CTRL_NUM=50
 # so its ~4 KB internal stack is a transient cost inside the DIRAM
 # headroom.
 CONFIG_TINYUSB_CDC_ENABLED=y
+
+# Camera (spec E.3): OV5640 DVP preview + capture via esp_video (/dev/video2).
+# Drive the OV5640 XCLK from LEDC: the esp_video DVP clock path only supports
+# integer dividers and no S31 CAM controller clock source is an integer
+# multiple of the required 24 MHz (PLL_F160M 160 % 24 = 16, XTAL 40 % 24 = 16),
+# so the controller path hard-fails before sensor detection. The BSP skips it
+# when this is set (bsp/candis_s31 Kconfig default y; pinned here for
+# visibility because existing sdkconfig files mask Kconfig default changes).
+CONFIG_BSP_CAMERA_XCLK_USE_LEDC=y
+
+# OV5640 on the DVP interface; RGB565 big-endian 800x600 at 10 fps is the
+# sensor configuration and doubles as the driver's default format.
+CONFIG_CAMERA_OV5640=y
+# CONFIG_CAMERA_OV5640 only compiles the driver. Registering the sensor with
+# esp_video needs the auto-detect entry as well: the DVP detect function in
+# esp_cam_sensor's ov5640.c is wrapped in
+# #if CONFIG_CAMERA_OV5640_AUTO_DETECT_DVP_INTERFACE_SENSOR, and that option is
+# "default n" while the MIPI-CSI one is "default y". ESP32-S31 has
+# SOC_LCDCAM_CAM_SUPPORTED but no SOC_MIPI_CSI_SUPPORTED, so leaving this unset
+# links an empty detect table: esp_video_init() never creates /dev/video2 and
+# camera capture later fails at open() with ESP_ERR_NOT_FOUND.
+CONFIG_CAMERA_OV5640_AUTO_DETECT_DVP_INTERFACE_SENSOR=y
+CONFIG_CAMERA_OV5640_DVP_RGB565_BE_800X600_10FPS=y
+CONFIG_CAMERA_OV5640_DVP_DEFAULT_FMT_RGB565_BE_800X600_10FPS=y
+# Keep the OV3660 detect entry compiled in as well so a Korvo-1 module still
+# enumerates without a rebuild; both sensors answer at SCCB 0x3C but each
+# detect reads the sensor PID and returns NULL on mismatch (non-fatal).
+CONFIG_CAMERA_OV3660=y
+# The sensor is controlled over SCCB/I2C on this board, not SPI.
+CONFIG_CAM_CTRL_SPI_ENABLE=n

@@ -17,10 +17,13 @@
 #include "bsp/esp-bsp.h"
 #include "lvgl.h"
 
+#include "esp_system.h"
+
 #include "demo_apps.h"
 #include "demo_board.h"
 #include "services/svc_audio.h"
 #include "services/svc_power.h"
+#include "tests/sleep_record.h"
 #include "ui/ui_manager.h"
 
 #define POWER_REFRESH_MS 1000
@@ -138,8 +141,8 @@ static void timeout_style_refresh(void)
     for (int i = 0; i < TIMEOUT_OPTION_COUNT; ++i) {
         const bool selected = s_timeout_options[i] == current;
         lv_obj_set_style_bg_color(s_power.timeout_btns[i],
-                                  lv_color_hex(selected ? UI_COLOR_ACCENT
-                                                        : UI_COLOR_SURFACE), 0);
+                                  lv_color_hex(selected ? UI_COL_ACCENT
+                                                        : UI_COL_SURFACE), 0);
     }
 }
 
@@ -216,6 +219,29 @@ static void deep_sleep_btn_cb(lv_event_t *event)
 /* ------------------------------------------------------------------ */
 /* Shutdown                                                            */
 /* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/* Reboot                                                              */
+/* ------------------------------------------------------------------ */
+
+static void reboot_confirm_cb(bool ok, void *user)
+{
+    (void)user;
+    if (!ok || !s_power.active) {
+        return;
+    }
+    esp_restart(); /* no return */
+}
+
+static void reboot_btn_cb(lv_event_t *event)
+{
+    (void)event;
+    if (!s_power.active) {
+        return;
+    }
+    ui_msgbox("Reboot", "Restart the device now?",
+              reboot_confirm_cb, NULL);
+}
+
 
 static void shutdown_confirm_cb(bool ok, void *user)
 {
@@ -298,7 +324,7 @@ static lv_obj_t *power_make_button(lv_obj_t *parent, int x, int y, int w,
     lv_obj_t *btn = lv_button_create(parent);
     lv_obj_set_size(btn, w, h);
     lv_obj_set_pos(btn, x, y);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COL_SURFACE), 0);
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, user);
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, text);
@@ -343,11 +369,11 @@ lv_obj_t *app_power_create(void)
     s_power.lbl_limit = lv_label_create(content);
     lv_obj_set_pos(s_power.lbl_limit, 2, 38);
     lv_obj_set_style_text_color(s_power.lbl_limit,
-                                lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+                                lv_color_hex(UI_COL_TEXT_DIM), 0);
     s_power.lbl_source_mode = lv_label_create(content);
     lv_obj_set_pos(s_power.lbl_source_mode, 2, 57);
     lv_obj_set_style_text_color(s_power.lbl_source_mode,
-                                lv_color_hex(UI_COLOR_ACCENT), 0);
+                                lv_color_hex(UI_COL_ACCENT), 0);
 
     /* Smallest complete source control: explicit confirm (with warning)
      * and explicit return to the PC-safe ceiling. Directly below the
@@ -361,7 +387,7 @@ lv_obj_t *app_power_create(void)
     lv_obj_t *cap_timeout = lv_label_create(content);
     lv_label_set_text(cap_timeout, "Screen timeout");
     lv_obj_set_pos(cap_timeout, 2, 141);
-    lv_obj_set_style_text_color(cap_timeout, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(cap_timeout, lv_color_hex(UI_COL_TEXT_DIM), 0);
 
     static const char *timeout_names[TIMEOUT_OPTION_COUNT] = {
         "10s", "30s", "60s", "120s", "Always",
@@ -374,16 +400,21 @@ lv_obj_t *app_power_create(void)
     timeout_style_refresh();
 
     /* Immediate actions. */
-    power_make_button(content, 0, 221, 208, 56, "Screen off now",
+    power_make_button(content, 0, 221, 136, 56, "Screen off",
                       screen_off_btn_cb, NULL);
-    power_make_button(content, 214, 221, 208, 56, "Power off",
+    power_make_button(content, 146, 221, 136, 56, "Power off",
                       shutdown_btn_cb, NULL);
+    lv_obj_t *btn_reboot = power_make_button(content, 292, 221, 136, 56, "Reboot",
+                      reboot_btn_cb, NULL);
+    lv_obj_set_style_bg_color(btn_reboot, lv_color_hex(UI_COL_FAIL_DIM), 0);
+    lv_obj_set_style_border_color(btn_reboot, lv_color_hex(UI_COL_FAIL), 0);
+    lv_obj_set_style_border_width(btn_reboot, 1, 0);
 
     /* Deep sleep presets, one row of four. */
     lv_obj_t *cap_deep = lv_label_create(content);
     lv_label_set_text(cap_deep, "Deep sleep (reboots on wake)");
     lv_obj_set_pos(cap_deep, 2, 281);
-    lv_obj_set_style_text_color(cap_deep, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(cap_deep, lv_color_hex(UI_COL_TEXT_DIM), 0);
 
     static const struct {
         const char *name;
@@ -405,7 +436,32 @@ lv_obj_t *app_power_create(void)
     lv_obj_set_pos(hint, 2, 361);
     lv_obj_set_width(hint, 420);
     lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_color(hint, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(UI_COL_TEXT_DIM), 0);
+    /* Last deep-sleep record (spec C.6): stashed by the power.deep_sleep
+     * test before sleeping; decoded against esp_reset_reason() after the
+     * wake reboot (factory wake_info semantics). */
+    lv_obj_t *lbl_lastsleep = lv_label_create(content);
+    demo_sleep_record_t rec;
+    if (demo_sleep_record_load(&rec)) {
+        bsp_rtc_status_t rtc_status;
+        const bool rtc_ok = bsp_rtc_get_status(&rtc_status) == ESP_OK &&
+                            rtc_status.time_valid;
+        lv_label_set_text_fmt(
+            lbl_lastsleep,
+            "Last sleep: req %u min @ %02u:%02u, reset: %s, RTC %s",
+            (unsigned)rec.requested_min,
+            (unsigned)rec.rtc_at_request.hour,
+            (unsigned)rec.rtc_at_request.minute,
+            demo_reset_reason_str(esp_reset_reason()),
+            rtc_ok ? "continuous" : "LOST");
+    } else {
+        lv_label_set_text(lbl_lastsleep, "Last sleep: none recorded");
+    }
+    lv_obj_set_pos(lbl_lastsleep, 2, 407);
+    lv_obj_set_width(lbl_lastsleep, 420);
+    lv_label_set_long_mode(lbl_lastsleep, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_color(lbl_lastsleep,
+                                lv_color_hex(UI_COL_TEXT_DIM), 0);
 
     power_refresh_cb(NULL);
     s_power.timer = lv_timer_create(power_refresh_cb, POWER_REFRESH_MS, NULL);

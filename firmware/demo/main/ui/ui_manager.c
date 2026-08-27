@@ -228,8 +228,8 @@ static void ui_styles_ensure(void)
 
 static void style_screen(lv_obj_t *obj)
 {
-    lv_obj_set_style_bg_color(obj, lv_color_hex(UI_COLOR_BG), 0);
-    lv_obj_set_style_text_color(obj, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_set_style_bg_color(obj, lv_color_hex(UI_COL_BG), 0);
+    lv_obj_set_style_text_color(obj, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_set_style_text_font(obj, ui_font_text(), 0);
     lv_obj_set_style_border_width(obj, 0, 0);
     lv_obj_set_style_radius(obj, 0, 0);
@@ -240,7 +240,7 @@ static void style_screen(lv_obj_t *obj)
 /* Thin accent scrollbar used by scaffolded content areas. */
 static void style_dark_scrollbar(lv_obj_t *obj)
 {
-    lv_obj_set_style_bg_color(obj, lv_color_hex(UI_COLOR_ACCENT),
+    lv_obj_set_style_bg_color(obj, lv_color_hex(UI_COL_ACCENT),
                               LV_PART_SCROLLBAR);
     lv_obj_set_style_bg_opa(obj, LV_OPA_40, LV_PART_SCROLLBAR);
     lv_obj_set_style_radius(obj, 3, LV_PART_SCROLLBAR);
@@ -260,7 +260,7 @@ static lv_obj_t *status_label(lv_obj_t *parent, const char *text)
     /* Symbols need a font with the FontAwesome glyph range; the compact
      * default (Montserrat16) covers it, the tiny default may not. */
     lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(label, lv_color_hex(UI_COL_TEXT_DIM), 0);
     return label;
 }
 
@@ -279,7 +279,7 @@ static void status_bar_build(void)
     lv_obj_remove_flag(s_status_bar, LV_OBJ_FLAG_CLICKABLE);
 
     s_lbl_time = status_label(s_status_bar, "--:--");
-    lv_obj_set_style_text_color(s_lbl_time, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(s_lbl_time, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_align(s_lbl_time, LV_ALIGN_LEFT_MID, 12, 0);
 
     s_lbl_wifi = status_label(s_status_bar, LV_SYMBOL_WIFI);
@@ -362,25 +362,25 @@ static void status_apply_value(const ui_status_msg_t *msg)
                                   v1 ? LV_SYMBOL_CHARGE " " : "", v0);
         }
         lv_obj_set_style_text_color(s_lbl_batt,
-                                    lv_color_hex(v1 ? UI_COLOR_OK : UI_COLOR_TEXT), 0);
+                                    lv_color_hex(v1 ? UI_COL_PASS : UI_COL_TEXT), 0);
         lv_obj_set_style_opa(s_lbl_batt, LV_OPA_COVER, 0);
         break;
     case 2: /* wifi */
         lv_obj_set_style_text_color(s_lbl_wifi,
-                                    lv_color_hex(v0 == 2 ? UI_COLOR_ACCENT :
-                                                 v0 == 1 ? UI_COLOR_WARN : UI_COLOR_TEXT_DIM), 0);
+                                    lv_color_hex(v0 == 2 ? UI_COL_ACCENT :
+                                                 v0 == 1 ? UI_COL_WARN : UI_COL_TEXT_DIM), 0);
         break;
     case 3: /* ble */
         lv_obj_set_style_text_color(s_lbl_ble,
-                                    lv_color_hex(v0 ? UI_COLOR_ACCENT : UI_COLOR_TEXT_DIM), 0);
+                                    lv_color_hex(v0 ? UI_COL_ACCENT : UI_COL_TEXT_DIM), 0);
         break;
     case 4: /* sd */
         lv_obj_set_style_text_color(s_lbl_sd,
-                                    lv_color_hex(v0 ? UI_COLOR_TEXT : UI_COLOR_TEXT_DIM), 0);
+                                    lv_color_hex(v0 ? UI_COL_TEXT : UI_COL_TEXT_DIM), 0);
         break;
     case 5: /* usb */
         lv_obj_set_style_text_color(s_lbl_usb,
-                                    lv_color_hex(v0 ? UI_COLOR_TEXT : UI_COLOR_TEXT_DIM), 0);
+                                    lv_color_hex(v0 ? UI_COL_TEXT : UI_COL_TEXT_DIM), 0);
         break;
     default:
         break;
@@ -544,6 +544,11 @@ void ui_nav_back(void)
     nav_apply_status_visibility();
 }
 
+void ui_nav_push_screen(lv_obj_t *screen)
+{
+    nav_push(screen, NULL);
+}
+
 /* Screens popped without an LVGL transition (ui_nav_home) must not be
  * deleted immediately: during a load animation the display still references
  * the outgoing screen, so a direct delete leaves act_scr/scr_to_load
@@ -677,25 +682,25 @@ lv_obj_t *ui_app_scaffold(const char *title, lv_obj_t **content_out)
     lv_obj_t *back = lv_button_create(root);
     lv_obj_set_size(back, UI_TOUCH_MIN, UI_TOUCH_MIN);
     lv_obj_set_pos(back, 8, UI_CONTENT_Y + 4);
-    lv_obj_set_style_bg_color(back, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(UI_COL_SURFACE), 0);
     lv_obj_set_style_bg_opa(back, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(back, 14, 0);
-    lv_obj_set_style_border_color(back, lv_color_hex(0x26262E), 0);
+    lv_obj_set_style_border_color(back, lv_color_hex(UI_COL_HAIRLINE), 0);
     lv_obj_set_style_border_width(back, 1, 0);
     lv_obj_set_style_shadow_width(back, 0, 0);
-    lv_obj_set_style_border_color(back, lv_color_hex(UI_COLOR_ACCENT),
+    lv_obj_set_style_border_color(back, lv_color_hex(UI_COL_ACCENT),
                                   LV_STATE_PRESSED);
     lv_obj_add_event_cb(back, scaffold_back_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *back_lbl = lv_label_create(back);
     lv_label_set_text(back_lbl, LV_SYMBOL_LEFT);
     lv_obj_set_style_text_font(back_lbl, ui_font_mid(), 0);
-    lv_obj_set_style_text_color(back_lbl, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(back_lbl, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_center(back_lbl);
 
     lv_obj_t *tick = lv_obj_create(root);
     lv_obj_set_size(tick, 5, 28);
     lv_obj_set_pos(tick, 72, UI_CONTENT_Y + 18);
-    lv_obj_set_style_bg_color(tick, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_bg_color(tick, lv_color_hex(UI_COL_ACCENT), 0);
     lv_obj_set_style_bg_opa(tick, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(tick, 2, 0);
     lv_obj_set_style_border_width(tick, 0, 0);
@@ -704,7 +709,7 @@ lv_obj_t *ui_app_scaffold(const char *title, lv_obj_t **content_out)
     lv_obj_t *title_lbl = lv_label_create(root);
     lv_label_set_text(title_lbl, title);
     lv_obj_set_style_text_font(title_lbl, ui_font_title(), 0);
-    lv_obj_set_style_text_color(title_lbl, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(title_lbl, lv_color_hex(UI_COL_TEXT), 0);
     /* 24 px project CJK title: line height 28 px, vertically centered in
      * the fixed 64 px title row. */
     lv_obj_set_pos(title_lbl, 88, UI_CONTENT_Y + 18);
@@ -772,10 +777,10 @@ void ui_toast(const char *text)
 {
     lv_obj_t *toast = lv_obj_create(lv_layer_top());
     lv_obj_remove_flag(toast, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(toast, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(toast, lv_color_hex(UI_COL_SURFACE), 0);
     lv_obj_set_style_bg_opa(toast, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(toast, 18, 0);
-    lv_obj_set_style_border_color(toast, lv_color_hex(0x2C2C34), 0);
+    lv_obj_set_style_border_color(toast, lv_color_hex(UI_COL_HAIRLINE), 0);
     lv_obj_set_style_border_width(toast, 1, 0);
     lv_obj_set_style_pad_left(toast, 18, 0);
     lv_obj_set_style_pad_right(toast, 18, 0);
@@ -785,7 +790,7 @@ void ui_toast(const char *text)
     lv_obj_t *label = lv_label_create(toast);
     lv_label_set_text(label, text); /* lv_label copies the text */
     lv_obj_set_style_text_font(label, ui_font_body(), 0);
-    lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(label, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_center(label);
 
     lv_obj_align(toast, LV_ALIGN_BOTTOM_MID, 0, -60);
@@ -837,23 +842,31 @@ static void msgbox_click_cb(lv_event_t *event)
     }
 }
 
+/* B.4 button language: primary = ACCENT_DIM fill + ACCENT 1 px edge,
+ * secondary = SURFACE + HAIRLINE. Press feedback is a color swap only. */
 static lv_obj_t *msgbox_button_create(lv_obj_t *parent, const char *text,
-                                      uint32_t bg_color)
+                                      bool primary)
 {
     lv_obj_t *btn = lv_button_create(parent);
     lv_obj_set_size(btn, 136, UI_TOUCH_MIN);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(bg_color), 0);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(primary ? UI_COL_ACCENT_DIM
+                                                        : UI_COL_SURFACE),
+                              0);
     lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 14, 0);
-    lv_obj_set_style_border_width(btn, 0, 0);
+    lv_obj_set_style_border_color(btn, lv_color_hex(primary ? UI_COL_ACCENT
+                                                            : UI_COL_HAIRLINE),
+                                  0);
+    lv_obj_set_style_border_width(btn, 1, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(bg_color == UI_COLOR_ACCENT
-                                                    ? 0x3A7FD0 : 0x2C2C34),
+    lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COL_SURFACE_2),
                               LV_STATE_PRESSED);
+    lv_obj_set_style_border_color(btn, lv_color_hex(UI_COL_ACCENT),
+                                  LV_STATE_PRESSED);
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_font(label, ui_font_body(), 0);
-    lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(label, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_center(label);
     return btn;
 }
@@ -877,12 +890,12 @@ void ui_msgbox(const char *title, const char *text,
     lv_obj_t *box = lv_obj_create(modal);
     lv_obj_set_size(box, 330, 210);
     lv_obj_center(box);
-    lv_obj_set_style_bg_color(box, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(box, lv_color_hex(UI_COL_SURFACE), 0);
     lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(box, 20, 0);
-    lv_obj_set_style_border_color(box, lv_color_hex(0x2E2E36), 0);
+    lv_obj_set_style_border_color(box, lv_color_hex(UI_COL_HAIRLINE), 0);
     lv_obj_set_style_border_width(box, 1, 0);
-    lv_obj_set_style_shadow_color(box, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_shadow_color(box, lv_color_hex(UI_COL_ACCENT), 0);
     lv_obj_set_style_shadow_width(box, 28, 0);
     lv_obj_set_style_shadow_opa(box, LV_OPA_30, 0);
     lv_obj_set_style_pad_all(box, 0, 0);
@@ -893,7 +906,7 @@ void ui_msgbox(const char *title, const char *text,
     /* Title at 24px (was 32 - overflowed the 330px box for long words)
      * with a bounded slot + dot mode. */
     lv_obj_set_style_text_font(title_lbl, ui_font_body(), 0);
-    lv_obj_set_style_text_color(title_lbl, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_text_color(title_lbl, lv_color_hex(UI_COL_ACCENT), 0);
     lv_obj_set_width(title_lbl, 290);
     lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(title_lbl, LV_TEXT_ALIGN_CENTER, 0);
@@ -907,7 +920,7 @@ void ui_msgbox(const char *title, const char *text,
     lv_obj_set_width(text_lbl, 284);
     lv_obj_set_height(text_lbl, 100);
     lv_label_set_long_mode(text_lbl, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_color(text_lbl, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(text_lbl, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_align(text_lbl, LV_ALIGN_CENTER, 0, -16);
 
     ui_msgbox_ctx_t *ctx = lv_malloc(sizeof(*ctx));
@@ -919,12 +932,12 @@ void ui_msgbox(const char *title, const char *text,
     ctx->user = user;
     ctx->modal = modal;
 
-    lv_obj_t *cancel = msgbox_button_create(box, "Cancel", 0x232329);
+    lv_obj_t *cancel = msgbox_button_create(box, "Cancel", false);
     lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, 18, -14);
     lv_obj_set_user_data(cancel, NULL);
     lv_obj_add_event_cb(cancel, msgbox_click_cb, LV_EVENT_CLICKED, ctx);
 
-    lv_obj_t *ok = msgbox_button_create(box, "OK", UI_COLOR_ACCENT);
+    lv_obj_t *ok = msgbox_button_create(box, "OK", true);
     lv_obj_align(ok, LV_ALIGN_BOTTOM_RIGHT, -18, -14);
     lv_obj_set_user_data(ok, (void *)1); /* non-NULL = OK */
     lv_obj_add_event_cb(ok, msgbox_click_cb, LV_EVENT_CLICKED, ctx);

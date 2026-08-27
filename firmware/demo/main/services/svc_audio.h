@@ -85,6 +85,9 @@ esp_err_t svc_audio_record_stop(void);
  * event may arrive after the page is gone.
  */
 esp_err_t svc_audio_record_stop_async(void);
+/* Busy in the arbitration sense (spec C.5): true while recording, saving
+ * the WAV, or running a capture_analyze/loopback diagnostic - any state
+ * where the mic path is owned. */
 bool svc_audio_is_recording(void);
 
 /** Adjust gain of the running recording (re-applies the route register). */
@@ -99,6 +102,8 @@ esp_err_t svc_audio_play(const char *path, int volume,
 esp_err_t svc_audio_play_stop(void);
 /** Fire-and-forget stop for page teardown (see svc_audio_record_stop_async). */
 esp_err_t svc_audio_play_stop_async(void);
+/* Busy in the arbitration sense (spec C.5): true while playing a file or
+ * a diagnostic tone. */
 bool svc_audio_is_playing(void);
 
 /** Pause/resume the running playback. */
@@ -106,6 +111,97 @@ esp_err_t svc_audio_play_pause(bool pause);
 
 /** Live volume change during playback (0..100). */
 esp_err_t svc_audio_set_volume(int volume);
+
+/* ------------------------------------------------------------------ */
+/* Diagnostics (test center; every call runs on the audio task so the */
+/* single-owner codec discipline and the iron open order still hold). */
+/* ------------------------------------------------------------------ */
+
+/* Per-channel capture statistics, mirroring the factory microphone_test
+ * judgement fields (peak / DC-removed RMS / DC / clip rate). */
+typedef struct {
+    uint16_t peak;         /**< largest |sample| */
+    int16_t  minimum;
+    int16_t  maximum;
+    int32_t  dc;           /**< mean value (DC offset) */
+    uint32_t ac_rms;       /**< RMS with DC removed */
+    uint32_t clip_count;   /**< samples within 8 LSB of the rail */
+    uint32_t sample_count;
+    bool     live;         /**< p2p >= 16 && ac_rms >= 4 (factory rule) */
+    bool     clipping;     /**< clip_count > 1% of sample_count */
+} svc_audio_channel_stats_t;
+
+typedef struct {
+    svc_audio_channel_stats_t ch[2]; /**< logical ch0 = left, ch1 = right */
+    uint32_t sample_rate;
+    uint32_t captured_ms;
+} svc_audio_capture_stats_t;
+
+/* Codec DAC->ADC internal-mix loopback result (factory codec_loopback). */
+typedef struct {
+    uint32_t tx_blocks;      /**< speaker blocks written */
+    uint32_t sample_count;   /**< scored RX samples (2 pipeline blocks dropped) */
+    uint32_t nonzero_samples;
+    uint16_t peak;           /**< largest |sample| in the scored window */
+    uint32_t asdout_edges;   /**< BSP_I2S_DIN edges during a 20 ms window */
+} svc_audio_loopback_stats_t;
+
+/* SoC I2S internal loopback result (factory i2s_loopback). */
+typedef struct {
+    uint32_t bytes_written;
+    uint32_t bytes_read;
+    uint32_t nonzero_bytes;
+    bool     pattern_found;
+    uint32_t pattern_offset; /**< valid when pattern_found */
+} svc_audio_i2s_loopback_stats_t;
+
+/**
+ * Play a square-wave tone through the resident speaker handle (factory
+ * speaker_test synthesis: 512-frame blocks, +-2200). freq_hz 100..8000,
+ * volume_pct 0..100 (clamped), duration_ms 100..10000 or 0 to run until
+ * svc_audio_tone_stop() (60 s safety cap). The call returns once the
+ * tone has STARTED; it stops by itself after duration_ms.
+ * ESP_ERR_INVALID_STATE when the codec is busy (record/play/tone/diag).
+ */
+esp_err_t svc_audio_tone_start(uint32_t freq_hz, int volume_pct,
+                               uint32_t duration_ms);
+esp_err_t svc_audio_tone_stop(void);
+
+/**
+ * One-shot capture + analysis, blocking the caller for the whole
+ * duration: records duration_ms (100..10000) into a PSRAM buffer without
+ * touching the SD card, then computes per-channel statistics (factory
+ * microphone_test algorithm). route selects the raw hardware input
+ * route (LEFT/RIGHT/STEREO only; no software channel processing or
+ * denoise). gain_db is snapped to the PGA grid (0..36, 3 dB steps).
+ * Returns ESP_OK when the capture completed; the live/clipping verdict
+ * inside out_stats is left to the caller. ESP_ERR_INVALID_STATE when
+ * the codec is busy.
+ */
+esp_err_t svc_audio_capture_analyze(uint32_t duration_ms,
+                                    svc_audio_route_t route, int gain_db,
+                                    svc_audio_capture_stats_t *out_stats);
+
+/**
+ * ES8389 DAC-to-ADC internal-mix loopback (factory codec_loopback):
+ * bypasses the microphones entirely. Returns ESP_OK only when the
+ * factory pass criteria hold (writer ran, >50% nonzero samples,
+ * peak > 1000, ASDOUT edges seen); out_stats is filled whenever the
+ * sequence ran, so evidence survives a FAIL. ESP_ERR_INVALID_STATE
+ * when the codec is busy.
+ */
+esp_err_t svc_audio_codec_loopback(svc_audio_loopback_stats_t *out_stats);
+
+/**
+ * SoC I2S internal loopback (factory i2s_loopback): loops GPIO8 TX back
+ * to RX with a 100-byte pattern. This temporarily tears the resident
+ * codec stack down and re-creates it afterwards (the codec rail stays
+ * powered, matching the demo's resident model). Returns ESP_OK only
+ * when the pattern is found; ESP_FAIL also when the resident stack
+ * could not be restored (audio service then stays degraded until
+ * reboot). ESP_ERR_INVALID_STATE when the codec is busy.
+ */
+esp_err_t svc_audio_i2s_loopback(svc_audio_i2s_loopback_stats_t *out_stats);
 
 #ifdef __cplusplus
 }

@@ -25,6 +25,7 @@
 
 #include "services/svc_power.h"
 #include "ui_manager.h"
+#include "ui_theme.h"
 
 #define WF_TIME_Y    118 /* HH:MM baseline band, upper-middle */
 #define WF_DATE_Y    196 /* date + weekday row */
@@ -106,19 +107,19 @@ static void wf_battery_apply(void)
 
     lv_arc_set_value(s.arc, percent < 0 ? 0 : percent);
     lv_obj_set_style_arc_color(
-        s.arc, lv_color_hex(charging ? UI_COLOR_OK : UI_COLOR_ACCENT),
+        s.arc, lv_color_hex(charging ? UI_COL_PASS : UI_COL_ACCENT),
         LV_PART_INDICATOR);
 
     if (percent < 0) {
         lv_label_set_text(s.lbl_batt, "--");
         lv_obj_set_style_text_color(s.lbl_batt,
-                                    lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+                                    lv_color_hex(UI_COL_TEXT_DIM), 0);
     } else if (charging) {
         lv_label_set_text_fmt(s.lbl_batt, LV_SYMBOL_CHARGE " %d%%", percent);
-        lv_obj_set_style_text_color(s.lbl_batt, lv_color_hex(UI_COLOR_OK), 0);
+        lv_obj_set_style_text_color(s.lbl_batt, lv_color_hex(UI_COL_PASS), 0);
     } else {
         lv_label_set_text_fmt(s.lbl_batt, "%d%%", percent);
-        lv_obj_set_style_text_color(s.lbl_batt, lv_color_hex(UI_COLOR_TEXT), 0);
+        lv_obj_set_style_text_color(s.lbl_batt, lv_color_hex(UI_COL_TEXT), 0);
     }
 }
 
@@ -161,9 +162,9 @@ static void wf_screen_unload_cb(lv_event_t *event)
 lv_obj_t *ui_watchface_create(void)
 {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(UI_COLOR_BG), 0);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(UI_COL_BG), 0);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(screen, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(screen, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_set_style_border_width(screen, 0, 0);
     lv_obj_set_style_radius(screen, 0, 0);
     lv_obj_set_style_pad_all(screen, 0, 0);
@@ -178,7 +179,7 @@ lv_obj_t *ui_watchface_create(void)
     s.lbl_time = lv_label_create(screen);
     lv_label_set_text(s.lbl_time, "--:--");
     lv_obj_set_style_text_font(s.lbl_time, ui_font_big(), 0);
-    lv_obj_set_style_text_color(s.lbl_time, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(s.lbl_time, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_remove_flag(s.lbl_time, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_align(s.lbl_time, LV_ALIGN_TOP_MID, 0, WF_TIME_Y);
 
@@ -186,7 +187,7 @@ lv_obj_t *ui_watchface_create(void)
     s.lbl_date = lv_label_create(screen);
     lv_label_set_text(s.lbl_date, "--");
     lv_obj_set_style_text_font(s.lbl_date, ui_font_body_lg(), 0);
-    lv_obj_set_style_text_color(s.lbl_date, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(s.lbl_date, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_remove_flag(s.lbl_date, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_align(s.lbl_date, LV_ALIGN_TOP_MID, 0, WF_DATE_Y);
 
@@ -205,11 +206,12 @@ lv_obj_t *ui_watchface_create(void)
     lv_obj_set_style_border_width(s.arc, 0, 0);
     /* Track. */
     lv_obj_set_style_arc_width(s.arc, WF_ARC_W, LV_PART_MAIN);
-    lv_obj_set_style_arc_color(s.arc, lv_color_hex(0x2C2C34), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(s.arc, lv_color_hex(UI_COL_TRACK),
+                               LV_PART_MAIN);
     lv_obj_set_style_arc_opa(s.arc, LV_OPA_COVER, LV_PART_MAIN);
     /* Indicator. */
     lv_obj_set_style_arc_width(s.arc, WF_ARC_W, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(s.arc, lv_color_hex(UI_COLOR_ACCENT),
+    lv_obj_set_style_arc_color(s.arc, lv_color_hex(UI_COL_ACCENT),
                                LV_PART_INDICATOR);
     lv_obj_set_style_arc_opa(s.arc, LV_OPA_COVER, LV_PART_INDICATOR);
     lv_obj_set_style_arc_rounded(s.arc, false, LV_PART_INDICATOR);
@@ -222,7 +224,7 @@ lv_obj_t *ui_watchface_create(void)
     s.lbl_batt = lv_label_create(s.arc);
     lv_label_set_text(s.lbl_batt, "--");
     lv_obj_set_style_text_font(s.lbl_batt, ui_font_body(), 0);
-    lv_obj_set_style_text_color(s.lbl_batt, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(s.lbl_batt, lv_color_hex(UI_COL_TEXT_DIM), 0);
     lv_obj_remove_flag(s.lbl_batt, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_center(s.lbl_batt);
 
@@ -230,7 +232,7 @@ lv_obj_t *ui_watchface_create(void)
     lv_obj_t *brand = lv_label_create(screen);
     lv_label_set_text(brand, "Candis-S31");
     lv_obj_set_style_text_font(brand, ui_font_text(), 0);
-    lv_obj_set_style_text_color(brand, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(brand, lv_color_hex(UI_COL_TEXT_WEAK), 0);
     lv_obj_remove_flag(brand, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_align(brand, LV_ALIGN_TOP_MID, 0, WF_BRAND_Y);
 

@@ -19,6 +19,8 @@
 
 #pragma once
 
+#include <stdbool.h>
+
 #include "esp_err.h"
 
 #ifdef __cplusplus
@@ -29,12 +31,25 @@ typedef enum {
     SVC_INPUT_BOOT_SHORT = 0,  /**< back / menu */
     SVC_INPUT_BOOT_LONG,       /**< screen off toggle */
     SVC_INPUT_PWR_SHORT,       /**< home */
+    SVC_INPUT_RTC_ALARM,       /**< RTC alarm flag drained from the shared line */
 } svc_input_event_t;
 
 typedef void (*svc_input_cb_t)(svc_input_event_t ev, void *user);
 
 /** Start the input task (stack 3072, prio 4). Single subscriber. */
 esp_err_t svc_input_start(svc_input_cb_t cb, void *user);
+/** Attach an extra single-slot listener that receives the same events as
+ *  the primary callback (test-framework observers such as the buttons and
+ *  rtc_alarm tests); the shared-IRQ registration itself is never touched
+ *  (spec F8). Pass NULL to detach. ESP_ERR_INVALID_STATE when the slot is
+ *  already taken. Callbacks run on the service task context. */
+esp_err_t svc_input_add_listener(svc_input_cb_t cb, void *user);
+
+/** While muted, the primary callback (UI navigation) receives nothing and
+ *  only the listener sees events. The buttons test uses this so BOOT/PWR
+ *  presses do not navigate away mid-test; the test's cleanup path always
+ *  restores it. */
+void svc_input_mute_primary(bool muted);
 
 #ifdef __cplusplus
 }

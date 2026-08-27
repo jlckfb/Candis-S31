@@ -187,7 +187,7 @@ static void ble_show_connected_state(void)
         lv_label_set_text_fmt(s.lbl_peer, "%s\n%s",
                               s.sel_name[0] ? s.sel_name : "(unnamed)", mac);
     }
-    ble_status_set("Connected", UI_COLOR_OK);
+    ble_status_set("Connected", UI_COL_PASS);
     ui_status_set_ble(true);
 }
 
@@ -215,11 +215,11 @@ static void ble_do_connect(int idx)
     if (svc_ble_connect(row->addr, row->addr_type, ble_conn_cb,
                         (void *)(uintptr_t)s.session) != ESP_OK) {
         ui_toast("Cannot start connection");
-        ble_status_set("Connect failed", UI_COLOR_ERR);
+        ble_status_set("Connect failed", UI_COL_FAIL);
         return;
     }
     s.connecting = true;
-    ble_status_set("Connecting...", UI_COLOR_WARN);
+    ble_status_set("Connecting...", UI_COL_WARN);
 }
 
 static void ble_row_clicked(lv_event_t *event)
@@ -250,7 +250,7 @@ static void ble_on_scan_toggle(lv_event_t *event)
         lv_obj_clean(s.list);
         memset(s.rows, 0, sizeof(s.rows));
         lv_label_set_text(s.lbl_scan, "Stop scan");
-        ble_status_set("Scanning...", UI_COLOR_TEXT_DIM);
+        ble_status_set("Scanning...", UI_COL_TEXT_DIM);
         ui_status_set_ble(true);
     } else {
         svc_ble_scan_stop();
@@ -258,7 +258,7 @@ static void ble_on_scan_toggle(lv_event_t *event)
         lv_label_set_text(s.lbl_scan, "Start scan");
         char status[32];
         snprintf(status, sizeof(status), "%d devices found", s.row_count);
-        ble_status_set(status, UI_COLOR_TEXT);
+        ble_status_set(status, UI_COL_TEXT);
         ui_status_set_ble(false);
     }
 }
@@ -270,7 +270,7 @@ static void ble_on_disconnect(lv_event_t *event)
         return;
     }
     svc_ble_disconnect();
-    ble_status_set("Disconnecting...", UI_COLOR_TEXT_DIM);
+    ble_status_set("Disconnecting...", UI_COL_TEXT_DIM);
 }
 
 static void ble_on_delete(lv_event_t *event)
@@ -326,7 +326,7 @@ static void ble_apply_dev(void *arg)
 
         row->btn = lv_button_create(s.list);
         lv_obj_set_size(row->btn, LV_PCT(100), 60);
-        lv_obj_set_style_bg_color(row->btn, lv_color_hex(UI_COLOR_SURFACE), 0);
+        lv_obj_set_style_bg_color(row->btn, lv_color_hex(UI_COL_SURFACE), 0);
         lv_obj_set_style_radius(row->btn, 12, 0);
         lv_obj_set_layout(row->btn, LV_LAYOUT_FLEX);
         lv_obj_set_flex_flow(row->btn, LV_FLEX_FLOW_ROW);
@@ -356,11 +356,11 @@ static void ble_apply_dev(void *arg)
         ble_mac_str(dev->addr, mac, sizeof(mac));
         lv_obj_t *lbl_mac = lv_label_create(col);
         lv_label_set_text(lbl_mac, mac);
-        lv_obj_set_style_text_color(lbl_mac, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+        lv_obj_set_style_text_color(lbl_mac, lv_color_hex(UI_COL_TEXT_DIM), 0);
 
         row->lbl_rssi = lv_label_create(row->btn);
         lv_obj_set_style_text_color(row->lbl_rssi,
-                                    lv_color_hex(UI_COLOR_ACCENT), 0);
+                                    lv_color_hex(UI_COL_ACCENT), 0);
 
         ++s.row_count;
     }
@@ -369,7 +369,7 @@ static void ble_apply_dev(void *arg)
     ble_sort_rows();
     char status[32];
     snprintf(status, sizeof(status), "%d devices found", s.row_count);
-    ble_status_set(status, UI_COLOR_TEXT);
+    ble_status_set(status, UI_COL_TEXT);
     heap_caps_free(res);
 }
 
@@ -405,7 +405,7 @@ static void ble_apply_conn_event(uint32_t seq, svc_ble_event_t event,
             for (int i = 0; i < count; ++i) {
                 lv_obj_t *row = lv_obj_create(s.svc_list);
                 lv_obj_set_size(row, LV_PCT(100), 52);
-                lv_obj_set_style_bg_color(row, lv_color_hex(UI_COLOR_SURFACE), 0);
+                lv_obj_set_style_bg_color(row, lv_color_hex(UI_COL_SURFACE), 0);
                 lv_obj_set_style_radius(row, 10, 0);
                 lv_obj_set_style_border_width(row, 0, 0);
                 lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE |
@@ -418,7 +418,7 @@ static void ble_apply_conn_event(uint32_t seq, svc_ble_event_t event,
                                       svcs[i].start_handle,
                                       svcs[i].end_handle);
                 lv_obj_set_style_text_color(
-                    lbl_handle, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+                    lbl_handle, lv_color_hex(UI_COL_TEXT_DIM), 0);
                 lv_obj_align(lbl_handle, LV_ALIGN_RIGHT_MID, -10, 0);
             }
         }
@@ -427,7 +427,7 @@ static void ble_apply_conn_event(uint32_t seq, svc_ble_event_t event,
         s.connecting = false;
         s.connected = false;
         ble_show_page(false);
-        ble_status_set("Connect failed", UI_COLOR_ERR);
+        ble_status_set("Connect failed", UI_COL_FAIL);
         ui_toast("Connect failed");
         break;
     case SVC_BLE_EV_DISCONNECTED:
@@ -435,7 +435,7 @@ static void ble_apply_conn_event(uint32_t seq, svc_ble_event_t event,
         s.connecting = false;
         s.connected = false;
         ble_show_page(false);
-        ble_status_set("Disconnected", UI_COLOR_TEXT_DIM);
+        ble_status_set("Disconnected", UI_COL_TEXT_DIM);
         ui_status_set_ble(s.scanning);
         break;
     }
@@ -482,7 +482,7 @@ static void ble_fallback_timer_cb(lv_timer_t *timer)
             s.connecting = false;
             s.connected = false;
             ble_show_page(false);
-            ble_status_set("Connect failed", UI_COLOR_ERR);
+            ble_status_set("Connect failed", UI_COL_FAIL);
         }
     }
 }
@@ -575,7 +575,7 @@ lv_obj_t *app_ble_create(void)
     s.btn_scan = lv_button_create(content);
     lv_obj_set_size(s.btn_scan, 140, UI_TOUCH_MIN);
     lv_obj_align(s.btn_scan, LV_ALIGN_TOP_RIGHT, 0, 0);
-    lv_obj_set_style_bg_color(s.btn_scan, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_bg_color(s.btn_scan, lv_color_hex(UI_COL_ACCENT), 0);
     lv_obj_set_style_radius(s.btn_scan, 12, 0);
     lv_obj_add_event_cb(s.btn_scan, ble_on_scan_toggle, LV_EVENT_CLICKED, NULL);
     s.lbl_scan = lv_label_create(s.btn_scan);
@@ -611,7 +611,7 @@ lv_obj_t *app_ble_create(void)
     lv_obj_t *btn_disc = lv_button_create(s.page_conn);
     lv_obj_set_size(btn_disc, 120, UI_TOUCH_MIN);
     lv_obj_align(btn_disc, LV_ALIGN_TOP_RIGHT, 0, 0);
-    lv_obj_set_style_bg_color(btn_disc, lv_color_hex(UI_COLOR_ERR), 0);
+    lv_obj_set_style_bg_color(btn_disc, lv_color_hex(UI_COL_FAIL), 0);
     lv_obj_set_style_radius(btn_disc, 12, 0);
     lv_obj_add_event_cb(btn_disc, ble_on_disconnect, LV_EVENT_CLICKED, NULL);
     lv_obj_t *lbl_disc = lv_label_create(btn_disc);
@@ -622,7 +622,7 @@ lv_obj_t *app_ble_create(void)
     lv_label_set_text(s.lbl_svc_hint, "");
     lv_obj_set_pos(s.lbl_svc_hint, 4, 58);
     lv_obj_set_style_text_color(s.lbl_svc_hint,
-                                lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+                                lv_color_hex(UI_COL_TEXT_DIM), 0);
 
     s.svc_list = lv_obj_create(s.page_conn);
     lv_obj_set_size(s.svc_list, LV_PCT(100), 204);

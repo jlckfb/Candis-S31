@@ -54,20 +54,28 @@
 #include "svc_audio.h"
 
 #include <errno.h>
+#include <inttypes.h>
+#include <math.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include "bsp/esp-bsp.h"
+#include "driver/gpio.h"
+#include "driver/i2s_std.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "hal/gpio_ll.h"
+#include "soc/gpio_struct.h"
 
 #include "services/svc_storage.h"
 
@@ -92,6 +100,16 @@ static const char *TAG = "svc_audio";
 #define PLAY_IO_BYTES           2048U
 #define PLAY_PAUSE_POLL_MS      20U
 #define WAV_HEADER_BYTES        44U
+/* Diagnostics (factory speaker_test / microphone_test geometry). */
+#define TONE_FRAME_COUNT        512U
+#define TONE_MIN_FREQ_HZ        100U
+#define TONE_MAX_FREQ_HZ        8000U
+#define TONE_MIN_MS             100U
+#define TONE_MAX_MS             10000U
+#define TONE_IDLE_CAP_MS        60000U /* duration 0 = until tone_stop */
+#define CAPTURE_MIN_MS          100U
+#define CAPTURE_MAX_MS          10000U
+#define DIAG_ACK_SLACK_MS       5000U  /* ack timeout on top of duration */
 
 /* ES8389 sits at 7-bit 0x10 on the main I2C bus (8-bit write address 0x20
  * inside esp_codec_dev). The input route is patched raw, exactly like the
@@ -116,6 +134,9 @@ typedef enum {
     AUDIO_MODE_RECORDING,
     AUDIO_MODE_SAVING,   /* capture done, WAV write in progress; still busy */
     AUDIO_MODE_PLAYING,
+    AUDIO_MODE_TONE,     /* diagnostic square-wave tone on the speaker */
+    AUDIO_MODE_ANALYZE,  /* capture_analyze owns the mic path */
+    AUDIO_MODE_DIAG,     /* loopback diagnostics own the whole stack */
 } audio_mode_t;
 
 typedef enum {
@@ -126,6 +147,11 @@ typedef enum {
     CMD_PLAY_STOP,
     CMD_PLAY_PAUSE,
     CMD_SET_VOLUME,
+    CMD_TONE_START,
+    CMD_TONE_STOP,
+    CMD_CAPTURE_ANALYZE,
+    CMD_CODEC_LOOPBACK,
+    CMD_I2S_LOOPBACK,
 } audio_cmd_type_t;
 
 typedef struct {
@@ -144,6 +170,11 @@ typedef struct {
     char path[96];
     svc_audio_cb_t cb;
     void *user;
+    /* Diagnostics payload: tone frequency/duration and a caller-owned
+     * heap statistics struct (type implied by the command). */
+    uint32_t freq_hz;
+    uint32_t duration_ms;
+    void *diag_out;
     /* The command and caller each own one reference after a successful
      * enqueue. A caller timeout releases only its reference; the audio task
      * may safely complete the response later and releases the final one. */
@@ -1015,6 +1046,652 @@ static void play_run(play_ctx_t *ctx)
 }
 
 /* ------------------------------------------------------------------ */
+/* Diagnostics (test center; every stage below runs on the audio task, */
+/* keeping the codec single-owner and the iron open order intact).     */
+/* ------------------------------------------------------------------ */
+
+/* Shared bring-up used by svc_audio_start() and by the i2s loopback
+ * restore path: I2S channels + both codec devices via the BSP cache. */
+static esp_err_t audio_stack_bringup(void)
+{
+    /* Idempotent; returns the real I2S/DMA error and cleans up after
+     * itself on failure. The codec constructors reuse its channels. */
+    esp_err_t error = bsp_audio_init(NULL);
+    if (error != ESP_OK) {
+        return error;
+    }
+    s_speaker_dev = bsp_audio_codec_speaker_init();
+    s_mic_dev = bsp_audio_codec_microphone_init();
+    if (s_speaker_dev == NULL || s_mic_dev == NULL) {
+        ESP_LOGE(TAG, "codec init failed: speaker=%p mic=%p",
+                 s_speaker_dev, s_mic_dev);
+        bsp_audio_deinit(); /* full single rollback, clears BSP statics */
+        s_speaker_dev = NULL;
+        s_mic_dev = NULL;
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+/* Runs on the audio task after the tone start command was acked. Square
+ * wave block synthesis is verbatim from the factory speaker_test:
+ * +-2200, both channels, 512 frames per block (32 ms at 16 kHz). */
+static void tone_run(uint32_t freq_hz, int volume, uint32_t duration_ms)
+{
+    esp_codec_dev_handle_t speaker = s_speaker_dev;
+    if (speaker == NULL) {
+        ESP_LOGE(TAG, "tone: codec unavailable");
+        audio_mode_store(AUDIO_MODE_IDLE);
+        return;
+    }
+    /* Same precondition as playback: the PA rail may be off since boot. */
+    bsp_power_domain_set(BSP_POWER_AUDIO_PA, true);
+
+    esp_codec_dev_sample_info_t format = audio_format(REC_SAMPLE_RATE);
+    int result = esp_codec_dev_open(speaker, &format);
+    if (result == ESP_CODEC_DEV_OK) {
+        result = esp_codec_dev_set_out_vol(speaker, volume);
+    }
+    if (result != ESP_CODEC_DEV_OK) {
+        ESP_LOGE(TAG, "tone open/volume failed: %s",
+                 esp_err_to_name(result));
+        esp_codec_dev_close(speaker);
+        audio_mode_store(AUDIO_MODE_IDLE);
+        return;
+    }
+
+    static int16_t samples[TONE_FRAME_COUNT * 2];
+    const uint32_t period_samples = REC_SAMPLE_RATE / freq_hz;
+    const uint32_t high_samples = period_samples / 2;
+    for (unsigned frame = 0; frame < TONE_FRAME_COUNT; ++frame) {
+        const int16_t value = frame % period_samples < high_samples ?
+                              2200 : -2200;
+        samples[frame * 2] = value;
+        samples[frame * 2 + 1] = value;
+    }
+    const uint32_t capped_ms = duration_ms == 0 ? TONE_IDLE_CAP_MS :
+                               duration_ms;
+    const uint32_t block_count =
+        (capped_ms * REC_SAMPLE_RATE + 999) / 1000 / TONE_FRAME_COUNT;
+
+    bool stop_requested = false;
+    for (unsigned block = 0; !stop_requested && block < block_count &&
+            result == ESP_CODEC_DEV_OK; ++block) {
+        /* Service pending commands between blocks (~32 ms each). */
+        audio_cmd_t cmd;
+        while (xQueueReceive(s_queue, &cmd, 0) == pdTRUE) {
+            esp_err_t ack = ESP_ERR_INVALID_STATE;
+            if (audio_cmd_cancelled(&cmd)) {
+                ack = ESP_ERR_TIMEOUT;
+            } else if (cmd.type == CMD_TONE_STOP) {
+                stop_requested = true;
+                ack = ESP_OK;
+            }
+            audio_ack_complete(&cmd, ack);
+        }
+        if (stop_requested) {
+            break;
+        }
+        result = esp_codec_dev_write(speaker, samples, sizeof(samples));
+    }
+    if (result != ESP_CODEC_DEV_OK) {
+        ESP_LOGE(TAG, "tone write failed: %s", esp_err_to_name(result));
+    }
+    esp_codec_dev_close(speaker);
+    audio_mode_store(AUDIO_MODE_IDLE);
+}
+
+static void tone_start_command(audio_cmd_t *cmd)
+{
+    if (audio_mode_load() != AUDIO_MODE_IDLE) {
+        audio_ack_complete(cmd, ESP_ERR_INVALID_STATE);
+        return;
+    }
+    if (audio_cmd_cancelled(cmd)) {
+        audio_ack_complete(cmd, ESP_ERR_TIMEOUT);
+        return;
+    }
+    audio_mode_store(AUDIO_MODE_TONE);
+    audio_ack_complete(cmd, ESP_OK); /* ack at start, like record_start */
+    tone_run(cmd->freq_hz, cmd->volume, cmd->duration_ms);
+}
+
+/* Runs on the audio task. Captures duration_ms into a fresh PSRAM buffer
+ * (never written to the card), then scores both channels with the factory
+ * microphone_test algorithm. The open chain is the iron order from the
+ * header comment: speaker -> PA off -> mic -> out vol -> in gain ->
+ * input route. */
+static esp_err_t capture_analyze_run(svc_audio_route_t route, int gain_db,
+                                     uint32_t duration_ms,
+                                     svc_audio_capture_stats_t *stats)
+{
+    esp_codec_dev_handle_t speaker = s_speaker_dev;
+    esp_codec_dev_handle_t microphone = s_mic_dev;
+    if (speaker == NULL || microphone == NULL) {
+        ESP_LOGE(TAG, "analyze: codec unavailable");
+        return ESP_ERR_INVALID_STATE;
+    }
+    const uint32_t capture_size =
+        duration_ms * REC_SAMPLE_RATE * REC_FRAME_BYTES / 1000U;
+    uint8_t *pcm = heap_caps_malloc(capture_size,
+                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (pcm == NULL) {
+        ESP_LOGE(TAG, "analyze: PSRAM alloc (%" PRIu32 " B) failed",
+                 capture_size);
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_codec_dev_sample_info_t format = audio_format(REC_SAMPLE_RATE);
+    bool speaker_open_attempted = false;
+    bool mic_open_attempted = false;
+    bool pa_off = false;
+
+    int result = esp_codec_dev_open(speaker, &format);
+    speaker_open_attempted = true;
+    if (result == ESP_CODEC_DEV_OK) {
+        result = bsp_power_domain_set(BSP_POWER_AUDIO_PA, false);
+        pa_off = (result == ESP_OK);
+    }
+    if (result == ESP_CODEC_DEV_OK) {
+        result = esp_codec_dev_open(microphone, &format);
+        mic_open_attempted = true;
+    }
+    if (result == ESP_CODEC_DEV_OK) {
+        result = esp_codec_dev_set_out_vol(speaker, 0);
+    }
+    if (result == ESP_CODEC_DEV_OK) {
+        result = esp_codec_dev_set_in_gain(microphone, (float)gain_db);
+    }
+    if (result == ESP_CODEC_DEV_OK) {
+        result = codec_write_input_route(route_register_value(route));
+    }
+
+    /* Discard the first two pipeline-fill blocks. */
+    for (unsigned index = 0;
+            index < REC_DISCARD_BLOCKS && result == ESP_CODEC_DEV_OK;
+            ++index) {
+        result = esp_codec_dev_read(microphone, s_io, REC_IO_BYTES);
+    }
+
+    uint32_t filled = 0;
+    while (result == ESP_CODEC_DEV_OK && filled < capture_size) {
+        const uint32_t remaining = capture_size - filled;
+        const uint32_t chunk = remaining < REC_IO_BYTES ? remaining :
+                               REC_IO_BYTES;
+        result = esp_codec_dev_read(microphone, s_io, chunk);
+        if (result != ESP_CODEC_DEV_OK) {
+            break;
+        }
+        memcpy(pcm + filled, s_io, chunk);
+        filled += chunk;
+    }
+
+    if (mic_open_attempted) {
+        esp_codec_dev_close(microphone);
+    }
+    if (speaker_open_attempted) {
+        esp_codec_dev_close(speaker);
+    }
+    if (pa_off) {
+        bsp_power_domain_set(BSP_POWER_AUDIO_PA, true);
+    }
+    if (result != ESP_CODEC_DEV_OK) {
+        ESP_LOGE(TAG, "analyze capture failed: %s", esp_err_to_name(result));
+        heap_caps_free(pcm);
+        return result;
+    }
+
+    /* Factory scoring: peak/min/max/DC/AC-RMS/clip per channel over the
+     * interleaved stereo stream. */
+    const int16_t *samples = (const int16_t *)pcm;
+    const size_t total = filled / sizeof(int16_t);
+    int64_t sum[2] = {0};
+    uint64_t square_sum[2] = {0};
+    for (size_t index = 0; index < total; ++index) {
+        const unsigned channel = index & 1U;
+        const int16_t sample = samples[index];
+        svc_audio_channel_stats_t *ch = &stats->ch[channel];
+        const int32_t absolute = sample < 0 ? -(int32_t)sample : sample;
+        if (absolute > ch->peak) {
+            ch->peak = (uint16_t)absolute;
+        }
+        if (ch->sample_count == 0 || sample < ch->minimum) {
+            ch->minimum = sample;
+        }
+        if (ch->sample_count == 0 || sample > ch->maximum) {
+            ch->maximum = sample;
+        }
+        sum[channel] += sample;
+        square_sum[channel] += (uint64_t)((int64_t)sample * sample);
+        if (sample <= INT16_MIN + 8 || sample >= INT16_MAX - 7) {
+            ch->clip_count++;
+        }
+        ch->sample_count++;
+    }
+    for (unsigned channel = 0; channel < 2; ++channel) {
+        svc_audio_channel_stats_t *ch = &stats->ch[channel];
+        if (ch->sample_count == 0) {
+            continue;
+        }
+        ch->dc = (int32_t)(sum[channel] / (int64_t)ch->sample_count);
+        const uint64_t mean_square = square_sum[channel] / ch->sample_count;
+        const uint64_t dc_square = (uint64_t)((int64_t)ch->dc * ch->dc);
+        const uint64_t ac_variance = mean_square > dc_square ?
+                                     mean_square - dc_square : 0;
+        ch->ac_rms = (uint32_t)sqrtf((float)ac_variance);
+        const uint32_t p2p = (uint32_t)((int32_t)ch->maximum - ch->minimum);
+        ch->live = p2p >= 16U && ch->ac_rms >= 4U;
+        ch->clipping = ch->clip_count > ch->sample_count / 100U;
+    }
+    stats->sample_rate = REC_SAMPLE_RATE;
+    stats->captured_ms = duration_ms;
+    heap_caps_free(pcm);
+    return ESP_OK;
+}
+
+static void capture_analyze_command(audio_cmd_t *cmd)
+{
+    svc_audio_capture_stats_t *stats =
+        (svc_audio_capture_stats_t *)cmd->diag_out;
+    esp_err_t result = ESP_ERR_INVALID_STATE;
+    if (audio_mode_load() == AUDIO_MODE_IDLE && stats != NULL) {
+        if (audio_cmd_cancelled(cmd)) {
+            audio_ack_complete(cmd, ESP_ERR_TIMEOUT);
+            return;
+        }
+        audio_mode_store(AUDIO_MODE_ANALYZE);
+        result = capture_analyze_run(cmd->route, cmd->gain_db,
+                                     cmd->duration_ms, stats);
+        audio_mode_store(AUDIO_MODE_IDLE);
+    }
+    audio_ack_complete(cmd, result);
+}
+
+/* --- Codec DAC->ADC internal-mix loopback (factory codec_loopback) --- */
+
+typedef struct {
+    esp_codec_dev_handle_t speaker;
+    const int16_t *samples;
+    int sample_bytes;
+    volatile bool stop;
+    volatile int last_result;
+    volatile uint32_t blocks;
+    TaskHandle_t owner;
+} diag_writer_t;
+
+static void diag_writer_task(void *arg)
+{
+    diag_writer_t *writer = (diag_writer_t *)arg;
+    while (!writer->stop) {
+        const int result = esp_codec_dev_write(writer->speaker,
+                                               (void *)writer->samples,
+                                               writer->sample_bytes);
+        if (result != ESP_CODEC_DEV_OK) {
+            writer->last_result = result;
+            break;
+        }
+        writer->blocks++;
+    }
+    xTaskNotifyGive(writer->owner);
+    /* The owner always deletes this task after observing completion or a
+     * timeout. Suspending here keeps the TaskHandle valid and guarantees
+     * the stack-owned writer context is no longer touched before owner
+     * cleanup. */
+    vTaskSuspend(NULL);
+}
+
+/* Bit-level edge count on the ASDOUT pad (factory mic_snoop helper):
+ * splits "codec never drives the data line" from "data arrives". */
+static uint32_t diag_count_edges(gpio_num_t gpio, uint32_t window_ms)
+{
+    gpio_ll_input_enable(&GPIO, (uint32_t)gpio);
+    uint32_t edges = 0;
+    int last = gpio_ll_get_level(&GPIO, (uint32_t)gpio);
+    const int64_t deadline = esp_timer_get_time() + (int64_t)window_ms * 1000;
+    while (esp_timer_get_time() < deadline) {
+        const int level = gpio_ll_get_level(&GPIO, (uint32_t)gpio);
+        if (level != last) {
+            edges++;
+            last = level;
+        }
+    }
+    return edges;
+}
+
+/* Runs on the audio task. Verbatim port of the factory codec_loopback
+ * sequence: both streams open, PA off, DAC->ADC mix enabled through raw
+ * registers, 1 kHz square written from a helper task while the mic path
+ * is read and scored. */
+static esp_err_t codec_loopback_run(svc_audio_loopback_stats_t *stats)
+{
+    esp_codec_dev_handle_t speaker = s_speaker_dev;
+    esp_codec_dev_handle_t microphone = s_mic_dev;
+    if (speaker == NULL || microphone == NULL) {
+        ESP_LOGE(TAG, "codec_loopback: codec unavailable");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_codec_dev_sample_info_t format = audio_format(REC_SAMPLE_RATE);
+    bool speaker_open_attempted = false;
+    bool microphone_open_attempted = false;
+    bool mix_enabled = false;
+    bool pa_off = false;
+
+    int result = esp_codec_dev_open(speaker, &format);
+    speaker_open_attempted = true;
+    if (result == ESP_CODEC_DEV_OK) {
+        result = bsp_power_domain_set(BSP_POWER_AUDIO_PA, false);
+        pa_off = (result == ESP_OK);
+    }
+    if (result == ESP_CODEC_DEV_OK) {
+        result = esp_codec_dev_open(microphone, &format);
+        microphone_open_attempted = true;
+    }
+
+    /* The output device opens at its default volume of zero. Restore the
+     * codec's documented 0 dB digital volume before enabling the internal
+     * DAC-to-ADC mix. */
+    if (result == ESP_CODEC_DEV_OK) {
+        result = esp_codec_dev_write_reg(microphone, 0x46, 0xBF);
+    }
+    if (result == ESP_CODEC_DEV_OK) {
+        result = esp_codec_dev_write_reg(microphone, 0x47, 0xBF);
+    }
+    if (result == ESP_CODEC_DEV_OK) {
+        result = esp_codec_dev_write_reg(microphone, 0x31, 0xC0);
+    }
+    if (result != ESP_CODEC_DEV_OK) {
+        ESP_LOGE(TAG, "codec_loopback: register setup failed: %s",
+                 esp_err_to_name(result));
+        goto cleanup;
+    }
+    mix_enabled = true;
+
+    int mix_value = 0;
+    result = esp_codec_dev_read_reg(microphone, 0x31, &mix_value);
+    if (result != ESP_CODEC_DEV_OK || mix_value != 0xC0) {
+        ESP_LOGE(TAG, "codec_loopback: reg 0x31 readback=0x%02x result=%s",
+                 mix_value, esp_err_to_name(result));
+        result = ESP_FAIL;
+        goto cleanup;
+    }
+
+    static int16_t tone[TONE_FRAME_COUNT * 2];
+    static int16_t capture[TONE_FRAME_COUNT * 2];
+    const uint32_t period_samples = REC_SAMPLE_RATE / 1000U;
+    for (size_t frame = 0; frame < TONE_FRAME_COUNT; ++frame) {
+        const int16_t value = frame % period_samples < period_samples / 2U ?
+                              12000 : -12000;
+        tone[frame * 2] = value;
+        tone[frame * 2 + 1] = value;
+    }
+
+    diag_writer_t writer = {
+        .speaker = speaker,
+        .samples = tone,
+        .sample_bytes = sizeof(tone),
+        .stop = false,
+        .last_result = ESP_CODEC_DEV_OK,
+        .blocks = 0,
+        .owner = xTaskGetCurrentTaskHandle(),
+    };
+    while (ulTaskNotifyTake(pdTRUE, 0) > 0) {
+    }
+    TaskHandle_t writer_task = NULL;
+    if (xTaskCreate(diag_writer_task, "codec_loop_tx", 4096, &writer, 5,
+                    &writer_task) != pdPASS) {
+        ESP_LOGE(TAG, "codec_loopback: writer task create failed");
+        result = ESP_ERR_NO_MEM;
+        goto cleanup;
+    }
+
+    for (unsigned block = 0; block < 12; ++block) {
+        result = esp_codec_dev_read(microphone, capture, sizeof(capture));
+        if (result != ESP_CODEC_DEV_OK) {
+            break;
+        }
+        /* Discard two pipeline-fill blocks before scoring the loopback. */
+        if (block < 2) {
+            continue;
+        }
+        for (size_t index = 0;
+                index < sizeof(capture) / sizeof(capture[0]); ++index) {
+            const int32_t sample = capture[index];
+            const uint32_t absolute = sample < 0 ? (uint32_t)-sample :
+                                      (uint32_t)sample;
+            stats->nonzero_samples += sample != 0;
+            stats->sample_count++;
+            if (absolute > stats->peak) {
+                stats->peak = (uint16_t)absolute;
+            }
+        }
+    }
+    stats->asdout_edges = diag_count_edges(BSP_I2S_DIN, 20);
+    stats->tx_blocks = writer.blocks;
+    writer.stop = true;
+    const bool writer_finished =
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2000)) > 0;
+    vTaskDelete(writer_task);
+    if (!writer_finished && result == ESP_CODEC_DEV_OK) {
+        result = ESP_ERR_TIMEOUT;
+    }
+    if (writer.last_result != ESP_CODEC_DEV_OK &&
+            result == ESP_CODEC_DEV_OK) {
+        result = writer.last_result;
+    }
+
+    if (result == ESP_CODEC_DEV_OK &&
+            !(writer.blocks > 0 && stats->sample_count > 0 &&
+              stats->nonzero_samples > stats->sample_count / 2U &&
+              stats->peak > 1000 && stats->asdout_edges > 0)) {
+        result = ESP_FAIL; /* ran cleanly but the loopback did not pass */
+    }
+
+cleanup:
+    if (mix_enabled) {
+        esp_codec_dev_write_reg(microphone, 0x31, 0x00);
+    }
+    if (microphone_open_attempted) {
+        esp_codec_dev_close(microphone);
+    }
+    if (speaker_open_attempted) {
+        esp_codec_dev_close(speaker);
+    }
+    if (pa_off) {
+        /* Demo idle baseline matches the record path post-state: PA on. */
+        bsp_power_domain_set(BSP_POWER_AUDIO_PA, true);
+    }
+    return result;
+}
+
+static void codec_loopback_command(audio_cmd_t *cmd)
+{
+    svc_audio_loopback_stats_t *stats =
+        (svc_audio_loopback_stats_t *)cmd->diag_out;
+    esp_err_t result = ESP_ERR_INVALID_STATE;
+    if (audio_mode_load() == AUDIO_MODE_IDLE && stats != NULL) {
+        if (audio_cmd_cancelled(cmd)) {
+            audio_ack_complete(cmd, ESP_ERR_TIMEOUT);
+            return;
+        }
+        audio_mode_store(AUDIO_MODE_DIAG);
+        result = codec_loopback_run(stats);
+        audio_mode_store(AUDIO_MODE_IDLE);
+    }
+    audio_ack_complete(cmd, result);
+}
+
+/* --- SoC I2S internal loopback (factory i2s_loopback) ---------------- */
+
+#define I2S_LOOPBACK_PATTERN_BYTES 100
+#define I2S_LOOPBACK_CAPTURE_BYTES 8192
+
+static bool i2s_loopback_find_pattern(const uint8_t *capture,
+                                      size_t capture_size,
+                                      const uint8_t *pattern,
+                                      size_t pattern_size,
+                                      size_t *offset)
+{
+    if (capture_size < pattern_size) {
+        return false;
+    }
+    for (size_t index = 0; index <= capture_size - pattern_size; ++index) {
+        if (memcmp(capture + index, pattern, pattern_size) == 0) {
+            *offset = index;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Runs on the audio task. The loopback needs raw I2S channels with
+ * dout == din, so the resident BSP codec stack is torn down here and
+ * re-created before returning. Unlike the factory, the demo keeps the
+ * codec rail powered the whole time (the svc_audio resident model) - the
+ * factory's final rail-off step is replaced by the stack restore. */
+static esp_err_t i2s_loopback_run(svc_audio_i2s_loopback_stats_t *stats)
+{
+    i2s_chan_handle_t tx = NULL;
+    i2s_chan_handle_t rx = NULL;
+    bool tx_enabled = false;
+    bool rx_enabled = false;
+
+    esp_err_t result = bsp_audio_deinit();
+    /* The borrowed handles died with the deinit, whatever the result. */
+    s_speaker_dev = NULL;
+    s_mic_dev = NULL;
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "i2s_loopback: audio deinit failed: %s",
+                 esp_err_to_name(result));
+        goto restore;
+    }
+    result = bsp_peripheral_power_set(BSP_PERIPHERAL_AUDIO, true);
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "i2s_loopback: codec rail enable failed: %s",
+                 esp_err_to_name(result));
+        goto restore;
+    }
+
+    i2s_chan_config_t channel_config =
+        I2S_CHANNEL_DEFAULT_CONFIG(CONFIG_BSP_I2S_NUM, I2S_ROLE_MASTER);
+    channel_config.auto_clear = true;
+    result = i2s_new_channel(&channel_config, &tx, &rx);
+    if (result != ESP_OK) {
+        goto restore;
+    }
+
+    const i2s_std_config_t loopback_config = {
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(REC_SAMPLE_RATE),
+        .slot_cfg = I2S_STD_PHILIP_SLOT_DEFAULT_CONFIG(
+            I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+        .gpio_cfg = {
+            .mclk = GPIO_NUM_NC,
+            .bclk = GPIO_NUM_NC,
+            .ws = GPIO_NUM_NC,
+            .dout = BSP_I2S_DOUT,
+            .din = BSP_I2S_DOUT,
+            .invert_flags = {
+                .mclk_inv = false,
+                .bclk_inv = false,
+                .ws_inv = false,
+            },
+        },
+    };
+    result = i2s_channel_init_std_mode(tx, &loopback_config);
+    if (result == ESP_OK) {
+        result = i2s_channel_init_std_mode(rx, &loopback_config);
+    }
+    if (result == ESP_OK) {
+        result = i2s_channel_enable(tx);
+        tx_enabled = (result == ESP_OK);
+    }
+    if (result == ESP_OK) {
+        result = i2s_channel_enable(rx);
+        rx_enabled = (result == ESP_OK);
+    }
+
+    static uint8_t pattern[I2S_LOOPBACK_PATTERN_BYTES];
+    static uint8_t capture[I2S_LOOPBACK_CAPTURE_BYTES];
+    if (result == ESP_OK) {
+        for (size_t index = 0; index < sizeof(pattern); ++index) {
+            pattern[index] = (uint8_t)(index + 1);
+        }
+        memset(capture, 0, sizeof(capture));
+
+        size_t bytes_written = 0;
+        size_t bytes_read = 0;
+        result = i2s_channel_write(tx, pattern, sizeof(pattern),
+                                   &bytes_written, 1000);
+        if (result == ESP_OK) {
+            result = i2s_channel_read(rx, capture, sizeof(capture),
+                                      &bytes_read, 1000);
+        }
+        stats->bytes_written = (uint32_t)bytes_written;
+        stats->bytes_read = (uint32_t)bytes_read;
+        if (result == ESP_OK) {
+            size_t pattern_offset = 0;
+            stats->pattern_found =
+                i2s_loopback_find_pattern(capture, bytes_read, pattern,
+                                          sizeof(pattern), &pattern_offset);
+            stats->pattern_offset = (uint32_t)pattern_offset;
+            for (size_t index = 0; index < bytes_read; ++index) {
+                stats->nonzero_bytes += capture[index] != 0;
+            }
+            if (!stats->pattern_found || bytes_written != sizeof(pattern)) {
+                result = ESP_FAIL;
+            }
+        }
+    }
+
+    if (rx_enabled) {
+        i2s_channel_disable(rx);
+    }
+    if (tx_enabled) {
+        i2s_channel_disable(tx);
+    }
+    if (rx != NULL) {
+        i2s_del_channel(rx);
+    }
+    if (tx != NULL) {
+        i2s_del_channel(tx);
+    }
+
+restore:
+    /* Re-create the resident stack exactly like svc_audio_start(). On a
+     * restore failure the borrowed handles stay NULL and every later
+     * record/play/tone call degrades cleanly to ESP_ERR_INVALID_STATE. */
+    {
+        const esp_err_t bringup = audio_stack_bringup();
+        if (bringup != ESP_OK) {
+            ESP_LOGE(TAG, "i2s_loopback: audio stack restore failed: %s - "
+                     "audio degraded until reboot",
+                     esp_err_to_name(bringup));
+            if (result == ESP_OK) {
+                result = bringup;
+            }
+        }
+    }
+    return result;
+}
+
+static void i2s_loopback_command(audio_cmd_t *cmd)
+{
+    svc_audio_i2s_loopback_stats_t *stats =
+        (svc_audio_i2s_loopback_stats_t *)cmd->diag_out;
+    esp_err_t result = ESP_ERR_INVALID_STATE;
+    if (audio_mode_load() == AUDIO_MODE_IDLE && stats != NULL) {
+        if (audio_cmd_cancelled(cmd)) {
+            audio_ack_complete(cmd, ESP_ERR_TIMEOUT);
+            return;
+        }
+        audio_mode_store(AUDIO_MODE_DIAG);
+        result = i2s_loopback_run(stats);
+        audio_mode_store(AUDIO_MODE_IDLE);
+    }
+    audio_ack_complete(cmd, result);
+}
+
+/* ------------------------------------------------------------------ */
 /* Task and command plumbing                                           */
 /* ------------------------------------------------------------------ */
 
@@ -1095,6 +1772,18 @@ static void audio_task(void *arg)
         case CMD_PLAY_START:
             play_start_command(&cmd);
             continue;
+        case CMD_TONE_START:
+            tone_start_command(&cmd);
+            continue;
+        case CMD_CAPTURE_ANALYZE:
+            capture_analyze_command(&cmd);
+            continue;
+        case CMD_CODEC_LOOPBACK:
+            codec_loopback_command(&cmd);
+            continue;
+        case CMD_I2S_LOOPBACK:
+            i2s_loopback_command(&cmd);
+            continue;
         default:
             break; /* idle-time stop/gain/volume requests: invalid state */
         }
@@ -1102,7 +1791,7 @@ static void audio_task(void *arg)
     }
 }
 
-static esp_err_t send_command(audio_cmd_t *cmd)
+static esp_err_t send_command_ex(audio_cmd_t *cmd, uint32_t ack_timeout_ms)
 {
     if (!s_started) {
         return ESP_ERR_INVALID_STATE;
@@ -1124,7 +1813,7 @@ static esp_err_t send_command(audio_cmd_t *cmd)
         return ESP_ERR_TIMEOUT;
     }
     const BaseType_t completed =
-        xSemaphoreTake(ack->done, pdMS_TO_TICKS(AUDIO_ACK_TIMEOUT_MS));
+        xSemaphoreTake(ack->done, pdMS_TO_TICKS(ack_timeout_ms));
     if (completed != pdTRUE) {
         /* Prevent a command that is still waiting in the queue from
          * becoming a late, invisible record/play operation after the UI
@@ -1136,6 +1825,10 @@ static esp_err_t send_command(audio_cmd_t *cmd)
         ESP_ERR_TIMEOUT;
     audio_ack_release(ack);
     return result;
+}
+static esp_err_t send_command(audio_cmd_t *cmd)
+{
+    return send_command_ex(cmd, AUDIO_ACK_TIMEOUT_MS);
 }
 
 /* Fire-and-forget variant for teardown paths that must not block on the
@@ -1195,22 +1888,11 @@ esp_err_t svc_audio_start(void)
     }
 
     /* Idempotent; returns the real I2S/DMA error and cleans up after
-     * itself on failure. The codec constructors below reuse its channels. */
-    esp_err_t error = bsp_audio_init(NULL);
+     * itself on failure. The codec constructors reuse its channels. */
+    esp_err_t error = audio_stack_bringup();
     if (error != ESP_OK) {
-        ESP_LOGE(TAG, "bsp_audio_init: %s", esp_err_to_name(error));
+        ESP_LOGE(TAG, "audio stack bring-up: %s", esp_err_to_name(error));
         return error;
-    }
-
-    s_speaker_dev = bsp_audio_codec_speaker_init();
-    s_mic_dev = bsp_audio_codec_microphone_init();
-    if (s_speaker_dev == NULL || s_mic_dev == NULL) {
-        ESP_LOGE(TAG, "codec init failed: speaker=%p mic=%p",
-                 s_speaker_dev, s_mic_dev);
-        bsp_audio_deinit(); /* full single rollback, clears BSP statics */
-        s_speaker_dev = NULL;
-        s_mic_dev = NULL;
-        return ESP_FAIL;
     }
 
     s_queue = xQueueCreate(AUDIO_QUEUE_DEPTH, sizeof(audio_cmd_t));
@@ -1275,7 +1957,8 @@ esp_err_t svc_audio_record_stop_async(void)
 bool svc_audio_is_recording(void)
 {
     const audio_mode_t mode = audio_mode_load();
-    return mode == AUDIO_MODE_RECORDING || mode == AUDIO_MODE_SAVING;
+    return mode == AUDIO_MODE_RECORDING || mode == AUDIO_MODE_SAVING ||
+           mode == AUDIO_MODE_ANALYZE || mode == AUDIO_MODE_DIAG;
 }
 
 esp_err_t svc_audio_record_set_gain(int gain_db)
@@ -1325,7 +2008,8 @@ esp_err_t svc_audio_play_stop_async(void)
 
 bool svc_audio_is_playing(void)
 {
-    return audio_mode_load() == AUDIO_MODE_PLAYING;
+    const audio_mode_t mode = audio_mode_load();
+    return mode == AUDIO_MODE_PLAYING || mode == AUDIO_MODE_TONE;
 }
 
 esp_err_t svc_audio_set_volume(int volume)
@@ -1346,4 +2030,114 @@ esp_err_t svc_audio_play_pause(bool pause)
     cmd.type = CMD_PLAY_PAUSE;
     cmd.pause_on = pause;
     return send_command(&cmd);
+}
+
+/* ------------------------------------------------------------------ */
+/* Diagnostics public API (declared in services/svc_audio.h)           */
+/* ------------------------------------------------------------------ */
+
+esp_err_t svc_audio_tone_start(uint32_t freq_hz, int volume_pct,
+                               uint32_t duration_ms)
+{
+    if (freq_hz < TONE_MIN_FREQ_HZ || freq_hz > TONE_MAX_FREQ_HZ ||
+            (duration_ms != 0 &&
+             (duration_ms < TONE_MIN_MS || duration_ms > TONE_MAX_MS))) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    audio_cmd_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.type = CMD_TONE_START;
+    cmd.freq_hz = freq_hz;
+    cmd.volume = clamp_int(volume_pct, 0, 100);
+    cmd.duration_ms = duration_ms;
+    return send_command(&cmd);
+}
+
+esp_err_t svc_audio_tone_stop(void)
+{
+    audio_cmd_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.type = CMD_TONE_STOP;
+    return send_command(&cmd);
+}
+
+/* Common tail for the heap-stats diagnostics: copy out + free on every
+ * acked path (the buffer is calloc-zeroed, so even a command that never
+ * ran yields deterministic stats for the caller's evidence string); on
+ * an ack timeout the audio task may still be writing the buffer, so
+ * abandoning it is the only memory-safe option (intentional leak,
+ * logged). */
+static esp_err_t diag_collect(void *heap_stats, void *out_stats,
+                              size_t stats_size, esp_err_t result,
+                              const char *what)
+{
+    if (result == ESP_ERR_TIMEOUT) {
+        ESP_LOGE(TAG, "%s ack timeout; stats buffer abandoned", what);
+        return result;
+    }
+    memcpy(out_stats, heap_stats, stats_size);
+    free(heap_stats);
+    return result;
+}
+
+esp_err_t svc_audio_capture_analyze(uint32_t duration_ms,
+                                    svc_audio_route_t route, int gain_db,
+                                    svc_audio_capture_stats_t *out_stats)
+{
+    if (out_stats == NULL || route > SVC_AUDIO_ROUTE_STEREO ||
+            duration_ms < CAPTURE_MIN_MS ||
+            duration_ms > CAPTURE_MAX_MS) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    svc_audio_capture_stats_t *stats = calloc(1, sizeof(*stats));
+    if (stats == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    audio_cmd_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.type = CMD_CAPTURE_ANALYZE;
+    cmd.route = route;
+    cmd.gain_db = sanitize_gain_db(gain_db);
+    cmd.duration_ms = duration_ms;
+    cmd.diag_out = stats;
+    const esp_err_t result =
+        send_command_ex(&cmd, duration_ms + DIAG_ACK_SLACK_MS);
+    return diag_collect(stats, out_stats, sizeof(*stats), result,
+                        "capture_analyze");
+}
+
+esp_err_t svc_audio_codec_loopback(svc_audio_loopback_stats_t *out_stats)
+{
+    if (out_stats == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    svc_audio_loopback_stats_t *stats = calloc(1, sizeof(*stats));
+    if (stats == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    audio_cmd_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.type = CMD_CODEC_LOOPBACK;
+    cmd.diag_out = stats;
+    const esp_err_t result = send_command_ex(&cmd, 8000);
+    return diag_collect(stats, out_stats, sizeof(*stats), result,
+                        "codec_loopback");
+}
+
+esp_err_t svc_audio_i2s_loopback(svc_audio_i2s_loopback_stats_t *out_stats)
+{
+    if (out_stats == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    svc_audio_i2s_loopback_stats_t *stats = calloc(1, sizeof(*stats));
+    if (stats == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    audio_cmd_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.type = CMD_I2S_LOOPBACK;
+    cmd.diag_out = stats;
+    const esp_err_t result = send_command_ex(&cmd, 15000);
+    return diag_collect(stats, out_stats, sizeof(*stats), result,
+                        "i2s_loopback");
 }

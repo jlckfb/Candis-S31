@@ -153,32 +153,32 @@ static lv_obj_t *kb_button_create(lv_obj_t *parent, const char *text,
     lv_obj_set_style_radius(btn, 14, 0);
     lv_obj_set_style_border_width(btn, 0, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(bg_color == UI_COLOR_ACCENT
+    lv_obj_set_style_bg_color(btn, lv_color_hex(bg_color == UI_COL_ACCENT
                                                     ? 0x3A7FD0 : 0x2C2C34),
                               LV_STATE_PRESSED);
     lv_obj_t *label = lv_label_create(btn);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_font(label, ui_font_body(), 0);
-    lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(label, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_center(label);
     return btn;
 }
 
 static void kb_style_textarea(lv_obj_t *ta)
 {
-    lv_obj_set_style_bg_color(ta, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(ta, lv_color_hex(UI_COL_SURFACE), 0);
     lv_obj_set_style_bg_opa(ta, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(ta, 12, 0);
     lv_obj_set_style_border_color(ta, lv_color_hex(0x30303A), 0);
     lv_obj_set_style_border_width(ta, 1, 0);
-    lv_obj_set_style_border_color(ta, lv_color_hex(UI_COLOR_ACCENT),
+    lv_obj_set_style_border_color(ta, lv_color_hex(UI_COL_ACCENT),
                                   LV_STATE_FOCUSED);
     lv_obj_set_style_border_width(ta, 2, LV_STATE_FOCUSED);
     lv_obj_set_style_pad_left(ta, 12, 0);
     lv_obj_set_style_pad_right(ta, 12, 0);
-    lv_obj_set_style_text_color(ta, lv_color_hex(UI_COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(ta, lv_color_hex(UI_COL_TEXT), 0);
     lv_obj_set_style_text_font(ta, ui_font_body(), 0);
-    lv_obj_set_style_text_color(ta, lv_color_hex(UI_COLOR_TEXT_DIM),
+    lv_obj_set_style_text_color(ta, lv_color_hex(UI_COL_TEXT_DIM),
                                 LV_PART_TEXTAREA_PLACEHOLDER);
 }
 
@@ -192,10 +192,10 @@ static void kb_style_keyboard(lv_obj_t *kb)
     lv_obj_set_style_pad_row(kb, 5, 0);
     lv_obj_set_style_pad_column(kb, 5, 0);
 
-    lv_obj_set_style_bg_color(kb, lv_color_hex(UI_COLOR_SURFACE),
+    lv_obj_set_style_bg_color(kb, lv_color_hex(UI_COL_SURFACE),
                               LV_PART_ITEMS);
     lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, LV_PART_ITEMS);
-    lv_obj_set_style_text_color(kb, lv_color_hex(UI_COLOR_TEXT),
+    lv_obj_set_style_text_color(kb, lv_color_hex(UI_COL_TEXT),
                                 LV_PART_ITEMS);
     lv_obj_set_style_radius(kb, 10, LV_PART_ITEMS);
     lv_obj_set_style_border_width(kb, 0, LV_PART_ITEMS);
@@ -244,13 +244,13 @@ void ui_keyboard_open(const char *title, const char *initial,
     lv_obj_t *title_lbl = lv_label_create(modal);
     lv_label_set_text(title_lbl, (title && title[0]) ? title : "Input");
     lv_obj_set_style_text_font(title_lbl, ui_font_title(), 0);
-    lv_obj_set_style_text_color(title_lbl, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_text_color(title_lbl, lv_color_hex(UI_COL_ACCENT), 0);
     lv_obj_set_pos(title_lbl, 18, 12);
 
     lv_obj_t *close_btn = lv_button_create(modal);
     lv_obj_set_size(close_btn, UI_TOUCH_MIN, UI_TOUCH_MIN);
     lv_obj_align(close_btn, LV_ALIGN_TOP_RIGHT, -8, 4);
-    lv_obj_set_style_bg_color(close_btn, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(close_btn, lv_color_hex(UI_COL_SURFACE), 0);
     lv_obj_set_style_bg_opa(close_btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(close_btn, 10, 0);
     lv_obj_set_style_border_width(close_btn, 0, 0);
@@ -258,7 +258,7 @@ void ui_keyboard_open(const char *title, const char *initial,
     lv_obj_add_event_cb(close_btn, kb_cancel_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *close_lbl = lv_label_create(close_btn);
     lv_label_set_text(close_lbl, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_color(close_lbl, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(close_lbl, lv_color_hex(UI_COL_TEXT_DIM), 0);
     lv_obj_center(close_lbl);
 
     /* Text area; the peek button steals width in password mode. */
@@ -280,7 +280,7 @@ void ui_keyboard_open(const char *title, const char *initial,
         lv_obj_t *peek = lv_button_create(modal);
         lv_obj_set_size(peek, UI_TOUCH_MIN, UI_TOUCH_MIN);
         lv_obj_set_pos(peek, 460 - 16 - UI_TOUCH_MIN, 64);
-        lv_obj_set_style_bg_color(peek, lv_color_hex(UI_COLOR_SURFACE), 0);
+        lv_obj_set_style_bg_color(peek, lv_color_hex(UI_COL_SURFACE), 0);
         lv_obj_set_style_bg_opa(peek, LV_OPA_COVER, 0);
         lv_obj_set_style_radius(peek, 12, 0);
         lv_obj_set_style_border_width(peek, 0, 0);
@@ -289,7 +289,7 @@ void ui_keyboard_open(const char *title, const char *initial,
         ctx->peek_icon = lv_label_create(peek);
         lv_label_set_text(ctx->peek_icon, LV_SYMBOL_EYE_OPEN);
         lv_obj_set_style_text_color(ctx->peek_icon,
-                                    lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+                                    lv_color_hex(UI_COL_TEXT_DIM), 0);
         lv_obj_center(ctx->peek_icon);
     }
 
@@ -297,7 +297,7 @@ void ui_keyboard_open(const char *title, const char *initial,
     lv_obj_set_pos(cancel_btn, 16, 128);
     lv_obj_add_event_cb(cancel_btn, kb_cancel_cb, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *ok_btn = kb_button_create(modal, "OK", UI_COLOR_ACCENT);
+    lv_obj_t *ok_btn = kb_button_create(modal, "OK", UI_COL_ACCENT);
     lv_obj_align(ok_btn, LV_ALIGN_TOP_RIGHT, -16, 128);
     lv_obj_add_event_cb(ok_btn, kb_confirm_cb, LV_EVENT_CLICKED, NULL);
 

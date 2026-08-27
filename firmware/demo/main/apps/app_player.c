@@ -255,7 +255,7 @@ static void list_placeholder(const char *text)
 {
     lv_obj_t *label = lv_label_create(s.list);
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(label, lv_color_hex(UI_COL_TEXT_DIM), 0);
     lv_obj_center(label);
 }
 
@@ -266,7 +266,7 @@ static void row_create(int index)
     lv_obj_t *row = lv_button_create(s.list);
     lv_obj_set_size(row, ROW_WIDTH, ROW_HEIGHT);
     lv_obj_set_pos(row, 0, index * ROW_PITCH);
-    lv_obj_set_style_bg_color(row, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(row, lv_color_hex(UI_COL_SURFACE), 0);
     lv_obj_set_style_radius(row, 10, 0);
     lv_obj_set_style_border_width(row, 0, 0);
 
@@ -281,7 +281,7 @@ static void row_create(int index)
     if (s.durations[index] == WAV_UNSUPPORTED) {
         /* Unplayable on this hardware: dim the whole row and show why
          * instead of failing only after the user taps it. */
-        lv_obj_set_style_text_color(name, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+        lv_obj_set_style_text_color(name, lv_color_hex(UI_COL_TEXT_DIM), 0);
         lv_label_set_text(meta, "unsupported");
     } else if (s.durations[index] >= 0) {
         char meta_text[8];
@@ -291,7 +291,7 @@ static void row_create(int index)
         lv_label_set_text(meta, "--:--");
     }
     lv_obj_align(meta, LV_ALIGN_RIGHT_MID, -12, 0);
-    lv_obj_set_style_text_color(meta, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(meta, lv_color_hex(UI_COL_TEXT_DIM), 0);
 
     lv_obj_add_event_cb(row, row_click_cb, LV_EVENT_CLICKED,
                         (void *)(intptr_t)index);
@@ -843,7 +843,7 @@ lv_obj_t *app_player_create(void)
     lv_obj_set_size(s.play_btn, 96, UI_TOUCH_MIN);
     lv_obj_set_pos(s.play_btn, 10, 76);
     lv_obj_set_style_radius(s.play_btn, 12, 0);
-    lv_obj_set_style_bg_color(s.play_btn, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_bg_color(s.play_btn, lv_color_hex(UI_COL_ACCENT), 0);
     lv_obj_set_style_border_width(s.play_btn, 0, 0);
     lv_obj_add_event_cb(s.play_btn, play_button_cb, LV_EVENT_CLICKED, NULL);
     s.play_icon = lv_label_create(s.play_btn);
@@ -854,7 +854,7 @@ lv_obj_t *app_player_create(void)
     lv_obj_set_size(s.stop_btn, 96, UI_TOUCH_MIN);
     lv_obj_set_pos(s.stop_btn, 118, 76);
     lv_obj_set_style_radius(s.stop_btn, 12, 0);
-    lv_obj_set_style_bg_color(s.stop_btn, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_color(s.stop_btn, lv_color_hex(UI_COL_SURFACE), 0);
     lv_obj_set_style_border_width(s.stop_btn, 0, 0);
     lv_obj_add_event_cb(s.stop_btn, stop_button_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *stop_icon = lv_label_create(s.stop_btn);

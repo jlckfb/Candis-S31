@@ -2,11 +2,12 @@
  * Candis-S31 watch demo - RGB LED app.
  *
  * WS2812B on GPIO4, fed through the TG28 DC1SW switch which the BSP opens
- * inside bsp_led_indicator_create(). Colors go through led_indicator_set_rgb
- * (factory_input.c pattern); the six effects map 1:1 onto the BSP blink
- * lists (bsp_led_effect_t), executed by the led_indicator engine. Leaving
- * the page always deletes the indicator so no blink context survives into
- * the shutdown path.
+ * inside bsp_led_indicator_create(). Ownership goes through tests/led_hw
+ * (spec C.5): this app acquires the slot on entry and releases it when the
+ * page is deleted, so the sys.led_rgb test can never drive the strip at
+ * the same time. Colors are SET_IRGB values (factory_input.c pattern); the
+ * six effects map 1:1 onto the BSP blink lists (bsp_led_effect_t),
+ * executed by the led_indicator engine.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,6 +17,7 @@
 #include "bsp/esp-bsp.h"
 
 #include "demo_apps.h"
+#include "tests/led_hw.h"
 #include "ui/ui_manager.h"
 
 #define LED_COLOR_COUNT  7
@@ -52,7 +54,6 @@ static const led_effect_t s_effects[LED_EFFECT_COUNT] = {
 
 typedef struct {
     bool active;
-    led_indicator_handle_t led;
     int color;  /* selected index into s_colors */
     int effect; /* selected index into s_effects */
     lv_obj_t *color_btn[LED_COLOR_COUNT];
@@ -63,20 +64,20 @@ static led_state_t s;
 
 static void led_select_style(lv_obj_t *btn, bool selected)
 {
-    lv_obj_set_style_border_color(btn, lv_color_hex(selected ? UI_COLOR_ACCENT
-                                                             : UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_border_color(btn, lv_color_hex(selected ? UI_COL_ACCENT
+                                                             : UI_COL_SURFACE), 0);
     lv_obj_set_style_border_width(btn, selected ? 3 : 1, 0);
 }
 
 static void led_apply_effect(int index)
 {
-    if (!s.active || s.led == NULL || index < 0 || index >= LED_EFFECT_COUNT) {
+    if (!s.active || !led_hw_owned() || index < 0 || index >= LED_EFFECT_COUNT) {
         return;
     }
     const bsp_led_effect_t next = s_effects[index].effect;
     if (next != s_effects[s.effect].effect) {
-        led_indicator_stop(s.led, s_effects[s.effect].effect);
-        led_indicator_start(s.led, next);
+        led_hw_stop_effect(s_effects[s.effect].effect);
+        led_hw_start_effect(next);
     }
     led_select_style(s.effect_btn[s.effect], false);
     s.effect = index;
@@ -85,10 +86,10 @@ static void led_apply_effect(int index)
 
 static void led_apply_color(int index)
 {
-    if (!s.active || s.led == NULL || index < 0 || index >= LED_COLOR_COUNT) {
+    if (!s.active || !led_hw_owned() || index < 0 || index >= LED_COLOR_COUNT) {
         return;
     }
-    led_indicator_set_rgb(s.led, s_colors[index].rgb);
+    led_hw_set_rgb(s_colors[index].rgb);
     led_select_style(s.color_btn[s.color], false);
     s.color = index;
     led_select_style(s.color_btn[s.color], true);
@@ -112,12 +113,8 @@ static void led_root_delete_cb(lv_event_t *event)
 {
     (void)event;
     s.active = false;
-    if (s.led != NULL) {
-        led_indicator_stop(s.led, s_effects[s.effect].effect);
-        led_indicator_set_on_off(s.led, false);
-        led_indicator_delete(s.led);
-        s.led = NULL;
-    }
+    led_hw_stop_effect(s_effects[s.effect].effect);
+    led_hw_release();
 }
 
 lv_obj_t *app_led_create(void)
@@ -129,21 +126,19 @@ lv_obj_t *app_led_create(void)
     lv_obj_add_event_cb(root, led_root_delete_cb, LV_EVENT_DELETE, NULL);
     lv_obj_set_style_text_font(content, ui_font_body(), 0);
 
-    led_indicator_handle_t handles[BSP_LED_NUM] = {0};
-    int count = 0;
-    const esp_err_t err = bsp_led_indicator_create(handles, &count, BSP_LED_NUM);
-    if (err != ESP_OK || count != BSP_LED_NUM) {
+    const esp_err_t err = led_hw_acquire();
+    if (err != ESP_OK) {
         lv_obj_t *label = lv_label_create(content);
-        lv_label_set_text(label, "LED init failed");
-        lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_ERR), 0);
+        lv_label_set_text(label, err == ESP_ERR_INVALID_STATE ?
+                          "LED busy (test running)" : "LED init failed");
+        lv_obj_set_style_text_color(label, lv_color_hex(UI_COL_FAIL), 0);
         lv_obj_center(label);
         return root;
     }
-    s.led = handles[BSP_LED_1];
 
     lv_obj_t *title_color = lv_label_create(content);
     lv_label_set_text(title_color, "Color");
-    lv_obj_set_style_text_color(title_color, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(title_color, lv_color_hex(UI_COL_TEXT_DIM), 0);
     lv_obj_align(title_color, LV_ALIGN_TOP_LEFT, 12, 6);
 
     /* Color presets: filled round buttons tinted with the LED color. */
@@ -165,7 +160,7 @@ lv_obj_t *app_led_create(void)
 
     lv_obj_t *title_effect = lv_label_create(content);
     lv_label_set_text(title_effect, "Effect");
-    lv_obj_set_style_text_color(title_effect, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(title_effect, lv_color_hex(UI_COL_TEXT_DIM), 0);
     lv_obj_align(title_effect, LV_ALIGN_TOP_LEFT, 12, 106);
 
     /* Effects: three per row, mapped onto the BSP blink lists. */
@@ -173,7 +168,7 @@ lv_obj_t *app_led_create(void)
         lv_obj_t *btn = lv_button_create(content);
         lv_obj_set_size(btn, 132, 60);
         lv_obj_set_pos(btn, 4 + (i % 3) * 144, 134 + (i / 3) * 72);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COLOR_SURFACE), 0);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COL_SURFACE), 0);
         lv_obj_add_event_cb(btn, effect_click_cb, LV_EVENT_CLICKED,
                             (void *)(intptr_t)i);
         lv_obj_t *label = lv_label_create(btn);
@@ -186,12 +181,12 @@ lv_obj_t *app_led_create(void)
 
     lv_obj_t *hint = lv_label_create(content);
     lv_label_set_text(hint, "WS2812B, powered via DC1SW switch");
-    lv_obj_set_style_text_color(hint, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(UI_COL_TEXT_DIM), 0);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, 12, -10);
 
     /* Start with a visible steady white matching the default selection. */
-    led_indicator_set_rgb(s.led, s_colors[s.color].rgb);
-    led_indicator_start(s.led, BSP_LED_ON);
+    led_hw_set_rgb(s_colors[s.color].rgb);
+    led_hw_start_effect(BSP_LED_ON);
 
     return root;
 }

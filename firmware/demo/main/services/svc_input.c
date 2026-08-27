@@ -18,6 +18,7 @@
 #include "bsp/esp-bsp.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "rx8130ce.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -45,6 +46,14 @@ static svc_input_cb_t s_callback;
 static void *s_user;
 static TaskHandle_t s_task;
 static bool s_started;
+/* Extra single-slot observer for the test framework (spec F8); events are
+ * forwarded after the primary callback. */
+static svc_input_cb_t s_listener;
+static void *s_listener_user;
+/* While true, key events go only to the listener (buttons test: BOOT/PWR
+ * must not navigate away from the run view). Written from any task,
+ * read on the service task; a stale value is harmless for one tick. */
+static volatile bool s_primary_muted;
 
 /* Shared IRQ line ISR: the BSP masks the line on entry; only wake the
  * task, servicing happens in task context. */
@@ -60,8 +69,11 @@ static void shared_irq_isr(void *arg)
 
 static void input_report(svc_input_event_t event)
 {
-    if (s_callback != NULL) {
+    if (!s_primary_muted && s_callback != NULL) {
         s_callback(event, s_user);
+    }
+    if (s_listener != NULL) {
+        s_listener(event, s_listener_user);
     }
 }
 
@@ -123,6 +135,12 @@ static void pwr_key_service(void)
     if ((irq.pmic[PWR_IRQ_BANK_INDEX] & PWR_SHORT_PRESS_BIT) != 0) {
         input_report(SVC_INPUT_PWR_SHORT);
     }
+    /* RX8130CE alarm flag (AF): the service drained it while releasing
+     * the line; forward so the rtc_alarm test can observe it without
+     * touching the IRQ registration. */
+    if ((irq.rtc & RX8130CE_FLAG_AF) != 0) {
+        input_report(SVC_INPUT_RTC_ALARM);
+    }
 }
 
 static void input_task(void *arg)
@@ -135,6 +153,26 @@ static void input_task(void *arg)
         }
         boot_key_poll();
     }
+}
+
+esp_err_t svc_input_add_listener(svc_input_cb_t cb, void *user)
+{
+    if (cb == NULL) {
+        s_listener = NULL;
+        s_listener_user = NULL;
+        return ESP_OK;
+    }
+    if (s_listener != NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_listener_user = user;
+    s_listener = cb;
+    return ESP_OK;
+}
+
+void svc_input_mute_primary(bool muted)
+{
+    s_primary_muted = muted;
 }
 
 esp_err_t svc_input_start(svc_input_cb_t cb, void *user)
