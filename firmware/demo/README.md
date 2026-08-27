@@ -1,17 +1,32 @@
 # Candis-S31 Watch Demo (firmware/demo)
 
 手表形态综合演示固件：覆盖 EVT1 板载可用外设，主打 2.0 英寸 460×460 AMOLED
-显示体验（48 MHz QSPI + TE 门控的 LVGL 9.5 整帧重绘管线，全屏刷新
-≤30 fps，流畅性来自把无效区域控制在预算内，而非局部双缓冲）。
+显示体验。显示管线：LVGL 9.5 PARTIAL 渲染 + 双 460×48 内部 DMA 缓冲 +
+GPIO16 TE 门控（QSPI 48 MHz）；局部刷新 ~60 fps、全屏 ~30 fps（17.6 ms
+整帧线传时间为物理上限）。速度档：Flash QIO 80 MHz + PSRAM Octal DDR
+250 MHz（S31 官方 Kconfig 档位，新芯 35+ 次重启与全容量验证后启用，
+证据见 `firmware/factory/sdkconfig.qio80_psram250.defaults`）。
 
 ## 功能
 
 - 表盘（导航栈根）：RTC 时间 HH:MM（分钟级刷新，不做秒针）、日期+星期、
-  电量细弧（充电时绿色）、板名；上滑或点击进入单列全宽卡片应用菜单。
-  RTC 不可用时时间与状态栏显示 "--:--"，电量与界面不受影响
-- 测试中心：汇总屏幕、音频、WiFi、BLE、TF、USB、电源和相机 8 个测试域；
-  只显示服务实时状态，不把未执行项目伪判为通过
-- 屏幕测试：RGB/黑白/灰阶、触摸坐标连续性、约 400×96 px 局部动效
+  电量细弧（充电时绿色）、板名；上滑或点击进入应用菜单。RTC 不可用时
+  时间与状态栏显示 "--:--"，电量与界面不受影响。表盘本身即常驻活证据：
+  时间/电量环均为 last-value 守卫写入，息屏后自动停摆，零成本健康指示器。
+- 菜单：三列卡片网格（132×112）+ 分组节头（TESTS/HARDWARE/CONNECTIVITY/
+  SYSTEM/GAMES），注册数 16 个应用，按压反馈仅颜色交换
+- 测试中心（一级核心应用）：42 项主动测试分布于 9 个域（显示触控/相机/
+  音频/存储/网络/系统/存储介质/加速硬件/电源），其中 28 项非交互 AUTO
+  项可一键 "RUN ALL" 顺序执行（约 3-4 分钟）；结果入库为会话级 RAM 结果库，
+  PASS/FAIL/WARN/SKIP/NOT RUN 五档语义与 factory 固件对齐；聚合优先级
+  FAIL > WARN > NOT_RUN > SKIP > PASS；交互项（四色块/触摸四角/画线/取景/
+  听音）有专用运行视图（进度条/阶段文本/操作员确认/交互画布），相机/音频/
+  USB 等资源与功能应用互斥仲裁（忙则 SKIP）。前置条件不满足（无卡/息屏/
+  音频占用）自动 SKIP 并留证据串，不伪判为通过
+- 屏幕测试（显示触控）：纯色/黑白/灰阶全屏、触摸坐标全屏、局部动效 +
+  TE/FPS 实时统计行（TE 经 esp_lvgl_port observer，不进 ISR）
+- 相机：真实取景（OV5640 800×600 RGB565 大端，零拷贝贴帧）+ 拍照存 TF，
+  另有 5 帧捕获 CRC 自检测试项（camera.frames）
 - 录音机：仅左 MIC / 仅右 MIC / 双 MIC / 双 MIC+基础降噪，增益 0–36 dB，
   电平表，录到 TF WAV（最长 60 s），录音列表回放
 - 播放器：后台扫描 TF 卡 WAV，播放、暂停、音量和进度控制
@@ -20,11 +35,11 @@
 - 蓝牙（NimBLE）：扫描 → 连接 → GATT 服务列表
 - 文件管理：TF 目录浏览、详情、容量和热插拔提示；长按并二次确认后删除
 - USB OTG：角色实时显示；U 盘自动识别、挂载和浏览；Device 模式实现中
-- 游戏：2048、贪吃蛇（触摸）
+- 游戏：2048、贪吃蛇、打砖块（触摸跟手 + 局部刷新流畅度的活体演示）
 - 彩灯：WS2812B 颜色、呼吸和闪烁
 - 设置：亮度、音量、麦克风增益、息屏超时、RTC 时间和关于
 - 电源：电量详情、立即息屏、深度睡眠（RTC 闹钟唤醒）和关机
-- 相机：明确显示“待转接板”，FPC 镜像问题解决前不启用预览或拍照
+- 相机：OV5640 实时取景 + 拍照落卡（取代旧"待转接板"占位，新芯已修复）
 - 系统信息：芯片、Flash、PSRAM、堆水位、任务和运行时长
 
 ## 运行取舍（音频）
@@ -54,6 +69,20 @@ UI 显示的是**已验证的目标档位**（REG62 上限），实际电流可�
 不同电芯 SKU/化学体系需要新模型而非逐台标定——模型下载失败时百分比显示
 “电量模型未装入”，电压仅作诊断量。
 
+## 测试报告导出（TF 卡 JSONL）
+
+测试中心 "Export" 按钮把当前会话全部结果写入 `/sdcard/demo_report_
+YYYYMMDD_HHMMSS.jsonl`（RTC 无效时退化为 uptime 命名）。每条测试一行：
+
+```
+FACTORY_RESULT {"id":"audio.speaker_tone","status":"PASS","evidence":"880Hz 2s audible","duration_ms":2410}
+```
+
+末尾一行 `FACTORY_SUMMARY {"total":42,"pass":..,"fail":..,"warn":..,
+"skip":..,"not_run":..}`。行格式与 factory 固件主机工具（run_evt.py）
+解析器完全兼容，可直接复用。结果不落 NVS（会话级诊断，factory 自身已有
+持久化，职责不重复）；"Reset" 按钮清空结果库。
+
 ## 操作
 
 - 触摸屏：点按、滑动；任意操作重置息屏计时
@@ -78,9 +107,10 @@ BSP 开发时可设 `CANDIS_S31_BSP_PATH=<esp-bsp>/bsp/candis_s31` 覆盖快照�
 
 `demo_main.c` 启动 → `demo_board.c`(板级引导 + NVS 设置)→
 `ui/ui_manager.c`(导航栈 + 状态栏 + 主题)→ `services/`(input/power/
-storage/audio/net 五个后台任务)→ `apps/` + `games/`(纯 UI,经服务队列
-操作硬件)。服务回调经 `ui_async()` 落到 LVGL 线程;应用屏按需创建、
-退出即销毁(仅表盘/菜单常驻)。
+storage/audio/net 五个后台任务)→ `tests/svc_test.c`(测试执行器任务)→
+`apps/` + `games/`(纯 UI,经服务队列操作硬件)。服务回调经 `ui_async()`
+落到 LVGL 线程;应用屏按需创建、退出即销毁(仅表盘/菜单常驻)。
 
-界面以 20/24 px 思源黑体中文子集、至少 56 px 常用触控目标和 64 px
-列表行为基线；完整设计约束见仓库根目录 [`DESIGN.md`](../../DESIGN.md)。
+界面以 20/24 px 思源黑体中文子集、至少 56 px 常用触控目标和 64 px 列表
+行为基线；系统级设计约束见 [`docs/system-overview.md`](../../docs/
+system-overview.md)。
