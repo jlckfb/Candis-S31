@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #ifndef __EMSCRIPTEN__
 #include <unistd.h>
 #else
@@ -19,10 +20,31 @@
 #define SIM_HEIGHT 460
 
 #ifdef __EMSCRIPTEN__
+#include "ui/ui_manager.h"
+
+/* Keep the address bar in sync with the visible page so the user can
+ * copy the exact URL for reproduction (?screen=<current page>). */
+static void sim_web_sync_url(void)
+{
+    static char s_last[32];
+    const char *cur = ui_nav_current_id();
+    if (cur == NULL || strcmp(cur, s_last) == 0) {
+        return;
+    }
+    snprintf(s_last, sizeof(s_last), "%s", cur);
+    EM_ASM({
+        const params = new URLSearchParams(window.location.search);
+        params.set("screen", UTF8ToString($0));
+        history.replaceState(null, "",
+            window.location.pathname + "?" + params.toString());
+    }, cur);
+}
+
 static void sim_web_step(void *arg)
 {
     (void)arg;
     (void)lv_timer_handler();
+    sim_web_sync_url();
 }
 #endif
 

@@ -15,7 +15,7 @@ GPIO16 TE 门控（QSPI 48 MHz）；局部刷新 ~60 fps、全屏 ~30 fps（17.6
   时间/电量环均为 last-value 守卫写入，息屏后自动停摆，零成本健康指示器。
 - 菜单：三列卡片网格（132×112）+ 分组节头（TESTS/HARDWARE/CONNECTIVITY/
   SYSTEM/GAMES），注册数 16 个应用，按压反馈仅颜色交换
-- 测试中心（一级核心应用）：42 项主动测试分布于 9 个域（显示触控/相机/
+- 测试中心（一级核心应用）：41 项主动测试分布于 9 个域（显示触控/相机/
   音频/存储/网络/系统/存储介质/加速硬件/电源），其中 28 项非交互 AUTO
   项可一键 "RUN ALL" 顺序执行（约 3-4 分钟）；结果入库为会话级 RAM 结果库，
   PASS/FAIL/WARN/SKIP/NOT RUN 五档语义与 factory 固件对齐；聚合优先级
@@ -78,7 +78,7 @@ YYYYMMDD_HHMMSS.jsonl`（RTC 无效时退化为 uptime 命名）。每条测试�
 FACTORY_RESULT {"id":"audio.speaker_tone","status":"PASS","evidence":"880Hz 2s audible","duration_ms":2410}
 ```
 
-末尾一行 `FACTORY_SUMMARY {"total":42,"pass":..,"fail":..,"warn":..,
+末尾一行 `FACTORY_SUMMARY {"total":41,"pass":..,"fail":..,"warn":..,
 "skip":..,"not_run":..}`。行格式与 factory 固件主机工具（run_evt.py）
 解析器完全兼容，可直接复用。结果不落 NVS（会话级诊断，factory 自身已有
 持久化，职责不重复）；"Reset" 按钮清空结果库。
@@ -102,6 +102,36 @@ idf.py --preview flash   # 板子经 /dev/ttyACM0 连接时
 ```
 
 BSP 开发时可设 `CANDIS_S31_BSP_PATH=<esp-bsp>/bsp/candis_s31` 覆盖快照。
+
+## Host/Web LVGL 模拟器（设计评审用）
+
+`sim/` 是同源码 Host 模拟器：真实编译 `main/ui/`、`main/apps/`、
+`main/tests/` 的 UI 与框架代码（LVGL 树锁定 firmware 的 9.5.0 受管组件），
+服务层（power/net/audio/storage）用 mock 任务按真实回调契约喂假数据。
+相机/USB OTG 两页无对应总线模型，保留 `BOARD ONLY` 占位。
+
+```sh
+./sim/build_web.sh    # WASM 构建（Emscripten + pthreads）
+./sim/serve_web.sh    # 127.0.0.1:8080，带 COOP/COEP 头
+./sim/build_native.sh # 本机 SDL 窗口版（调试器友好）
+```
+
+VSCode 会自动转发 8080 端口；浏览器打开
+`http://127.0.0.1:8080/candis_s31_sim.html`。URL 参数直达页面：
+`?screen=<app-id>`（tests/display/recorder/player/wifi/ble/files/led/
+settings/power/sysinfo/game2048/snake/breakout/menu/watchface），
+`?state=charging|low-battery|no-battery` 注入电源状态。
+
+协同迭代循环：改 `main/` 或 `sim/` 代码 → `./sim/build_web.sh` →
+浏览器刷新即可（服务带 no-store，无需强制刷新）。模拟结果只用于
+UI/交互评审，不构成任何硬件 PASS 证据；`RUN ALL` 跑的是桩测试
+（`sim/main/sim_tests.c`，41 项元数据与固件一致，结果全是模拟值）。
+
+画面回传（协同评审）：页面每 500 ms 把画布 PNG 和点击事件 POST 回
+`serve.py`；AI 侧直接读 `http://127.0.0.1:8080/share/latest.png`
+（用户当前画面）与 `/share/events`（最近 64 条点击/URL 事件），
+无需任何浏览器扩展。地址栏随页面内导航自动同步 `?screen=<id>`，
+把 URL 贴给 AI 即可精确复现页面。
 
 ## 架构速览
 

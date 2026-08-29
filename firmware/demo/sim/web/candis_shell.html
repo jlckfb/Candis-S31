@@ -19,6 +19,45 @@
       print: function(text) { console.log(text); },
       printErr: function(text) { console.error(text); }
     };
+
+    // Screen-share: stream canvas frames + pointer events back to the
+    // preview server so the assistant can watch the user's live session.
+    (function() {
+      const canvas = document.getElementById("canvas");
+      let lastFrame = "";
+      setInterval(function() {
+        try {
+          const data = canvas.toDataURL("image/png");
+          if (data !== lastFrame) {
+            lastFrame = data;
+            fetch("/share/frame", { method: "POST", body: data }).catch(()=>{});
+          }
+        } catch (e) { /* canvas not ready yet */ }
+      }, 500);
+
+      function canvasPos(ev) {
+        const r = canvas.getBoundingClientRect();
+        return {
+          x: Math.round((ev.clientX - r.left) * canvas.width / r.width),
+          y: Math.round((ev.clientY - r.top) * canvas.height / r.height)
+        };
+      }
+      function report(kind, ev) {
+        const p = canvasPos(ev);
+        fetch("/share/event", { method: "POST",
+          body: JSON.stringify({ t: Date.now(), kind: kind,
+                                 x: p.x, y: p.y, url: location.search })
+        }).catch(()=>{});
+      }
+      canvas.addEventListener("pointerdown", function(ev){ report("down", ev); });
+      canvas.addEventListener("pointerup", function(ev){ report("up", ev); });
+      setInterval(function() {
+        fetch("/share/event", { method: "POST",
+          body: JSON.stringify({ t: Date.now(), kind: "url",
+                                 url: location.search })
+        }).catch(()=>{});
+      }, 5000);
+    })();
   </script>
   {{{ SCRIPT }}}
 </body>

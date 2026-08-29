@@ -22,6 +22,7 @@
 #include "services/svc_power.h"
 #include "fonts/candis_ui_fonts.h"
 #include "ui_menu.h"
+#include "ui_perf.h"
 #include "ui_watchface.h"
 
 #define UI_MAX_APPS 24
@@ -525,6 +526,7 @@ static void nav_push(lv_obj_t *screen, const ui_app_t *app)
      * CO5300 QSPI transfer is longer than one scan period, so transitions must
      * be instantaneous; local widget animations remain tear-resistant under
      * the TE-paced partial pipeline. */
+    ui_perf_load_begin(app ? app->id : NULL);
     lv_scr_load_anim(screen, LV_SCR_LOAD_ANIM_NONE, UI_ANIM_MS, 0, false);
     nav_apply_status_visibility();
 }
@@ -539,6 +541,7 @@ void ui_nav_back(void)
     const bool popped_persistent = (s_top == 1);
     --s_top;
     /* auto_del deletes the screen being replaced (the one we just popped). */
+    ui_perf_load_begin("back");
     lv_scr_load_anim(s_stack[s_top], LV_SCR_LOAD_ANIM_NONE, UI_ANIM_MS, 0,
                      !popped_persistent);
     nav_apply_status_visibility();
@@ -606,6 +609,7 @@ void ui_nav_home(void)
     }
     const bool top_is_app = (s_top >= 2);
     s_top = 0;
+    ui_perf_load_begin("home");
     lv_scr_load_anim(s_stack[0], LV_SCR_LOAD_ANIM_NONE, UI_ANIM_MS, 0,
                      top_is_app);
     nav_apply_status_visibility();
@@ -621,7 +625,10 @@ void ui_nav_open(const char *app_id)
             if (s_top == 0) {
                 ui_nav_open_menu();
             }
-            nav_push(s_apps[i]->create(), s_apps[i]);
+            ui_perf_create_begin(s_apps[i]->id);
+            lv_obj_t *screen = s_apps[i]->create();
+            ui_perf_create_end();
+            nav_push(screen, s_apps[i]);
             return;
         }
     }
@@ -642,6 +649,16 @@ void ui_nav_open_menu(void)
 bool ui_nav_at_home(void)
 {
     return s_top == 0;
+}
+
+const char *ui_nav_current_id(void)
+{
+    for (int i = s_top; i >= 0; --i) {
+        if (s_stack_app[i] != NULL) {
+            return s_stack_app[i]->id;
+        }
+    }
+    return s_top == 1 ? "menu" : "watchface";
 }
 
 void ui_app_register(const ui_app_t *app)
@@ -991,6 +1008,7 @@ void ui_manager_init(void)
     s_stack_app[0] = NULL;
     s_stack[1] = ui_menu_create();
     s_stack_app[1] = NULL;
+    ui_perf_attach(lv_display_get_default());
     lv_scr_load_anim(s_stack[0], LV_SCR_LOAD_ANIM_FADE_IN, UI_ANIM_MS, 0, false);
 
     if (s_clock_timer == NULL) {
@@ -1013,6 +1031,10 @@ void ui_manager_init(void)
          * re-verifying the adapter's read path. */
         lv_indev_set_mode(indev, LV_INDEV_MODE_TIMER);
         lv_indev_add_event_cb(indev, indev_activity_cb, LV_EVENT_PRESSED, NULL);
+        /* PRESSED fires once per touch; PRESSING fires on every indev
+         * read while held, so a sustained press keeps resetting the
+         * idle-screen timer instead of only its first frame. */
+        lv_indev_add_event_cb(indev, indev_activity_cb, LV_EVENT_PRESSING, NULL);
     }
     ui_unlock();
 }

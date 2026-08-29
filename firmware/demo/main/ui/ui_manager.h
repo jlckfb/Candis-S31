@@ -80,6 +80,10 @@ void ui_nav_open(const char *app_id);    /**< open registered app */
 void ui_nav_open_menu(void);             /**< open launcher (watchface only) */
 void ui_nav_back(void);                  /**< pop current app screen */
 bool ui_nav_at_home(void);               /**< true when watchface is active */
+/** Current top-of-stack identity: app id, "menu" for the launcher,
+ *  "watchface" at the root. Shell-owned push screens (app == NULL)
+ *  resolve to the app beneath them. */
+const char *ui_nav_current_id(void);
 
 /**
  * Push a shell-owned screen that is not a registered app (e.g. test-center
