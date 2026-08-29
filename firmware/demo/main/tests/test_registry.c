@@ -267,7 +267,11 @@ int test_auto_count(test_domain_t d)
 {
     int n = 0;
     for (int i = 0; i < s_count; ++i) {
-        if (d >= 0 && s_cases[i]->domain != d) {
+        /* "all domains" sentinel: (test_domain_t)-1. Compare for equality
+         * instead of d >= 0: Clang gives this all-nonnegative enum an
+         * unsigned underlying type, where (test_domain_t)-1 is UINT_MAX
+         * and d >= 0 is always true (RUN ALL showed 0 in the host sim). */
+        if (d != (test_domain_t)-1 && s_cases[i]->domain != d) {
             continue;
         }
         if ((s_cases[i]->flags &

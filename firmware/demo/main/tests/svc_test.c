@@ -21,6 +21,7 @@
 
 #include "svc_test.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_log.h"
