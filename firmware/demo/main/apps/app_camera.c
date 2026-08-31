@@ -8,16 +8,17 @@
  *  3. fetch task at priority 4 with a 3 s DQBUF timeout;
  *  4. zero-copy display: lv_image + static lv_image_dsc_t,
  *     header.stride=1600 (800*2), w/h=460, data=frame base + central
- *     460x460 crop offset, LV_COLOR_FORMAT_RGB565. Byte-order proof
- *     (serial frame dumps, 2026-08-31): the OV5640 "RGB565_BE" table
- *     (0x4300=0x6F) emits the pixel low byte first and the S31 DVP
- *     packs bytes in receive order, so the mmap buffer holds
- *     little-endian native RGB565; RGB565_SWAPPED byte-swaps every
- *     pixel and renders as the scrambled "paint" the EVT1 build showed;
+ *     460x460 crop offset, LV_COLOR_FORMAT_RGB565_SWAPPED. Byte-order
+ *     proof (serial frame dumps, 2026-08-31): after the FD6540 module
+ *     workaround selects 0x4300=0x61, each pixel arrives as RGB565
+ *     bits [15:8] followed by [7:0]. The S31 DVP preserves that order,
+ *     so the mmap buffer is big-endian RGB565. Declaring native RGB565
+ *     swaps those bytes and exactly reproduces the moving "paint"
+ *     artifact; RGB565_SWAPPED consumes the captured bytes correctly;
  *  5. 10 fps source posted at <=15 fps through a 66 ms LVGL timer
  *     (drop-when-behind frame handoff);
  *  6. capture button saves the current frame as
- *     /sdcard/IMG_<rtc>.rgb565 (raw 800x600 RGB565 LE, 960000 bytes);
+ *     /sdcard/IMG_<rtc>.rgb565 (raw 800x600 RGB565 BE, 960000 bytes);
  *  7. screen DELETE -> stop request -> fetch task runs the full
  *     STREAMOFF -> munmap -> close -> bsp_camera_stop chain (the page
  *     does not block on the 3 s DQBUF; a reopen retries until the
@@ -706,7 +707,7 @@ lv_obj_t *app_camera_create(void)
     /* Zero-copy viewfinder surface (src set on the first frame). */
     memset(&s_img_dsc, 0, sizeof(s_img_dsc));
     s_img_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
-    s_img_dsc.header.cf = LV_COLOR_FORMAT_RGB565;
+    s_img_dsc.header.cf = LV_COLOR_FORMAT_RGB565_SWAPPED;
     s_img_dsc.header.w = CAM_VIEW_W;
     s_img_dsc.header.h = CAM_VIEW_H;
     s_img_dsc.header.stride = CAM_STRIDE;
