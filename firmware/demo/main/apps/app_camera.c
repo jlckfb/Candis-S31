@@ -8,14 +8,16 @@
  *  3. fetch task at priority 4 with a 3 s DQBUF timeout;
  *  4. zero-copy display: lv_image + static lv_image_dsc_t,
  *     header.stride=1600 (800*2), w/h=460, data=frame base + central
- *     460x460 crop offset, LV_COLOR_FORMAT_RGB565_SWAPPED (verified to
- *     exist in this LVGL and enabled through
- *     CONFIG_LV_DRAW_SW_SUPPORT_RGB565_SWAPPED, so no PSRAM pre-swap
- *     fallback is needed);
+ *     460x460 crop offset, LV_COLOR_FORMAT_RGB565. Byte-order proof
+ *     (serial frame dumps, 2026-08-31): the OV5640 "RGB565_BE" table
+ *     (0x4300=0x6F) emits the pixel low byte first and the S31 DVP
+ *     packs bytes in receive order, so the mmap buffer holds
+ *     little-endian native RGB565; RGB565_SWAPPED byte-swaps every
+ *     pixel and renders as the scrambled "paint" the EVT1 build showed;
  *  5. 10 fps source posted at <=15 fps through a 66 ms LVGL timer
  *     (drop-when-behind frame handoff);
  *  6. capture button saves the current frame as
- *     /sdcard/IMG_<rtc>.rgb565 (raw 800x600 RGB565X, 960000 bytes);
+ *     /sdcard/IMG_<rtc>.rgb565 (raw 800x600 RGB565 LE, 960000 bytes);
  *  7. screen DELETE -> stop request -> fetch task runs the full
  *     STREAMOFF -> munmap -> close -> bsp_camera_stop chain (the page
  *     does not block on the 3 s DQBUF; a reopen retries until the
@@ -33,7 +35,6 @@
  */
 
 #include <fcntl.h>
-#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -42,6 +43,7 @@
 
 #include "bsp/esp-bsp.h"
 #include "esp_timer.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "linux/videodev2.h"
@@ -52,6 +54,8 @@
 #include "tests/svc_test.h"
 #include "ui/ui_manager.h"
 
+static const char *TAG = "app_camera";
+
 #define CAM_BUF_COUNT        3
 #define CAM_DQBUF_TIMEOUT_MS 3000   /* spec: 3 s DQBUF timeout */
 #define CAM_POST_MS          66     /* <=15 fps on-screen posting */
@@ -59,7 +63,7 @@
 #define CAM_TASK_PRIO        4
 #define CAM_TIMEOUT_GIVEUP   5      /* consecutive DQBUF timeouts */
 
-/* Central 460x460 window inside the 800x600 RGB565X frame. */
+/* Central 460x460 window inside the 800x600 RGB565 frame. */
 #define CAM_FRAME_W          800
 #define CAM_FRAME_H          600
 #define CAM_VIEW_W           460
@@ -250,9 +254,18 @@ static esp_err_t cam_open_pipeline(void)
 
     memset(&s_cam.format, 0, sizeof(s_cam.format));
     s_cam.format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    if (error == ESP_OK &&
-            ioctl(s_cam.file, VIDIOC_G_FMT, &s_cam.format) != 0) {
-        /* No driver default: request the sensor format explicitly. */
+    if (error == ESP_OK) {
+        /* Best-effort probe of the driver default; the explicit S_FMT
+         * below is what actually selects the pixel format. */
+        ioctl(s_cam.file, VIDIOC_G_FMT, &s_cam.format);
+    }
+
+    if (error == ESP_OK) {
+        /* Always request the EVT1 sensor format explicitly instead of
+         * trusting a driver default: a YUV422 stream decoded as RGB565
+         * renders as scrambled colors. Mirrors factory_camera.c. */
+        memset(&s_cam.format, 0, sizeof(s_cam.format));
+        s_cam.format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         s_cam.format.fmt.pix.width = CAM_FRAME_W;
         s_cam.format.fmt.pix.height = CAM_FRAME_H;
         s_cam.format.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB565X;
@@ -261,6 +274,29 @@ static esp_err_t cam_open_pipeline(void)
         }
     }
 
+    if (error == ESP_OK) {
+        /* Read back the negotiated format: a mismatch must surface as
+         * an error, never as silently wrong colors. */
+        memset(&s_cam.format, 0, sizeof(s_cam.format));
+        s_cam.format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        if (ioctl(s_cam.file, VIDIOC_G_FMT, &s_cam.format) != 0) {
+            error = ESP_FAIL;
+        }
+    }
+
+    if (error == ESP_OK) {
+        const struct v4l2_pix_format *pix = &s_cam.format.fmt.pix;
+        const uint32_t fourcc = pix->pixelformat;
+        ESP_LOGI(TAG, "V4L2 fmt %c%c%c%c %ux%u bytesperline=%u",
+                 (char)(fourcc & 0xFF), (char)((fourcc >> 8) & 0xFF),
+                 (char)((fourcc >> 16) & 0xFF), (char)((fourcc >> 24) & 0xFF),
+                 (unsigned)pix->width, (unsigned)pix->height,
+                 (unsigned)pix->bytesperline);
+        if (pix->pixelformat != V4L2_PIX_FMT_RGB565X ||
+                pix->width != CAM_FRAME_W || pix->height != CAM_FRAME_H) {
+            error = ESP_FAIL;
+        }
+    }
     if (error == ESP_OK) {
         struct v4l2_requestbuffers request = {0};
         request.count = CAM_BUF_COUNT;
@@ -588,6 +624,7 @@ static void cam_test_cb(lv_event_t *event)
     s_cam.state = CAM_STATE_IDLE;
 }
 
+
 static void cam_start_cb(lv_event_t *event)
 {
     (void)event;
@@ -669,7 +706,7 @@ lv_obj_t *app_camera_create(void)
     /* Zero-copy viewfinder surface (src set on the first frame). */
     memset(&s_img_dsc, 0, sizeof(s_img_dsc));
     s_img_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
-    s_img_dsc.header.cf = LV_COLOR_FORMAT_RGB565_SWAPPED;
+    s_img_dsc.header.cf = LV_COLOR_FORMAT_RGB565;
     s_img_dsc.header.w = CAM_VIEW_W;
     s_img_dsc.header.h = CAM_VIEW_H;
     s_img_dsc.header.stride = CAM_STRIDE;
