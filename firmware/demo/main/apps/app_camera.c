@@ -328,7 +328,8 @@ static esp_err_t cam_open_pipeline(void)
         s_cam.buffers[index] = mmap(NULL, query.length,
                                     PROT_READ | PROT_WRITE, MAP_SHARED,
                                     s_cam.file, query.m.offset);
-        if (s_cam.buffers[index] == MAP_FAILED) {
+        if (s_cam.buffers[index] == NULL ||
+                s_cam.buffers[index] == MAP_FAILED) {
             s_cam.buffers[index] = NULL;
             error = ESP_FAIL;
             break;

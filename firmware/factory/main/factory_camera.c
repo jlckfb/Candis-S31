@@ -130,7 +130,7 @@ static int command_camera_test(int argc, char **argv)
         }
         buffers[index] = mmap(NULL, query.length, PROT_READ | PROT_WRITE,
                               MAP_SHARED, file, query.m.offset);
-        if (buffers[index] == MAP_FAILED) {
+        if (buffers[index] == NULL || buffers[index] == MAP_FAILED) {
             buffers[index] = NULL;
             error = ESP_FAIL;
             break;
