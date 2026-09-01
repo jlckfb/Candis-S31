@@ -18,12 +18,14 @@ static bool s_started;
 
 #endif
 
-/* The OV5640 register tables in esp_cam_sensor (sensors/ov5640) are all
- * calculated for a 24 MHz XCLK input ("24M input" in every format option);
- * any other frequency shifts frame rate and exposure timing.
- * must stay 24: the OV5640 register tables are tuned for a 24 MHz input. */
+/* The selected OV5640 table is authored for a nominal 24 MHz XCLK, so keep
+ * BSP_CAMERA_XCLK_CLOCK_MHZ as that table identifier. The S31 DVP clock
+ * router cannot generate an exact 24 MHz integer divider; the board-validated
+ * LEDC path below uses the 40 MHz XTAL divided by two (20 MHz, measured about
+ * 20.1 MHz by PCNT). This intentional timing deviation is reported by the
+ * headless camera test; it must not be mistaken for a measured 24 MHz clock. */
 _Static_assert(BSP_CAMERA_XCLK_CLOCK_MHZ == 24,
-               "OV5640 sensor register tables assume a 24 MHz XCLK");
+               "OV5640 table identifier must remain 24 MHz");
 
 /* XCLK comes from LEDC, not from the CAM controller.
  *
@@ -53,13 +55,11 @@ _Static_assert(BSP_CAMERA_XCLK_CLOCK_MHZ == 24,
 static esp_err_t xclk_ledc_start(void)
 {
 #if CONFIG_BSP_CAMERA_XCLK_USE_LEDC
-    /* Direct LEDC configuration instead of the esp_cam_sensor helper.
-     * Measured on ESP32-S31 (PCNT): the PLL_DIV source delivers 62.5 MHz
-     * while the driver computes the divider against an assumed 80 MHz, so a
-     * plain 24 MHz request lands at 18.74 MHz. Requesting 30.72 MHz makes
-     * the driver pick div = 80e6/(30.72e6*2) = 1.302083 -> clk_div 333,
-     * which the real source turns into 62.5e6/(333/256*2) = 24.02 MHz
-     * (+0.1%) at an exact 50% duty. */
+    /* Use the exact XTAL/2 setting that was measured on the S31 board. The
+     * PLL_DIV path's nominal 24 MHz request measured about 18.75 MHz, while
+     * its compensation setting was not stable across the tested clock paths.
+     * The camera diagnostic reports the resulting frame period so this
+     * deliberate 20 MHz operating point remains visible in evidence. */
     const ledc_timer_config_t timer_config = {
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .duty_resolution = LEDC_TIMER_1_BIT,
@@ -95,17 +95,23 @@ static esp_err_t xclk_ledc_stop(void)
 }
 
 /* Board-level workaround for the FD6540 (OV5640-compatible) module on
- * the EVT1 FPC, applied right after esp_video programmed the sensor
- * format (stream still off). Three facts established on 2026-08-31 by
- * serial frame analysis (see AGENT-AI.md 0P):
+ * the EVT1 FPC. It is applied before and after the first video-device open:
+ * esp_video_open() lazily runs dvp_video_init(), whose format-table write
+ * resets these registers after the pre-open pass. Three facts established on
+ * 2026-08-31 by serial frame analysis (see AGENT-AI.md 0P):
  *
- * 1. With the esp_cam_sensor "RGB565_BE" sequence (FORMAT_CTRL0
- *    0x4300 = 0x6F) the module streams raw Bayer - its ISP demosaic and
- *    color engine never run (RGB output is a mosaic; YUV422 U/V sit at
- *    128 +/- 3). espressif/esp32-camera's proven sequence 0x4300 = 0x61
- *    makes the same module stream processed color. Serial frame dumps
- *    prove that its first captured byte carries RGB565 bits [15:8] and
- *    the second carries [7:0], i.e. V4L2 RGB565X byte order.
+ * 1. The esp_cam_sensor option/table is named "RGB565_BE" but writes
+ *    FORMAT_CTRL0 0x4300 = 0x6F. That upstream name is inverted relative
+ *    to OV5640/Linux semantics: 0x6F is RGB565 LE, while 0x61 is RGB565
+ *    BE. Do not change the verified 0x61 override back to 0x6F based only
+ *    on the esp_cam_sensor symbol name.
+ *
+ *    With that table's 0x6F value the module streams raw Bayer - its ISP
+ *    demosaic and color engine never run (RGB output is a mosaic; YUV422
+ *    U/V sit at 128 +/- 3). espressif/esp32-camera's proven sequence
+ *    0x4300 = 0x61 makes the same module stream processed color. Serial
+ *    frame dumps prove that its first captured byte carries RGB565 bits
+ *    [15:8] and the second carries [7:0], i.e. V4L2 RGB565X byte order.
  * 2. The esp32-camera ISP block (AWB/CMX/CIP/gamma/SDE below, verbatim
  *    from its sensor_default_regs) then yields correctly white-balanced
  *    color; the esp_cam_sensor block values do not.
@@ -115,7 +121,7 @@ static esp_err_t xclk_ledc_stop(void)
  *
  * The capture buffer therefore matches both V4L2_PIX_FMT_RGB565X and
  * the LV_COLOR_FORMAT_RGB565_SWAPPED image source used by the app. */
-static void camera_sensor_workaround(void)
+static esp_err_t camera_sensor_workaround(void)
 {
     static const uint16_t isp_block[][2] = {
         {0x5000, 0xa7}, {0x5001, 0xa3}, {0x5003, 0x08},
@@ -162,6 +168,10 @@ static void camera_sensor_workaround(void)
         0x03, 0xd8, 0x03, 0xd8, 0x01, 0x27, 0x00, 0xf6, 0x04, 0x03,
     };
     i2c_master_bus_handle_t bus = bsp_i2c_get_handle();
+    if (bus == NULL) {
+        ESP_LOGW(TAG, "sensor workaround: main I2C bus is unavailable");
+        return ESP_ERR_INVALID_STATE;
+    }
     i2c_master_dev_handle_t sccb = NULL;
     /* OV5640 SCCB 7-bit address. */
     const i2c_device_config_t dev_cfg = {
@@ -169,32 +179,100 @@ static void camera_sensor_workaround(void)
         .device_address = 0x3C,
         .scl_speed_hz = 100000,
     };
-    if (i2c_master_bus_add_device(bus, &dev_cfg, &sccb) != ESP_OK) {
-        ESP_LOGW(TAG, "sensor workaround: sccb device add failed");
-        return;
+    esp_err_t error = i2c_master_bus_add_device(bus, &dev_cfg, &sccb);
+    if (error != ESP_OK) {
+        ESP_LOGW(TAG, "sensor workaround: sccb device add failed: %s",
+                 esp_err_to_name(error));
+        return error;
+    }
+    uint8_t pid_high = 0xff;
+    uint8_t pid_low = 0xff;
+    error = i2c_master_transmit_receive(sccb,
+                                        (const uint8_t[]){0x30, 0x0a},
+                                        2, &pid_high, 1, 100);
+    if (error == ESP_OK) {
+        error = i2c_master_transmit_receive(sccb,
+                                            (const uint8_t[]){0x30, 0x0b},
+                                            2, &pid_low, 1, 100);
+    }
+    if (error != ESP_OK) {
+        ESP_LOGW(TAG, "sensor workaround: PID read failed: %s",
+                 esp_err_to_name(error));
+        i2c_master_bus_rm_device(sccb);
+        return error;
+    }
+    if (((uint16_t)pid_high << 8 | pid_low) != 0x5640) {
+        ESP_LOGI(TAG, "sensor workaround skipped for PID=0x%02x%02x",
+                 pid_high, pid_low);
+        i2c_master_bus_rm_device(sccb);
+        return ESP_OK;
     }
     for (size_t i = 0; i < sizeof(isp_block) / sizeof(isp_block[0]); ++i) {
-        (void)i2c_master_transmit(sccb, (const uint8_t[]){
+        error = i2c_master_transmit(sccb, (const uint8_t[]){
             (uint8_t)(isp_block[i][0] >> 8), (uint8_t)isp_block[i][0],
             (uint8_t)isp_block[i][1],
         }, 3, 100);
+        if (error != ESP_OK) {
+            ESP_LOGW(TAG, "sensor workaround: ISP write %u failed: %s",
+                     (unsigned)i, esp_err_to_name(error));
+            i2c_master_bus_rm_device(sccb);
+            return error;
+        }
     }
-    /* The module's working RGB565 sequence emits RGB565X byte order.
-     * Keep V4L2 negotiation and the LVGL image descriptor big-endian. */
-    (void)i2c_master_transmit(sccb, (const uint8_t[]){0x43, 0x00, 0x61},
-                              3, 100);
+    /* The module's working RGB565 sequence emits RGB565X byte order. */
+    error = i2c_master_transmit(sccb,
+        (const uint8_t[]){0x50, 0x1f, 0x01}, 3, 100);
+    if (error == ESP_OK) {
+        error = i2c_master_transmit(sccb,
+            (const uint8_t[]){0x43, 0x00, 0x61}, 3, 100);
+    }
+    if (error != ESP_OK) {
+        ESP_LOGW(TAG, "sensor workaround: output format write failed: %s",
+                 esp_err_to_name(error));
+        i2c_master_bus_rm_device(sccb);
+        return error;
+    }
     for (size_t i = 0; i < sizeof(aec_regs) / sizeof(aec_regs[0]); ++i) {
-        (void)i2c_master_transmit(sccb, (const uint8_t[]){
+        error = i2c_master_transmit(sccb, (const uint8_t[]){
             aec_regs[i][0], aec_regs[i][1], aec_vals[i],
         }, 3, 100);
+        if (error != ESP_OK) {
+            ESP_LOGW(TAG, "sensor workaround: AEC write %u failed: %s",
+                     (unsigned)i, esp_err_to_name(error));
+            i2c_master_bus_rm_device(sccb);
+            return error;
+        }
     }
     uint8_t check = 0;
-    (void)i2c_master_transmit_receive(sccb, (const uint8_t[]){0x43, 0x00},
-                                      2, &check, 1, 100);
+    uint8_t mux_check = 0;
+    error = i2c_master_transmit_receive(sccb, (const uint8_t[]){0x43, 0x00},
+                                         2, &check, 1, 100);
+    if (error == ESP_OK) {
+        error = i2c_master_transmit_receive(sccb,
+                                            (const uint8_t[]){0x50, 0x1f},
+                                            2, &mux_check, 1, 100);
+    }
+    if (error != ESP_OK || check != 0x61 || mux_check != 0x01) {
+        ESP_LOGW(TAG,
+                 "sensor workaround: readback failed 0x4300=0x%02x "
+                 "0x501f=0x%02x error=%s",
+                 check, mux_check, esp_err_to_name(error));
+        i2c_master_bus_rm_device(sccb);
+        return error != ESP_OK ? error : ESP_FAIL;
+    }
     ESP_LOGI(TAG, "sensor workaround applied: 0x4300=0x%02x, "
              "%u ISP regs, AEC ceilings restored",
              check, (unsigned)(sizeof(isp_block) / sizeof(isp_block[0])));
     i2c_master_bus_rm_device(sccb);
+    return ESP_OK;
+}
+
+esp_err_t bsp_camera_apply_workaround(void)
+{
+    if (!s_started) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return camera_sensor_workaround();
 }
 
 esp_err_t bsp_camera_start(const bsp_camera_cfg_t *cfg)
@@ -260,7 +338,11 @@ esp_err_t bsp_camera_start(const bsp_camera_cfg_t *cfg)
      * initialize every video device enabled in sdkconfig (ISP, JPEG, ...). */
     error = esp_video_init_with_flags(&video_config, ESP_VIDEO_INIT_FLAGS_DVP);
     if (error == ESP_OK) {
-        camera_sensor_workaround();
+        const esp_err_t workaround_error = camera_sensor_workaround();
+        if (workaround_error != ESP_OK) {
+            ESP_LOGW(TAG, "pre-open sensor workaround failed: %s",
+                     esp_err_to_name(workaround_error));
+        }
         s_started = true;
         return ESP_OK;
     }

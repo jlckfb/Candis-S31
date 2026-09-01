@@ -243,6 +243,15 @@ static esp_err_t cam_open_pipeline(void)
             error = ESP_ERR_NOT_FOUND;
         }
     }
+    /* esp_video_open() lazily reloads the sensor table; restore the board
+     * override after open and before any buffers are streamed. */
+    if (error == ESP_OK) {
+        error = bsp_camera_apply_workaround();
+        if (error != ESP_OK) {
+            ESP_LOGE(TAG, "post-open sensor workaround failed: %s",
+                     esp_err_to_name(error));
+        }
+    }
     if (error == ESP_OK) {
         const struct timeval dqbuf_timeout = {
             .tv_sec = CAM_DQBUF_TIMEOUT_MS / 1000,

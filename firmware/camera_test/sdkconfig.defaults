@@ -1,0 +1,52 @@
+# Candis-S31 headless camera diagnostic baseline.
+CONFIG_IDF_TARGET="esp32s31"
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_LV_BUILD_EXAMPLES=n
+CONFIG_LV_BUILD_DEMOS=n
+# Leave a visible UART attachment window after reset; the test itself remains
+# fully automatic and does not depend on the display.
+CONFIG_CAMERA_TEST_BOOT_DELAY_MS=5000
+
+# Report failures in the application instead of aborting before the serial
+# result line is printed.
+CONFIG_BSP_ERROR_CHECK=n
+
+# Conservative, known-good boot transport for a camera-only diagnostic.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# Camera buffers are driver-owned MMAP buffers and normally live in PSRAM.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+CONFIG_SPIRAM_SPEED_100M=y
+CONFIG_SPIRAM_MEMTEST=y
+
+# Generate XCLK through the board-local LEDC workaround. The DVP clock path
+# cannot produce the sensor table's required clock on ESP32-S31.
+CONFIG_BSP_CAMERA_XCLK_USE_LEDC=y
+
+# The esp_cam_sensor symbol/table named RGB565_BE writes 0x4300=0x6F,
+# although OV5640/Linux semantics call 0x6F LE and 0x61 BE. The vendored BSP
+# deliberately applies the verified 0x61 override after the table is loaded.
+CONFIG_CAMERA_OV5640=y
+CONFIG_CAMERA_OV5640_AUTO_DETECT_DVP_INTERFACE_SENSOR=y
+CONFIG_CAMERA_OV5640_DVP_RGB565_BE_800X600_10FPS=y
+CONFIG_CAMERA_OV5640_DVP_DEFAULT_FMT_RGB565_BE_800X600_10FPS=y
+CONFIG_CAMERA_OV3660=n
+CONFIG_CAM_CTRL_SPI_ENABLE=n
+
+# Preserve raw RGB565X bytes for this diagnostic; no esp_video preprocessing
+# should hide a sensor/DVP byte-order error.
+CONFIG_ESP_VIDEO_ENABLE_DVP_VIDEO_DEVICE=y
+CONFIG_ESP_VIDEO_ENABLE_DATA_PREPROCESSING=n
+CONFIG_ESP_VIDEO_ENABLE_SWAP_BYTE=n

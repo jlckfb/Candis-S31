@@ -795,8 +795,9 @@ esp_err_t bsp_audio_codec_deinit(esp_codec_dev_handle_t device);
  */
 /** DVP camera pipeline. Sensor support is selected in project configuration. */
 esp_err_t bsp_camera_start(const bsp_camera_cfg_t *cfg);
+/** Reapply the board sensor override after esp_video_open() reloads its table. */
+esp_err_t bsp_camera_apply_workaround(void);
 esp_err_t bsp_camera_stop(void);
-/** @} */
 
 /** @addtogroup g06_led
  *  @{

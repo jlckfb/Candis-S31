@@ -1,0 +1,26 @@
+menu "Candis-S31 Camera Test"
+
+    config CAMERA_TEST_CYCLES
+        int "Automatic start/stop cycles"
+        default 3
+        range 1 20
+        help
+            Number of complete camera start, capture, and stop cycles run at
+            boot. More than one cycle checks driver teardown and reinitialization.
+
+    config CAMERA_TEST_FRAMES
+        int "Frames per cycle"
+        default 6
+        range 3 100
+        help
+            Number of frames captured and checked in each cycle.
+
+    config CAMERA_TEST_BOOT_DELAY_MS
+        int "Boot delay before camera test (ms)"
+        default 5000
+        range 0 10000
+        help
+            Delay before board and camera initialization so a serial monitor
+            can attach after reset.
+
+endmenu

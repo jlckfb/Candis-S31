@@ -67,6 +67,11 @@ static int command_camera_test(int argc, char **argv)
             error = ESP_ERR_NOT_FOUND;
         }
     }
+    /* esp_video_open() lazily reloads the sensor table; restore the board
+     * override before configuring or streaming buffers. */
+    if (error == ESP_OK) {
+        error = bsp_camera_apply_workaround();
+    }
     if (error == ESP_OK) {
         /* A dead or unpowered sensor must not wedge the console until
          * power-off: bound the per-frame DQBUF wait. */
