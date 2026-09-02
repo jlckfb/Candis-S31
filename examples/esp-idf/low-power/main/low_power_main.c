@@ -81,6 +81,8 @@ extern const uint8_t lp_core_main_bin_end[] asm("_binary_lp_core_main_bin_end");
 #define S2_ALARM_MINUTES        5
 /** Depth of the queue draining LP mailbox reports into the state machine. */
 #define LP_REPORT_QUEUE_DEPTH   16
+/** Keep CST820 powered through deep sleep so GPIO3 can assert INT. */
+#define DEEP_SLEEP_KEEP_TOUCH_RAIL 1
 /** SoC RTC timer period used as a deep-sleep wake source. */
 #define DEEP_SLEEP_WAKE_US      (20 * 1000 * 1000ULL)
 /** Number of deep-sleep passes before the machine escalates to S2. */
@@ -462,7 +464,9 @@ static void disarm_light_sleep_sources(bool include_shared_irq)
     if (include_shared_irq) {
         (void)gpio_wakeup_disable(BSP_PMIC_RTC_INT);
     }
+#if SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP
     (void)esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+#endif
 }
 
 /* ---------------------------------------------------------------------------
@@ -504,7 +508,7 @@ static esp_err_t display_and_touch_start(void)
  * bsp_display_enter_sleep() also drives the touch controller into its deep
  * sleep (~2 uA) through esp_lcd_touch_enter_sleep(), and that mode cannot be
  * woken by a touch. Monitor mode is therefore restored afterwards with a reset
- * cycle: esp_lcd_touch_cst820_wakeup() brings the controller back to dynamic
+ * cycle: esp_lcd_touch_cst820_exit_monitor_mode() brings the controller back to dynamic
  * mode, and enter_monitor_mode() lets it fall into touch-wakeable standby.
  */
 static esp_err_t display_and_touch_sleep(void)
@@ -516,7 +520,7 @@ static esp_err_t display_and_touch_sleep(void)
     s_display_asleep = true;
 
     if (s_touch != NULL) {
-        const esp_err_t wake_error = esp_lcd_touch_cst820_wakeup(s_touch);
+        const esp_err_t wake_error = esp_lcd_touch_cst820_exit_monitor_mode(s_touch);
         if (wake_error != ESP_OK) {
             ESP_LOGW(TAG, "CST820 reset out of deep sleep failed: %s",
                      esp_err_to_name(wake_error));
@@ -721,7 +725,9 @@ static esp_err_t enter_screen_off(void)
     ESP_RETURN_ON_ERROR(display_and_touch_sleep(), TAG,
                         "display sleep failed");
     stop_lp_housekeeper();
+#if CONFIG_ULP_COPROC_TYPE_FSM
     (void)esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ULP);
+#endif
     ESP_RETURN_ON_ERROR(arm_light_sleep_sources(true), TAG,
                         "S1 wake-up sources failed");
     return ESP_OK;
@@ -829,6 +835,28 @@ static esp_err_t low_power_safe_state(void)
     return owner_error != ESP_OK ? owner_error : rail_error;
 }
 
+#if DEEP_SLEEP_KEEP_TOUCH_RAIL
+/* Restore only CST820 after the normal safe-state sequence.  This keeps the
+ * touch wake path electrically valid without keeping the display alive. */
+static esp_err_t prepare_touch_deep_wake(void)
+{
+    esp_err_t error = bsp_peripheral_power_set(BSP_PERIPHERAL_TOUCH, true);
+    if (error != ESP_OK) {
+        return error;
+    }
+    error = bsp_touch_new(NULL, &s_touch);
+    if (error == ESP_OK) {
+        error = esp_lcd_touch_cst820_exit_monitor_mode(s_touch);
+    }
+    if (error == ESP_OK) {
+        error = esp_lcd_touch_cst820_enter_monitor_mode(s_touch);
+    }
+    ESP_LOGI(TAG, "touch deep-wake rail=on level=%d result=%s",
+             gpio_get_level(BSP_TOUCH_INT), esp_err_to_name(error));
+    return error;
+}
+#endif
+
 /** Route one pad to the RTC controller as a pulled-up EXT1 input. */
 static esp_err_t arm_ext1_pad(gpio_num_t pin)
 {
@@ -855,18 +883,13 @@ static esp_err_t arm_ext1_pad(gpio_num_t pin)
  *
  * Wake sources are the SoC RTC timer and EXT1 (any low) on two RTC pads:
  * the shared IRQ line (GPIO2, PMIC/RTC events) and the CST820 touch INT
- * (GPIO3). GPIO3 is a valid EXT1 pad on ESP32-S31 (8 RTCIO channels per
- * soc_caps.h; GPIO3 is RTCIO channel 3 per rtc_io_channel.h), so arming it
- * is a software configuration, not a hardware limit. A real touch wake
- * additionally needs the CST820 powered and in monitor mode through deep
- * sleep; the current safe-state flow removes its ALDO2 rail before entry,
- * so the touch source is armed but not expected to fire until the power
- * flow keeps the touch rail up (tracked in the README). The internal
- * pull-up keeps GPIO3 at a defined high level meanwhile, so an unpowered
- * controller can neither block sleep nor cause a spurious ANY_LOW wake.
- * Waking from deep sleep reboots the chip, so this function does not
- * return on success; app_main reads the cycle counter from RTC memory on
- * the next boot and routes the machine back to S0 or on to S2.
+ * (GPIO3). GPIO3 is a valid RTCIO on ESP32-S31. Because the current board
+ * connects its external GPIO3 pull-up to the switched ALDO2 rail, this flow
+ * restores CST820 and keeps ALDO2 on for the deep-sleep interval; otherwise
+ * an unpowered controller can clamp INT low and cause a false immediate wake.
+ * Waking from deep sleep reboots the chip, so this function does not return
+ * on success; app_main reads the cycle counter from RTC memory on the next
+ * boot and routes the machine back to S0 or on to S2.
  */
 static esp_err_t enter_deep_sleep(void)
 {
@@ -894,17 +917,17 @@ static esp_err_t enter_deep_sleep(void)
                  esp_err_to_name(timer_error));
     }
 
-    /* EXT1 on the shared IRQ line and the touch INT line. Both sources are
-     * active low, so one ANY_LOW mask covers them. GPIO2 is pulled up
-     * through R31 (10kOhm to TG28_VRTC, the always-on 3.0V rail); GPIO3 is
-     * driven by the CST820 only while the controller is powered. Enable the
-     * internal pull-up on both pads as insurance so neither can float: a
-     * floating EXT1 pin is exactly what keeps the chip in deep sleep
-     * forever. GPIO3 also needs the CST820 powered and in monitor mode to
-     * actually assert - see the function comment. */
+#if DEEP_SLEEP_KEEP_TOUCH_RAIL
+    const esp_err_t touch_error = prepare_touch_deep_wake();
+#endif
     esp_err_t ext1_error = arm_ext1_pad(BSP_PMIC_RTC_INT);
     if (ext1_error == ESP_OK) {
+#if DEEP_SLEEP_KEEP_TOUCH_RAIL
+        ext1_error = touch_error == ESP_OK ?
+                     arm_ext1_pad(BSP_TOUCH_INT) : touch_error;
+#else
         ext1_error = arm_ext1_pad(BSP_TOUCH_INT);
+#endif
     }
     if (ext1_error == ESP_OK) {
         ext1_error = esp_sleep_enable_ext1_wakeup_io(
