@@ -30,6 +30,7 @@ bool storage_mounted(void);
 const char *storage_mount_point(void);
 esp_err_t storage_lease_acquire(storage_lease_t *lease);
 void storage_lease_release(storage_lease_t *lease);
+esp_err_t storage_install_reference_media(void);
 
 #ifdef __cplusplus
 }

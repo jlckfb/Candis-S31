@@ -10,7 +10,9 @@
 
 #include "bsp/esp-bsp.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_psram.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs.h"
@@ -20,6 +22,7 @@ static const char *TAG = "player_board";
 
 #define PLAYER_NVS_NAMESPACE "player"
 #define PLAYER_NVS_KEY_CFG   "cfg"
+#define PLAYER_MIN_VISIBLE_BRIGHTNESS 5
 
 static player_settings_t s_settings;
 static bool s_settings_loaded;
@@ -44,6 +47,9 @@ static void settings_load(void)
             stored.brightness >= 0 && stored.brightness <= 100 &&
             stored.volume >= 0 && stored.volume <= 100) {
         s_settings = stored;
+        if (s_settings.brightness < PLAYER_MIN_VISIBLE_BRIGHTNESS) {
+            s_settings.brightness = 30;
+        }
         s_settings_loaded = true;
     }
     nvs_close(handle);
@@ -72,8 +78,10 @@ esp_err_t player_board_init(void)
     static const bsp_power_domain_t shutdown_order[] = {
         BSP_POWER_DISPLAY_VCI,
         BSP_POWER_DISPLAY_VBAT,
+        BSP_POWER_TYPE_C_CONTROL,
         BSP_POWER_SDCARD,
         BSP_POWER_AUDIO_PA,
+        BSP_POWER_USB_OTG,
     };
     for (size_t i = 0; i < sizeof(shutdown_order) / sizeof(shutdown_order[0]); ++i) {
         if (i == 1) {
@@ -100,6 +108,18 @@ esp_err_t player_board_init(void)
     }
     ESP_RETURN_ON_ERROR(nvs_err, TAG, "nvs init failed");
     settings_load();
+
+    ESP_RETURN_ON_FALSE(esp_psram_is_initialized(), ESP_ERR_NOT_FOUND, TAG,
+                        "32 MB PSRAM is required");
+    const size_t psram_size = esp_psram_get_size();
+    const size_t largest_block = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+    ESP_RETURN_ON_FALSE(psram_size >= 32U * 1024U * 1024U, ESP_ERR_INVALID_SIZE, TAG,
+                        "unexpected PSRAM size: %u", (unsigned)psram_size);
+    ESP_RETURN_ON_FALSE(largest_block >= 2U * 1024U * 1024U, ESP_ERR_NO_MEM, TAG,
+                        "PSRAM is too fragmented: largest=%u", (unsigned)largest_block);
+    ESP_LOGI(TAG, "PSRAM ready: %u MB, largest block %u KB",
+             (unsigned)(psram_size / (1024U * 1024U)),
+             (unsigned)(largest_block / 1024U));
 
     if (bsp_display_start() == NULL) {
         ESP_LOGE(TAG, "display start failed");

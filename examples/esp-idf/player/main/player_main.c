@@ -6,7 +6,6 @@
 
 #include <string.h>
 
-#include "audio_service.h"
 #include "board_init.h"
 #include "bsp/esp-bsp.h"
 #include "esp_log.h"
@@ -22,6 +21,11 @@ static void on_storage(storage_event_t ev, void *user)
     (void)user;
     if (ev == STORAGE_EV_MOUNTED) {
         ESP_LOGI(TAG, "TF card mounted");
+        const esp_err_t install_error = storage_install_reference_media();
+        if (install_error != ESP_OK) {
+            ESP_LOGW(TAG, "reference AVI install failed: %s",
+                     esp_err_to_name(install_error));
+        }
         ui_player_refresh_files();
     } else if (ev == STORAGE_EV_UNMOUNTED) {
         ESP_LOGI(TAG, "TF card removed");
@@ -42,11 +46,13 @@ static void on_input(input_event_t ev, void *user)
 void app_main(void)
 {
     ESP_ERROR_CHECK(player_board_init());
+    /* The video backend attaches to the active LVGL screen. Build and activate
+     * the playback surface first, then add controls above the video object. */
+    ESP_ERROR_CHECK(ui_player_init());
     ESP_ERROR_CHECK(video_player_init());
-    ESP_ERROR_CHECK(audio_start());
+    ESP_ERROR_CHECK(ui_player_complete_init());
     ESP_ERROR_CHECK(storage_start(on_storage, NULL));
     ESP_ERROR_CHECK(input_start(on_input, NULL));
-    ESP_ERROR_CHECK(ui_player_init());
 
     ESP_LOGI(TAG, "Candis-S31 player demo started");
 

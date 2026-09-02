@@ -55,6 +55,4 @@ endif()
 set(CANDIS_S31_BSP_GIT_REV "${CANDIS_S31_BSP_GIT_REV}" CACHE INTERNAL "Candis-S31 BSP revision")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-# Build only the application and its transitive BSP dependencies.
-idf_build_set_property(MINIMAL_BUILD ON)
 project(candis_s31_player)

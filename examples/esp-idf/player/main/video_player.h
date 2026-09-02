@@ -18,7 +18,7 @@ typedef enum {
     PLAYER_EV_STARTED = 0,
     PLAYER_EV_FINISHED,
     PLAYER_EV_ERROR,
-    PLAYER_EV_PROGRESS, /**< value = elapsed ms */
+    PLAYER_EV_PROGRESS, /**< value = playback percentage, 0..100 */
 } player_event_t;
 
 typedef void (*player_event_cb_t)(player_event_t ev, int value, void *user);
@@ -53,6 +53,7 @@ esp_err_t video_player_set_brightness(int brightness);
 /** Set volume 0..100. */
 esp_err_t video_player_set_volume(int volume);
 esp_err_t video_player_set_speed(float speed);
+esp_err_t video_player_set_loop(bool loop);
 
 /** True while playing or paused. */
 bool video_player_is_active(void);

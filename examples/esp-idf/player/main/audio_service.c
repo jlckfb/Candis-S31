@@ -1,263 +1,131 @@
 /*
- * Candis-S31 player demo - audio service.
- *
- * Simplified from firmware/demo/main/services/svc_audio.c.
- * Supports WAV file playback and streaming PCM.
+ * Candis-S31 player audio render adapter.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "audio_service.h"
 
-#include <string.h>
+#include <inttypes.h>
+#include <stdint.h>
 
 #include "bsp/esp-bsp.h"
-#include "esp_heap_caps.h"
+#include "esp_audio_render.h"
 #include "esp_codec_dev.h"
+#include "esp_gmf_bit_cvt.h"
+#include "esp_gmf_ch_cvt.h"
+#include "esp_gmf_pool.h"
+#include "esp_gmf_rate_cvt.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "freertos/task.h"
 
 static const char *TAG = "player_audio";
 
-#define AUDIO_TASK_STACK 8192
-#define AUDIO_TASK_PRIO  5
-#define AUDIO_QUEUE_DEPTH 8
-#define WAV_HDR_BYTES 44
-#define IO_BYTES      2048
+#define OUTPUT_SAMPLE_RATE 48000
+#define OUTPUT_CHANNELS    2
+#define OUTPUT_BITS        16
 
-static esp_codec_dev_handle_t s_speaker_dev = NULL;
-static esp_codec_dev_handle_t s_mic_dev = NULL;
-static bool s_started = false;
-
+static esp_codec_dev_handle_t s_speaker;
+static esp_audio_render_handle_t s_render;
+static esp_audio_render_stream_handle_t s_stream;
+static esp_gmf_pool_handle_t s_pool;
 static SemaphoreHandle_t s_lock;
-static TaskHandle_t s_task;
-static QueueHandle_t s_queue;
-
-static bool s_playing = false;
-static bool s_paused = false;
+static bool s_started;
+static bool s_codec_open;
 static int s_volume = 20;
-static FILE *s_file = NULL;
-static int s_file_bytes_left = 0;
-static int s_stream_sample_rate = 0;
-static int s_stream_channels = 0;
+static uint32_t s_output_sample_rate;
 
-typedef enum {
-    CMD_PLAY_WAV = 0,
-    CMD_STOP,
-    CMD_PAUSE,
-    CMD_SET_VOLUME,
-    CMD_STREAM_START,
-    CMD_STREAM_DATA,
-} audio_cmd_type_t;
-
-typedef struct {
-    audio_cmd_type_t type;
-    int value;       /**< volume/pause/sample_rate/channels */
-    int value2;
-    void *ptr;
-    size_t len;
-} audio_cmd_t;
-
-static int clamp_int(int v, int lo, int hi)
+static int clamp_volume(int volume)
 {
-    if (v < lo) {
-        return lo;
+    if (volume < 0) {
+        return 0;
     }
-    if (v > hi) {
-        return hi;
-    }
-    return v;
+    return volume > 100 ? 100 : volume;
 }
 
-static bool wav_header_parse(const uint8_t *hdr, uint16_t *channels,
-                             uint32_t *sample_rate, uint16_t *bits,
-                             uint32_t *data_offset, uint32_t *data_size)
+static int codec_writer(uint8_t *pcm, uint32_t length, void *ctx)
 {
-    if (memcmp(hdr, "RIFF", 4) != 0 || memcmp(hdr + 8, "WAVE", 4) != 0) {
-        return false;
+    esp_codec_dev_handle_t codec = (esp_codec_dev_handle_t)ctx;
+    if (codec == NULL || pcm == NULL || length == 0) {
+        return -1;
     }
-    uint16_t fmt_channels = hdr[22] | (hdr[23] << 8);
-    uint32_t fmt_rate = hdr[24] | (hdr[25] << 8) | (hdr[26] << 16) | (hdr[27] << 24);
-    uint16_t fmt_bits = hdr[34] | (hdr[35] << 8);
-    if (fmt_bits != 16) {
-        return false;
+    /* The board has one speaker. Fold stereo to mono and duplicate it into
+     * both I2S slots so content panned to either channel remains audible. */
+    int16_t *samples = (int16_t *)pcm;
+    const uint32_t frames = length / (2U * sizeof(int16_t));
+    for (uint32_t i = 0; i < frames; ++i) {
+        const int32_t mixed = ((int32_t)samples[i * 2U] + samples[i * 2U + 1U]) / 2;
+        samples[i * 2U] = (int16_t)mixed;
+        samples[i * 2U + 1U] = (int16_t)mixed;
     }
-    /* Walk chunks to find 'data'. */
-    uint32_t offset = 12;
-    while (offset + 8 < WAV_HDR_BYTES) {
-        uint32_t id = hdr[offset] | (hdr[offset + 1] << 8) |
-                      (hdr[offset + 2] << 16) | (hdr[offset + 3] << 24);
-        uint32_t sz = hdr[offset + 4] | (hdr[offset + 5] << 8) |
-                      (hdr[offset + 6] << 16) | (hdr[offset + 7] << 24);
-        if (id == 0x61746164) { /* 'data' */
-            *channels = fmt_channels;
-            *sample_rate = fmt_rate;
-            *bits = fmt_bits;
-            *data_offset = offset + 8;
-            *data_size = sz;
-            return true;
-        }
-        offset += 8 + sz;
-        if (offset & 1) {
-            offset++;
-        }
+    const int result = esp_codec_dev_write(codec, pcm, length);
+    if (result != ESP_CODEC_DEV_OK) {
+        ESP_LOGE(TAG, "codec write failed: %d, len=%" PRIu32, result, length);
     }
-    return false;
+    return result;
 }
 
-static esp_err_t codec_open_playback(int sample_rate, int channels)
+static esp_err_t register_element(esp_gmf_element_handle_t element, const char *name)
 {
-    esp_codec_dev_sample_info_t fs = {
-        .sample_rate = sample_rate,
-        .channel = channels,
-        .bits_per_sample = 16,
-        .mclk_multiple = 256,
-    };
-    esp_err_t err = esp_codec_dev_open(s_speaker_dev, &fs);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "codec open failed: %s", esp_err_to_name(err));
-        return err;
+    if (element == NULL) {
+        ESP_LOGE(TAG, "%s element creation failed", name);
+        return ESP_FAIL;
     }
-    esp_codec_dev_set_out_vol(s_speaker_dev, s_volume);
-    bsp_power_domain_set(BSP_POWER_AUDIO_PA, true);
+    if (esp_gmf_pool_register_element(s_pool, element, NULL) != ESP_GMF_ERR_OK) {
+        ESP_LOGE(TAG, "%s element registration failed", name);
+        esp_gmf_obj_delete(element);
+        return ESP_FAIL;
+    }
     return ESP_OK;
 }
 
-static void codec_close_playback(void)
+static esp_err_t create_audio_pool(void)
 {
-    esp_codec_dev_close(s_speaker_dev);
-    bsp_power_domain_set(BSP_POWER_AUDIO_PA, false);
-}
+    if (esp_gmf_pool_init(&s_pool) != ESP_GMF_ERR_OK) {
+        return ESP_ERR_NO_MEM;
+    }
 
-static void play_run(void)
-{
-    uint8_t buf[IO_BYTES] __attribute__((aligned(4)));
-    while (s_playing && s_file != NULL && s_file_bytes_left > 0 && !s_paused) {
-        size_t want = (s_file_bytes_left < (int)sizeof(buf)) ?
-                      (size_t)s_file_bytes_left : sizeof(buf);
-        size_t got = fread(buf, 1, want, s_file);
-        if (got == 0) {
-            break;
-        }
-        esp_codec_dev_write(s_speaker_dev, buf, got);
-        s_file_bytes_left -= (int)got;
+    esp_gmf_element_handle_t element = NULL;
+    esp_ae_ch_cvt_cfg_t channel_cfg = DEFAULT_ESP_GMF_CH_CVT_CONFIG();
+    if (esp_gmf_ch_cvt_init(&channel_cfg, &element) != ESP_GMF_ERR_OK ||
+            register_element(element, "channel converter") != ESP_OK) {
+        return ESP_FAIL;
     }
-    if (s_file != NULL) {
-        fclose(s_file);
-        s_file = NULL;
-    }
-    s_playing = false;
-    codec_close_playback();
-    ESP_LOGI(TAG, "playback finished");
-}
 
+    element = NULL;
+    esp_ae_bit_cvt_cfg_t bit_cfg = DEFAULT_ESP_GMF_BIT_CVT_CONFIG();
+    if (esp_gmf_bit_cvt_init(&bit_cfg, &element) != ESP_GMF_ERR_OK ||
+            register_element(element, "bit converter") != ESP_OK) {
+        return ESP_FAIL;
+    }
 
-static void audio_task(void *arg)
-{
-    (void)arg;
-    audio_cmd_t cmd;
-    for (;;) {
-        if (!xQueueReceive(s_queue, &cmd, pdMS_TO_TICKS(20))) {
-            continue;
-        }
-        switch (cmd.type) {
-        case CMD_PLAY_WAV: {
-            if (s_playing) {
-                break;
-            }
-            char *path = (char *)cmd.ptr;
-            FILE *f = fopen(path, "rb");
-            if (f == NULL) {
-                ESP_LOGE(TAG, "open %s failed", path);
-                break;
-            }
-            uint8_t hdr[WAV_HDR_BYTES];
-            if (fread(hdr, 1, sizeof(hdr), f) != sizeof(hdr)) {
-                fclose(f);
-                break;
-            }
-            uint16_t ch = 0;
-            uint32_t rate = 0;
-            uint16_t bits = 0;
-            uint32_t off = 0;
-            uint32_t size = 0;
-            if (!wav_header_parse(hdr, &ch, &rate, &bits, &off, &size)) {
-                ESP_LOGE(TAG, "bad WAV header");
-                fclose(f);
-                break;
-            }
-            if (ch != 1 && ch != 2) {
-                ESP_LOGE(TAG, "unsupported channels %u", ch);
-                fclose(f);
-                break;
-            }
-            fseek(f, off, SEEK_SET);
-            if (codec_open_playback((int)rate, (int)ch) != ESP_OK) {
-                fclose(f);
-                break;
-            }
-            s_file = f;
-            s_file_bytes_left = (int)size;
-            s_playing = true;
-            s_paused = false;
-            play_run();
-            break;
-        }
-        case CMD_STOP:
-            s_playing = false;
-            if (s_file != NULL) {
-                fclose(s_file);
-                s_file = NULL;
-            }
-            codec_close_playback();
-            break;
-        case CMD_PAUSE:
-            s_paused = cmd.value != 0;
-            break;
-        case CMD_SET_VOLUME:
-            s_volume = clamp_int(cmd.value, 0, 100);
-            if (s_speaker_dev != NULL) {
-                esp_codec_dev_set_out_vol(s_speaker_dev, s_volume);
-            }
-            break;
-        case CMD_STREAM_START:
-            if (s_playing) {
-                codec_close_playback();
-            }
-            s_stream_sample_rate = cmd.value;
-            s_stream_channels = cmd.value2;
-            if (codec_open_playback(s_stream_sample_rate, s_stream_channels) != ESP_OK) {
-                s_playing = false;
-            } else {
-                s_playing = true;
-                s_paused = false;
-            }
-            break;
-        case CMD_STREAM_DATA: {
-            if (!s_playing || s_paused || cmd.ptr == NULL || cmd.len == 0) {
-                break;
-            }
-            esp_codec_dev_write(s_speaker_dev, cmd.ptr, cmd.len);
-            free(cmd.ptr);
-            break;
-        }
-        default:
-            break;
-        }
+    element = NULL;
+    esp_ae_rate_cvt_cfg_t rate_cfg = DEFAULT_ESP_GMF_RATE_CVT_CONFIG();
+    if (esp_gmf_rate_cvt_init(&rate_cfg, &element) != ESP_GMF_ERR_OK ||
+            register_element(element, "rate converter") != ESP_OK) {
+        return ESP_FAIL;
     }
-}
 
-static esp_err_t send_cmd(const audio_cmd_t *cmd, TickType_t wait)
-{
-    if (s_queue == NULL) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    if (xQueueSend(s_queue, cmd, wait) != pdPASS) {
-        return ESP_ERR_TIMEOUT;
-    }
     return ESP_OK;
+}
+
+static void cleanup(void)
+{
+    if (s_render != NULL) {
+        esp_audio_render_destroy(s_render);
+        s_render = NULL;
+        s_stream = NULL;
+    }
+    if (s_pool != NULL) {
+        esp_gmf_pool_deinit(s_pool);
+        s_pool = NULL;
+    }
+    if (s_started) {
+        bsp_audio_deinit();
+    }
+    s_speaker = NULL;
+    s_started = false;
 }
 
 esp_err_t audio_start(void)
@@ -265,107 +133,157 @@ esp_err_t audio_start(void)
     if (s_started) {
         return ESP_OK;
     }
-    esp_err_t err = bsp_audio_init(NULL);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "bsp_audio_init: %s", esp_err_to_name(err));
-        return err;
-    }
-    s_speaker_dev = bsp_audio_codec_speaker_init();
-    s_mic_dev = bsp_audio_codec_microphone_init();
-    if (s_speaker_dev == NULL || s_mic_dev == NULL) {
-        bsp_audio_deinit();
-        return ESP_FAIL;
-    }
     s_lock = xSemaphoreCreateMutex();
-    s_queue = xQueueCreate(AUDIO_QUEUE_DEPTH, sizeof(audio_cmd_t));
-    if (s_lock == NULL || s_queue == NULL) {
+    if (s_lock == NULL) {
         return ESP_ERR_NO_MEM;
     }
-    if (xTaskCreate(audio_task, "player_audio", AUDIO_TASK_STACK, NULL,
-                    AUDIO_TASK_PRIO, &s_task) != pdPASS) {
-        return ESP_ERR_NO_MEM;
+    esp_err_t error = bsp_audio_init(NULL);
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "bsp_audio_init failed: %s", esp_err_to_name(error));
+        return error;
     }
     s_started = true;
+    s_speaker = bsp_audio_codec_speaker_init();
+    if (s_speaker == NULL) {
+        cleanup();
+        return ESP_FAIL;
+    }
+    error = create_audio_pool();
+    if (error != ESP_OK) {
+        cleanup();
+        return error;
+    }
+
+    esp_audio_render_cfg_t render_cfg = {
+        .max_stream_num = 1,
+        .out_writer = codec_writer,
+        .out_ctx = s_speaker,
+        .out_sample_info = {
+            .sample_rate = OUTPUT_SAMPLE_RATE,
+            .bits_per_sample = OUTPUT_BITS,
+            .channel = OUTPUT_CHANNELS,
+        },
+        .pool = s_pool,
+        .process_period = 20,
+    };
+    if (esp_audio_render_create(&render_cfg, &s_render) != ESP_AUDIO_RENDER_ERR_OK ||
+            esp_audio_render_stream_get(s_render, ESP_AUDIO_RENDER_FIRST_STREAM,
+                                        &s_stream) != ESP_AUDIO_RENDER_ERR_OK) {
+        cleanup();
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "audio render ready (%d Hz, %d-bit, %d-channel)",
+             OUTPUT_SAMPLE_RATE, OUTPUT_BITS, OUTPUT_CHANNELS);
     return ESP_OK;
 }
 
-esp_err_t audio_play_wav(const char *path, int volume)
+void *audio_render_stream(void)
 {
-    if (path == NULL) {
-        return ESP_ERR_INVALID_ARG;
+    return s_stream;
+}
+
+esp_err_t audio_prepare_playback(int volume)
+{
+    if (!s_started || s_speaker == NULL) {
+        return ESP_ERR_INVALID_STATE;
     }
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    s_volume = clamp_int(volume, 0, 100);
-    audio_cmd_t cmd = {
-        .type = CMD_PLAY_WAV,
-        .ptr = (void *)path,
-    };
-    esp_err_t err = send_cmd(&cmd, pdMS_TO_TICKS(100));
+    s_volume = clamp_volume(volume);
     xSemaphoreGive(s_lock);
-    return err;
+    return ESP_OK;
 }
 
-esp_err_t audio_stop(void)
+esp_err_t audio_configure_playback(uint32_t sample_rate)
 {
-    audio_cmd_t cmd = {.type = CMD_STOP};
-    return send_cmd(&cmd, pdMS_TO_TICKS(100));
+    if (!s_started || s_speaker == NULL || s_render == NULL || sample_rate == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const uint32_t device_rate =
+        (sample_rate == 8000U || sample_rate == 16000U ||
+         sample_rate == 44100U || sample_rate == 48000U) ? sample_rate : 48000U;
+
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (s_codec_open && s_output_sample_rate == device_rate) {
+        const esp_err_t volume_error = esp_codec_dev_set_out_vol(s_speaker, s_volume);
+        xSemaphoreGive(s_lock);
+        return volume_error;
+    }
+    if (s_codec_open) {
+        esp_codec_dev_close(s_speaker);
+        s_codec_open = false;
+    }
+    esp_audio_render_sample_info_t render_format = {
+        .sample_rate = device_rate,
+        .channel = OUTPUT_CHANNELS,
+        .bits_per_sample = OUTPUT_BITS,
+    };
+    esp_audio_render_err_t render_error =
+        esp_audio_render_set_out_sample_info(s_render, &render_format);
+    if (render_error != ESP_AUDIO_RENDER_ERR_OK) {
+        xSemaphoreGive(s_lock);
+        ESP_LOGE(TAG, "audio render rate switch to %" PRIu32 " Hz failed: %d",
+                 device_rate, render_error);
+        return ESP_FAIL;
+    }
+    esp_err_t error = bsp_power_domain_set(BSP_POWER_AUDIO_PA, true);
+    if (error == ESP_OK) {
+        esp_codec_dev_sample_info_t codec_format = {
+            .sample_rate = device_rate,
+            .channel = OUTPUT_CHANNELS,
+            .bits_per_sample = OUTPUT_BITS,
+            .mclk_multiple = 256,
+        };
+        error = esp_codec_dev_open(s_speaker, &codec_format);
+    }
+    if (error == ESP_CODEC_DEV_OK) {
+        s_codec_open = true;
+        s_output_sample_rate = device_rate;
+        error = esp_codec_dev_set_out_vol(s_speaker, s_volume);
+        ESP_LOGI(TAG, "playback path configured at %" PRIu32 " Hz", device_rate);
+    } else {
+        bsp_power_domain_set(BSP_POWER_AUDIO_PA, false);
+        ESP_LOGE(TAG, "codec open at %" PRIu32 " Hz failed: %s",
+                 device_rate, esp_err_to_name(error));
+    }
+    xSemaphoreGive(s_lock);
+    return error;
 }
 
-esp_err_t audio_pause(bool pause)
+esp_err_t audio_write_pcm(uint8_t *pcm, uint32_t length)
 {
-    audio_cmd_t cmd = {.type = CMD_PAUSE, .value = pause ? 1 : 0};
-    return send_cmd(&cmd, pdMS_TO_TICKS(100));
+    if (!s_codec_open || pcm == NULL || length == 0) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return codec_writer(pcm, length, s_speaker) == ESP_CODEC_DEV_OK ?
+           ESP_OK : ESP_FAIL;
+}
+
+void audio_finish_playback(void)
+{
+    if (!s_started || s_lock == NULL) {
+        return;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (s_codec_open) {
+        esp_codec_dev_close(s_speaker);
+        s_codec_open = false;
+        s_output_sample_rate = 0;
+    }
+    bsp_power_domain_set(BSP_POWER_AUDIO_PA, false);
+    xSemaphoreGive(s_lock);
 }
 
 esp_err_t audio_set_volume(int volume)
 {
-    audio_cmd_t cmd = {.type = CMD_SET_VOLUME, .value = clamp_int(volume, 0, 100)};
-    return send_cmd(&cmd, pdMS_TO_TICKS(100));
-}
-
-bool audio_is_playing(void)
-{
-    return s_playing;
-}
-
-esp_err_t audio_stream_start(int sample_rate, int channels, int volume)
-{
+    if (!s_started || s_lock == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    s_volume = clamp_int(volume, 0, 100);
-    audio_cmd_t cmd = {
-        .type = CMD_STREAM_START,
-        .value = sample_rate,
-        .value2 = channels,
-    };
-    esp_err_t err = send_cmd(&cmd, pdMS_TO_TICKS(100));
+    s_volume = clamp_volume(volume);
+    esp_err_t error = ESP_OK;
+    if (s_codec_open) {
+        error = esp_codec_dev_set_out_vol(s_speaker, s_volume);
+    }
     xSemaphoreGive(s_lock);
-    return err;
-}
-
-esp_err_t audio_stream_write(const int16_t *samples, size_t count)
-{
-    if (samples == NULL || count == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    size_t bytes = count * sizeof(int16_t);
-    void *copy = heap_caps_malloc(bytes, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
-    if (copy == NULL) {
-        return ESP_ERR_NO_MEM;
-    }
-    memcpy(copy, samples, bytes);
-    audio_cmd_t cmd = {
-        .type = CMD_STREAM_DATA,
-        .ptr = copy,
-        .len = bytes,
-    };
-    esp_err_t err = send_cmd(&cmd, pdMS_TO_TICKS(100));
-    if (err != ESP_OK) {
-        free(copy);
-    }
-    return err;
-}
-
-esp_err_t audio_stream_stop(void)
-{
-    return audio_stop();
+    return error;
 }
