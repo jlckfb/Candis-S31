@@ -1,5 +1,44 @@
 menu "Candis-S31 Camera Test"
+    config CAMERA_TEST_USE_UYVY
+        bool "Use UYVY sensor output and software conversion"
+        default n
+        help
+            Select the sensor's UYVY path and convert it to RGB565 in the
+            application, bypassing a module-specific RGB565 packing fault.
 
+    config CAMERA_TEST_DISPLAY_PATTERN
+        bool "Display a fixed four-quadrant pattern"
+        default n
+        help
+            Replace camera frames with a fixed pattern to isolate the display
+            and LVGL path from sensor data.
+    config CAMERA_TEST_SENSOR_COLOR_BAR
+        bool "Enable the sensor color-bar test pattern"
+        default n
+        help
+            Enable the OV5640 internal color bar before streaming to isolate
+            the DVP receiver from the analog image path.
+
+    config CAMERA_TEST_SENSOR_PCLK_INVERT
+        bool "Invert sensor PCLK polarity"
+        default n
+        help
+            Set OV5640 register 0x4740 bit 5 low for a sensor-side
+            sampling-edge experiment.
+    config CAMERA_TEST_RECEIVER_PCLK_INVERT
+        bool "Invert receiver PCLK sampling"
+        default n
+        help
+            Set the S31 LCD_CAM CAM_CLK_INV bit after STREAMON for a
+            receiver-side sampling-edge experiment.
+
+
+    config CAMERA_TEST_UYVY_CTRL_3F
+        bool "Use OV5640 UYVY control value 0x3F"
+        default n
+        help
+            Select the Linux-compatible UYVY format control value for a
+            module-level output-format comparison.
     config CAMERA_TEST_CYCLES
         int "Automatic start/stop cycles"
         default 3

@@ -1,10 +1,11 @@
 /*
- * Candis-S31 headless camera driver diagnostic.
+ * Candis-S31 camera driver and visual validation demo.
  *
- * This is deliberately a separate firmware image from the LVGL demo. It
- * initializes only the board safety state and camera, then runs bounded
- * start/capture/stop cycles and reports every result over UART. No display,
- * touch, audio, network, or user interaction is required.
+ * This is deliberately a separate firmware image from the product demo. It
+ * initializes the AMOLED preview automatically, runs bounded driver checks,
+ * and leaves a live camera image on the screen for operator confirmation.
+ * The final PASS result is never emitted until the operator taps PASS on the
+ * screen; serial-only frame checks are reported as automatic evidence.
  *
  * The esp_cam_sensor option/table named RGB565_BE writes 0x4300=0x6F,
  * although OV5640/Linux semantics define 0x6F as RGB565 LE and 0x61 as BE.
@@ -34,10 +35,14 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_video_ioctl.h"
+#include "camera_visual.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "linux/videodev2.h"
 #include "sdkconfig.h"
+#if CONFIG_CAMERA_TEST_RECEIVER_PCLK_INVERT
+#include "hal/cam_ll.h"
+#endif
 
 static const char *TAG = "camera_test";
 
@@ -51,8 +56,22 @@ static const char *TAG = "camera_test";
 #define CAMERA_TEST_HASH_STEP         64U
 #define CAMERA_TEST_SENSOR_ADDR       0x3CU
 #define CAMERA_TEST_SENSOR_PID        0x5640U
-#define CAMERA_TEST_WORKING_FORMAT    0x61U
+#define CAMERA_TEST_TASK_STACK        8192
+#define CAMERA_TEST_TASK_PRIORITY     4
+
+#if CONFIG_CAMERA_TEST_USE_UYVY
+#define CAMERA_TEST_V4L2_FORMAT       V4L2_PIX_FMT_UYVY
+#define CAMERA_TEST_FORMAT_CTRL       0x32U
+#define CAMERA_TEST_FORMAT_MUX        0x00U
+#define CAMERA_TEST_FORMAT_NAME       "UYVY"
 #define CAMERA_TEST_EXPECTED_AEC      0x03D8U
+#else
+#define CAMERA_TEST_V4L2_FORMAT       V4L2_PIX_FMT_RGB565X
+#define CAMERA_TEST_FORMAT_CTRL       0x61U
+#define CAMERA_TEST_FORMAT_MUX        0x01U
+#define CAMERA_TEST_FORMAT_NAME       "RGB565X"
+#define CAMERA_TEST_EXPECTED_AEC      0x03D8U
+#endif
 
 #ifndef CONFIG_CAMERA_TEST_CYCLES
 #error "CAMERA_TEST_CYCLES is missing; keep main/Kconfig.projbuild enabled"
@@ -232,19 +251,20 @@ static bool sensor_read_snapshot(sensor_snapshot_t *snapshot)
     snapshot->pid = (uint16_t)((pid_high << 8) | pid_low);
     snapshot->read_ok = mandatory_ok;
     const bool pid_ok = snapshot->pid == CAMERA_TEST_SENSOR_PID;
-    const bool format_ok = snapshot->format_ctrl == CAMERA_TEST_WORKING_FORMAT;
-    const bool mux_ok = snapshot->format_mux == 0x01;
+    const bool format_ok = snapshot->format_ctrl == CAMERA_TEST_FORMAT_CTRL;
+    const bool mux_ok = snapshot->format_mux == CAMERA_TEST_FORMAT_MUX;
     const bool aec_ok = snapshot->aec_max == CAMERA_TEST_EXPECTED_AEC;
     const bool control_ok = mandatory_ok && pid_ok && format_ok && mux_ok;
 
     ESP_LOGI(TAG,
              "CAMERA_TEST_SENSOR pid=0x%04x format_ctrl=0x%02x mux=0x%02x "
-             "vts=0x%04x aec_max=0x%04x status=%s",
+             "vts=0x%04x aec_max=0x%04x expected=%s status=%s",
              snapshot->pid, snapshot->format_ctrl, snapshot->format_mux,
-             snapshot->vts, snapshot->aec_max,
+             snapshot->vts, snapshot->aec_max, CAMERA_TEST_FORMAT_NAME,
              control_ok ? "PASS" : "FAIL");
     if (!mux_ok) {
-        ESP_LOGW(TAG, "CAMERA_TEST_SENSOR_NOTE format_mux_expected=0x01");
+        ESP_LOGW(TAG, "CAMERA_TEST_SENSOR_NOTE format_mux_expected=0x%02x",
+                 CAMERA_TEST_FORMAT_MUX);
     }
     if (!aec_ok) {
         ESP_LOGW(TAG,
@@ -317,6 +337,135 @@ static uint16_t read_rgb565_native(const uint8_t *data, size_t offset)
     return (uint16_t)(data[offset] | ((uint16_t)data[offset + 1] << 8));
 }
 
+/* Keep the OV5640 table's native PLL at the board's 20 MHz XCLK. The earlier
+ * 10 MHz issue-692 override produced unstable frame periods on this module. */
+static const uint16_t variant_issue692_pll[][2] = {
+    {0x3039, 0x00}, {0x3034, 0x1a}, {0x3035, 0x21},
+    {0x3036, 0x46}, {0x3037, 0x13}, {0x3108, 0x01},
+    {0x3824, 0x02}, {0x460c, 0x20}, {0x3103, 0x03},
+};
+
+static void sensor_write_variant(const uint16_t (*block)[2], size_t count,
+                                 const char *name, unsigned cycle)
+{
+    const i2c_master_bus_handle_t bus = bsp_i2c_get_handle();
+    if (bus == NULL) {
+        ESP_LOGW(TAG, "CAMERA_TEST_VARIANT cycle=%u block=%s status=WARN "
+                 "reason=no_i2c_bus", cycle, name);
+        return;
+    }
+    const i2c_device_config_t config = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = CAMERA_TEST_SENSOR_ADDR,
+        .scl_speed_hz = 100000,
+    };
+    i2c_master_dev_handle_t device = NULL;
+    esp_err_t error = i2c_master_bus_add_device(bus, &config, &device);
+    if (error != ESP_OK) {
+        ESP_LOGW(TAG, "CAMERA_TEST_VARIANT cycle=%u block=%s status=WARN "
+                 "add_device=%s", cycle, name, esp_err_to_name(error));
+        return;
+    }
+    size_t written = 0;
+    for (size_t index = 0; index < count; ++index) {
+        error = i2c_master_transmit(device, (const uint8_t[]){
+            (uint8_t)(block[index][0] >> 8), (uint8_t)block[index][0],
+            (uint8_t)block[index][1],
+        }, 3, 100);
+        if (error == ESP_OK) {
+            ++written;
+        } else {
+            ESP_LOGW(TAG, "CAMERA_TEST_VARIANT cycle=%u block=%s reg=0x%04x "
+                     "error=%s", cycle, name, block[index][0],
+                     esp_err_to_name(error));
+        }
+    }
+    ESP_LOGI(TAG, "CAMERA_TEST_VARIANT cycle=%u block=%s regs=%u/%u",
+             cycle, name, (unsigned)written, (unsigned)count);
+    i2c_master_bus_rm_device(device);
+}
+
+static void camera_apply_cycle_variant(unsigned cycle)
+{
+    sensor_write_variant(variant_issue692_pll,
+                         sizeof(variant_issue692_pll) /
+                         sizeof(variant_issue692_pll[0]),
+                         "issue692_pll_30mhz", cycle);
+#if CONFIG_CAMERA_TEST_SENSOR_COLOR_BAR
+    static const uint16_t color_bar[][2] = {{0x503d, 0x80}};
+    sensor_write_variant(color_bar, 1, "sensor_color_bar", cycle);
+#endif
+
+#if CONFIG_CAMERA_TEST_SENSOR_PCLK_INVERT
+    static const uint16_t sensor_pclk_invert[][2] = {{0x4740, 0x00}};
+    sensor_write_variant(sensor_pclk_invert, 1, "sensor_pclk_invert", cycle);
+#endif
+
+#if CONFIG_CAMERA_TEST_UYVY_CTRL_3F
+    static const uint16_t uyvy_ctrl_3f[][2] = {
+        {0x501f, 0x00}, {0x4300, 0x3f},
+    };
+    sensor_write_variant(uyvy_ctrl_3f, 2, "uyvy_ctrl_3f", cycle);
+#endif
+}
+
+static void sensor_dump_run_state(unsigned cycle)
+{
+    const i2c_master_bus_handle_t bus = bsp_i2c_get_handle();
+    if (bus == NULL) {
+        return;
+    }
+    const i2c_device_config_t config = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = CAMERA_TEST_SENSOR_ADDR,
+        .scl_speed_hz = 100000,
+    };
+    i2c_master_dev_handle_t device = NULL;
+    if (i2c_master_bus_add_device(bus, &config, &device) != ESP_OK) {
+        return;
+    }
+    static const uint16_t regs[] = {
+        0x3500, 0x3501, 0x3502, 0x350a, 0x350b,
+        0x3400, 0x3401, 0x3402, 0x3403, 0x3404, 0x3405, 0x3406,
+        0x5000, 0x5001, 0x5180, 0x3a0f, 0x3a10, 0x3a11, 0x503d,
+        0x3820, 0x3821, 0x4514, 0x4520, 0x3814, 0x3815,
+        0x4300, 0x501f,
+        0x3034, 0x3035, 0x3036, 0x3037, 0x3108, 0x3824, 0x460c, 0x3103,
+    };
+    uint8_t values[sizeof(regs) / sizeof(regs[0])];
+    bool ok = true;
+    for (size_t index = 0; index < sizeof(regs) / sizeof(regs[0]); ++index) {
+        if (sensor_read8(device, regs[index], &values[index]) != ESP_OK) {
+            ok = false;
+            break;
+        }
+    }
+    if (ok) {
+        ESP_LOGI(TAG,
+                 "CAMSTATS cycle=%u exp=0x%02x%02x%02x gain=0x%02x%02x "
+                 "awb=0x%02x%02x/0x%02x%02x/0x%02x%02x awb_fmt=0x%02x "
+                 "ctl=0x%02x/0x%02x/0x%02x target=0x%02x/0x%02x/0x%02x "
+                 "pattern=0x%02x phase=%02x/%02x/%02x/%02x inc=%02x/%02x "
+                 "out=%02x/%02x pll=%02x/%02x/%02x/%02x/%02x/%02x/%02x/%02x",
+                 cycle, values[0], values[1], values[2], values[3],
+                 values[4], values[5], values[6], values[7], values[8],
+                 values[9], values[10], values[11], values[12],
+                 values[13], values[14], values[15], values[16],
+                 values[17], values[18], values[19], values[20],
+                 values[21], values[22], values[23], values[24],
+                 values[25], values[26], values[27], values[28],
+                 values[29], values[30], values[31], values[32],
+                 values[33], values[34]);
+    } else {
+        ESP_LOGW(TAG, "CAMSTATS cycle=%u status=WARN reason=i2c", cycle);
+    }
+    i2c_master_bus_rm_device(device);
+}
+
+
+
+
+
 static bool pipe_cleanup(camera_pipe_t *pipe)
 {
     bool ok = true;
@@ -350,7 +499,32 @@ static bool pipe_cleanup(camera_pipe_t *pipe)
     return ok;
 }
 
-static esp_err_t pipe_prepare(camera_pipe_t *pipe, cycle_result_t *result)
+static void log_camera_rail_state(bsp_pmic_regulator_t regulator,
+                                  const char *name)
+{
+    uint16_t millivolts = 0;
+    bool enabled = false;
+    const esp_err_t voltage_error =
+        bsp_pmic_regulator_get_voltage(regulator, &millivolts);
+    const esp_err_t enable_error =
+        bsp_pmic_regulator_is_enabled(regulator, &enabled);
+    ESP_LOGI(TAG,
+             "CAMERA_TEST_RAIL name=%s enabled=%u set_mv=%u "
+             "enable_read=%s voltage_read=%s",
+             name, enabled ? 1U : 0U, (unsigned)millivolts,
+             esp_err_to_name(enable_error), esp_err_to_name(voltage_error));
+}
+
+#if CONFIG_CAMERA_TEST_RECEIVER_PCLK_INVERT
+static void camera_set_receiver_pclk_invert(void)
+{
+    lcd_cam_dev_t *const hw = CAM_LL_GET_HW(0);
+    cam_ll_enable_invert_pclk(hw, true);
+    ESP_LOGI(TAG, "CAMERA_TEST_RECEIVER_PCLK invert=1");
+}
+#endif
+static esp_err_t pipe_prepare(camera_pipe_t *pipe, cycle_result_t *result,
+                              unsigned cycle)
 {
     esp_err_t error = bsp_camera_start(NULL);
     pipe->camera_start_attempted = true;
@@ -358,6 +532,11 @@ static esp_err_t pipe_prepare(camera_pipe_t *pipe, cycle_result_t *result)
         ESP_LOGE(TAG, "CAMERA_TEST_PIPE stage=bsp_camera_start error=%s",
                  esp_err_to_name(error));
         return error;
+    }
+    if (cycle == 1U) {
+        log_camera_rail_state(BSP_PMIC_DCDC2, "DVDD");
+        log_camera_rail_state(BSP_PMIC_ALDO4, "AVDD");
+        log_camera_rail_state(BSP_PMIC_BLDO1, "DOVDD");
     }
 
 
@@ -367,9 +546,10 @@ static esp_err_t pipe_prepare(camera_pipe_t *pipe, cycle_result_t *result)
                  BSP_CAMERA_DEVICE, errno);
         return ESP_ERR_NOT_FOUND;
     }
+    /* open() reloads the sensor table; restore the board ISP and output path. */
     error = bsp_camera_apply_workaround();
     if (error != ESP_OK) {
-        ESP_LOGE(TAG, "CAMERA_TEST_PIPE stage=post_open_workaround error=%s",
+        ESP_LOGE(TAG, "CAMERA_TEST_PIPE post-open workaround error=%s",
                  esp_err_to_name(error));
         return error;
     }
@@ -401,10 +581,16 @@ static esp_err_t pipe_prepare(camera_pipe_t *pipe, cycle_result_t *result)
     pipe->format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     pipe->format.fmt.pix.width = CAMERA_TEST_WIDTH;
     pipe->format.fmt.pix.height = CAMERA_TEST_HEIGHT;
-    pipe->format.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB565X;
+    pipe->format.fmt.pix.pixelformat = CAMERA_TEST_V4L2_FORMAT;
     if (ioctl(pipe->file, VIDIOC_S_FMT, &pipe->format) != 0) {
         ESP_LOGE(TAG, "CAMERA_TEST_PIPE stage=set_format errno=%d", errno);
         return ESP_FAIL;
+    }
+    error = bsp_camera_apply_workaround();
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "CAMERA_TEST_PIPE post-format workaround error=%s",
+                 esp_err_to_name(error));
+        return error;
     }
 
     memset(&pipe->format, 0, sizeof(pipe->format));
@@ -427,7 +613,7 @@ static esp_err_t pipe_prepare(camera_pipe_t *pipe, cycle_result_t *result)
                       ? pipe->format.fmt.pix.bytesperline
                       : pipe->format.fmt.pix.width * CAMERA_TEST_PIXEL_BYTES;
     pipe->expected_bytes = pipe->row_bytes * pipe->format.fmt.pix.height;
-    result->format_ok = pipe->format.fmt.pix.pixelformat == V4L2_PIX_FMT_RGB565X &&
+    result->format_ok = pipe->format.fmt.pix.pixelformat == CAMERA_TEST_V4L2_FORMAT &&
                         pipe->format.fmt.pix.width == CAMERA_TEST_WIDTH &&
                         pipe->format.fmt.pix.height == CAMERA_TEST_HEIGHT &&
                         pipe->row_bytes >= CAMERA_TEST_WIDTH *
@@ -447,6 +633,7 @@ static esp_err_t pipe_prepare(camera_pipe_t *pipe, cycle_result_t *result)
     if (!result->format_ok) {
         return ESP_ERR_INVALID_SIZE;
     }
+    camera_apply_cycle_variant(cycle);
 
     struct v4l2_requestbuffers request = {0};
     request.count = CAMERA_TEST_MAX_BUFFERS;
@@ -503,9 +690,11 @@ static esp_err_t pipe_prepare(camera_pipe_t *pipe, cycle_result_t *result)
 
     const int stream_type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     if (ioctl(pipe->file, VIDIOC_STREAMON, &stream_type) != 0) {
-        ESP_LOGE(TAG, "CAMERA_TEST_PIPE stage=streamon errno=%d", errno);
         return ESP_FAIL;
     }
+#if CONFIG_CAMERA_TEST_RECEIVER_PCLK_INVERT
+    camera_set_receiver_pclk_invert();
+#endif
     pipe->streaming = true;
     result->stream_ok = true;
     return ESP_OK;
@@ -582,6 +771,15 @@ static void capture_frames(camera_pipe_t *pipe, cycle_result_t *result,
         const bool content_ok = inspect_length >= 2 &&
                                 !observation.uniform &&
                                 observation.max_value != observation.min_value;
+        if (size_ok) {
+#if CONFIG_CAMERA_TEST_USE_UYVY
+            (void)camera_visual_publish_uyvy(pipe->buffers[done.index],
+                                             inspect_length, pipe->row_bytes);
+#else
+            (void)camera_visual_publish(pipe->buffers[done.index],
+                                         inspect_length, pipe->row_bytes);
+#endif
+        }
         if (content_ok) {
             result->content_ok = true;
             ++result->valid_frames;
@@ -592,6 +790,8 @@ static void capture_frames(camera_pipe_t *pipe, cycle_result_t *result,
             }
             result->last_hash = observation.hash;
             result->buffer_mask |= 1u << done.index;
+            if (result->valid_frames == 1) {
+            }
         }
 
         const size_t center_offset = ((CAMERA_TEST_HEIGHT / 2U) *
@@ -640,6 +840,7 @@ static void capture_frames(camera_pipe_t *pipe, cycle_result_t *result,
                      observation.hash, size_ok && content_ok ? "PASS" : "WARN");
         }
 
+
         if (previous_time_us != 0) {
             const uint64_t period = (uint64_t)(frame_time_us - previous_time_us);
             result->period_total_us += period;
@@ -660,6 +861,9 @@ static void capture_frames(camera_pipe_t *pipe, cycle_result_t *result,
                      cycle, frame + 1, errno);
             break;
         }
+    }
+    if (result->valid_frames > 0) {
+        sensor_dump_run_state(cycle);
     }
     if (result->delivered_frames != CONFIG_CAMERA_TEST_FRAMES) {
         result->capture_ok = false;
@@ -697,7 +901,7 @@ static cycle_result_t run_cycle(unsigned cycle)
     pipe_init(&pipe);
 
     ESP_LOGI(TAG, "CAMERA_TEST_CYCLE_BEGIN cycle=%u", cycle);
-    const esp_err_t prepare_error = pipe_prepare(&pipe, &result);
+    const esp_err_t prepare_error = pipe_prepare(&pipe, &result, cycle);
     if (prepare_error == ESP_OK) {
         capture_frames(&pipe, &result, cycle);
     } else {
@@ -734,6 +938,141 @@ static cycle_result_t run_cycle(unsigned cycle)
              result.heap_before, result.heap_after);
     return result;
 }
+static bool preview_until_confirmation(camera_pipe_t *pipe)
+{
+    for (;;) {
+        if (camera_visual_get_decision() != CAMERA_VISUAL_PENDING) {
+            return true;
+        }
+
+        struct v4l2_buffer done = {0};
+        done.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        done.memory = V4L2_MEMORY_MMAP;
+        if (ioctl(pipe->file, VIDIOC_DQBUF, &done) != 0) {
+            ESP_LOGE(TAG, "CAMERA_TEST_PREVIEW status=FAIL reason=dqbuf errno=%d",
+                     errno);
+            camera_visual_set_error("Live preview DQBUF failed");
+            return false;
+        }
+        if (done.index >= pipe->buffer_count ||
+                done.index >= CAMERA_TEST_MAX_BUFFERS) {
+            ESP_LOGE(TAG, "CAMERA_TEST_PREVIEW status=FAIL reason=bad_index index=%u",
+                     done.index);
+            camera_visual_set_error("Live preview returned an invalid buffer");
+            return false;
+        }
+        if ((done.flags & V4L2_BUF_FLAG_ERROR) != 0 ||
+                (done.flags & V4L2_BUF_FLAG_DONE) == 0 ||
+                done.bytesused != pipe->expected_bytes ||
+                done.bytesused > pipe->lengths[done.index]) {
+            ESP_LOGE(TAG,
+                     "CAMERA_TEST_PREVIEW status=FAIL flags=0x%08" PRIx32
+                     " bytes=%u expected=%u",
+                     done.flags, (unsigned)done.bytesused,
+                     (unsigned)pipe->expected_bytes);
+            (void)ioctl(pipe->file, VIDIOC_QBUF, &done);
+            camera_visual_set_error("Live preview frame is invalid");
+            return false;
+        }
+#if CONFIG_CAMERA_TEST_DISPLAY_PATTERN
+        (void)camera_visual_publish_test_pattern();
+#elif CONFIG_CAMERA_TEST_USE_UYVY
+        (void)camera_visual_publish_uyvy(pipe->buffers[done.index],
+                                         done.bytesused, pipe->row_bytes);
+#else
+        (void)camera_visual_publish(pipe->buffers[done.index],
+                                     done.bytesused, pipe->row_bytes);
+#endif
+        if (ioctl(pipe->file, VIDIOC_QBUF, &done) != 0) {
+            ESP_LOGE(TAG, "CAMERA_TEST_PREVIEW status=FAIL reason=qbuf errno=%d",
+                     errno);
+            camera_visual_set_error("Live preview QBUF failed");
+            return false;
+        }
+    }
+}
+
+static void camera_test_task(void *arg)
+{
+    (void)arg;
+    unsigned pass_cycles = 0;
+    unsigned warn_cycles = 0;
+    unsigned fail_cycles = 0;
+    bool auto_ok = true;
+
+    for (unsigned cycle = 1; cycle <= CONFIG_CAMERA_TEST_CYCLES; ++cycle) {
+        camera_visual_set_streaming(true);
+        const cycle_result_t result = run_cycle(cycle);
+        camera_visual_set_streaming(false);
+        if (result.status == CAMERA_STATUS_PASS) {
+            ++pass_cycles;
+        } else if (result.status == CAMERA_STATUS_WARN) {
+            ++warn_cycles;
+        } else {
+            ++fail_cycles;
+            auto_ok = false;
+        }
+        if (cycle < CONFIG_CAMERA_TEST_CYCLES) {
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
+    }
+
+    ESP_LOGI(TAG,
+             "CAMERA_TEST_AUTO_SUMMARY status=%s cycles=%d pass=%u warn=%u fail=%u",
+             auto_ok ? "PASS" : "FAIL", CONFIG_CAMERA_TEST_CYCLES,
+             pass_cycles, warn_cycles, fail_cycles);
+    camera_visual_set_auto_state(auto_ok, CONFIG_CAMERA_TEST_CYCLES,
+                                 CONFIG_CAMERA_TEST_FRAMES);
+
+    if (!auto_ok) {
+        camera_visual_set_error("Automatic driver checks failed");
+        ESP_LOGI(TAG,
+                 "CAMERA_TEST_SUMMARY status=FAIL visual_confirmation=blocked "
+                 "reason=automatic_checks");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    camera_pipe_t preview_pipe;
+    pipe_init(&preview_pipe);
+    cycle_result_t preview_result = {
+        .status = CAMERA_STATUS_FAIL,
+        .size_ok = true,
+        .stop_ok = true,
+    };
+    /* Cycle 4 uses the same PLL with the test pattern disabled, so the screen
+     * shows the real scene after the D0-D7 inference captures complete. */
+    const esp_err_t prepare_error = pipe_prepare(&preview_pipe,
+                                                  &preview_result, 4);
+    if (prepare_error != ESP_OK) {
+        camera_visual_set_error("Final live preview could not start");
+        (void)pipe_cleanup(&preview_pipe);
+        ESP_LOGI(TAG,
+                 "CAMERA_TEST_SUMMARY status=FAIL visual_confirmation=blocked "
+                 "reason=preview_start error=%s",
+                 esp_err_to_name(prepare_error));
+        vTaskDelete(NULL);
+        return;
+    }
+
+    camera_visual_set_streaming(true);
+    const bool preview_ok = preview_until_confirmation(&preview_pipe);
+    camera_visual_set_streaming(false);
+    const bool stop_ok = pipe_cleanup(&preview_pipe);
+    const camera_visual_decision_t decision = camera_visual_get_decision();
+    const bool visual_pass = decision == CAMERA_VISUAL_PASS;
+    const bool final_pass = preview_ok && stop_ok && visual_pass;
+    const char *confirmation = decision == CAMERA_VISUAL_PASS ? "pass" :
+                               decision == CAMERA_VISUAL_FAIL ? "fail" :
+                               "missing";
+    ESP_LOGI(TAG,
+             "CAMERA_TEST_SUMMARY status=%s visual_confirmation=%s "
+             "format=%s automatic=%s preview_ok=%d stop_ok=%d",
+             final_pass ? "PASS" : "FAIL", confirmation,
+             camera_visual_is_swapped() ? "RGB565_SWAPPED" : "RGB565",
+             auto_ok ? "PASS" : "FAIL", preview_ok, stop_ok);
+    vTaskDelete(NULL);
+}
 
 static void idle_forever(camera_status_t status)
 {
@@ -746,15 +1085,14 @@ static void idle_forever(camera_status_t status)
 void app_main(void)
 {
     ESP_LOGI(TAG,
-             "CAMERA_TEST_BEGIN version=1 cycles=%d frames=%d "
+             "CAMERA_TEST_BEGIN version=5 cycles=%d frames=%d "
              "dq_timeout_ms=%u device=%s",
              CONFIG_CAMERA_TEST_CYCLES, CONFIG_CAMERA_TEST_FRAMES,
              CAMERA_TEST_DQ_TIMEOUT_MS, BSP_CAMERA_DEVICE);
     ESP_LOGI(TAG,
-             "CAMERA_TEST_CONTRACT sensor=OV5640 format_ctrl=0x%02x "
-             "v4l2=RGB565X memory=RGB565X preprocessing=disabled "
-             "table_xclk_mhz=24 ledc_xclk_mhz=20",
-             CAMERA_TEST_WORKING_FORMAT);
+             "CAMERA_TEST_CONTRACT sensor=OV5640 v4l2=%s display=RGB565_SWAPPED "
+             "visual_confirmation=required",
+             CAMERA_TEST_FORMAT_NAME);
 
     vTaskDelay(pdMS_TO_TICKS(CONFIG_CAMERA_TEST_BOOT_DELAY_MS));
     const esp_err_t board_error = bsp_board_init();
@@ -763,37 +1101,19 @@ void app_main(void)
                  esp_err_to_name(board_error));
         idle_forever(CAMERA_STATUS_FAIL);
     }
-    ESP_LOGI(TAG, "CAMERA_TEST_BOARD_INIT status=PASS display=off");
 
-    unsigned pass_cycles = 0;
-    unsigned warn_cycles = 0;
-    unsigned fail_cycles = 0;
-    camera_status_t overall = CAMERA_STATUS_PASS;
-    for (unsigned cycle = 1; cycle <= CONFIG_CAMERA_TEST_CYCLES; ++cycle) {
-        const cycle_result_t result = run_cycle(cycle);
-        switch (result.status) {
-        case CAMERA_STATUS_PASS:
-            ++pass_cycles;
-            break;
-        case CAMERA_STATUS_WARN:
-            ++warn_cycles;
-            if (overall == CAMERA_STATUS_PASS) {
-                overall = CAMERA_STATUS_WARN;
-            }
-            break;
-        default:
-            ++fail_cycles;
-            overall = CAMERA_STATUS_FAIL;
-            break;
-        }
-        if (cycle < CONFIG_CAMERA_TEST_CYCLES) {
-            vTaskDelay(pdMS_TO_TICKS(500));
-        }
+    const esp_err_t visual_error = camera_visual_start();
+    if (visual_error != ESP_OK) {
+        ESP_LOGE(TAG, "CAMERA_TEST_SUMMARY status=FAIL stage=display_init error=%s",
+                 esp_err_to_name(visual_error));
+        idle_forever(CAMERA_STATUS_FAIL);
     }
+    ESP_LOGI(TAG, "CAMERA_TEST_BOARD_INIT status=PASS display=on");
 
-    ESP_LOGI(TAG,
-             "CAMERA_TEST_SUMMARY status=%s cycles=%d pass=%u warn=%u fail=%u",
-             status_text(overall), CONFIG_CAMERA_TEST_CYCLES, pass_cycles,
-             warn_cycles, fail_cycles);
-    idle_forever(overall);
+    if (xTaskCreate(camera_test_task, "camera_test", CAMERA_TEST_TASK_STACK,
+                    NULL, CAMERA_TEST_TASK_PRIORITY, NULL) != pdPASS) {
+        camera_visual_set_error("Camera test task could not start");
+        ESP_LOGE(TAG, "CAMERA_TEST_SUMMARY status=FAIL stage=task_create");
+        idle_forever(CAMERA_STATUS_FAIL);
+    }
 }

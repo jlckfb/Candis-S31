@@ -1,4 +1,4 @@
-# Candis-S31 headless camera diagnostic baseline.
+# Candis-S31 camera driver and visual confirmation baseline.
 CONFIG_IDF_TARGET="esp32s31"
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
@@ -7,9 +7,22 @@ CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 CONFIG_LV_BUILD_EXAMPLES=n
 CONFIG_LV_BUILD_DEMOS=n
-# Leave a visible UART attachment window after reset; the test itself remains
-# fully automatic and does not depend on the display.
+# Leave a visible UART attachment window after reset; the test itself then
+# displays the live camera image and waits for operator PASS/FAIL input.
 CONFIG_CAMERA_TEST_BOOT_DELAY_MS=5000
+
+# Display configuration is intentionally explicit: visual confirmation is
+# required before the final result can be PASS.
+CONFIG_BSP_LCD_PIXEL_CLOCK_MHZ=48
+CONFIG_BSP_LCD_TE_SYNC=y
+CONFIG_LV_DEF_REFR_PERIOD=15
+CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=48
+CONFIG_BSP_LCD_DRAW_BUF_DOUBLE=y
+CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=1
+CONFIG_LV_DRAW_BUF_ALIGN=64
+CONFIG_LV_DRAW_SW_SUPPORT_RGB565_SWAPPED=y
+CONFIG_LV_OS_FREERTOS=y
+CONFIG_LV_FONT_MONTSERRAT_16=y
 
 # Report failures in the application instead of aborting before the serial
 # result line is printed.
@@ -35,13 +48,14 @@ CONFIG_SPIRAM_MEMTEST=y
 # cannot produce the sensor table's required clock on ESP32-S31.
 CONFIG_BSP_CAMERA_XCLK_USE_LEDC=y
 
-# The esp_cam_sensor symbol/table named RGB565_BE writes 0x4300=0x6F,
-# although OV5640/Linux semantics call 0x6F LE and 0x61 BE. The vendored BSP
-# deliberately applies the verified 0x61 override after the table is loaded.
+# Keep both verified RGB565X and UYVY sensor tables available. Select UYVY
+# as the boot-time default so esp_video initializes the DVP controller as
+# CAM_CTLR_COLOR_YUV422; the device cannot change color families after open.
 CONFIG_CAMERA_OV5640=y
 CONFIG_CAMERA_OV5640_AUTO_DETECT_DVP_INTERFACE_SENSOR=y
 CONFIG_CAMERA_OV5640_DVP_RGB565_BE_800X600_10FPS=y
-CONFIG_CAMERA_OV5640_DVP_DEFAULT_FMT_RGB565_BE_800X600_10FPS=y
+CONFIG_CAMERA_OV5640_DVP_YUV422_800X600_10FPS=y
+CONFIG_CAMERA_OV5640_DVP_DEFAULT_FMT_YUV422_800X600_10FPS=y
 CONFIG_CAMERA_OV3660=n
 CONFIG_CAM_CTRL_SPI_ENABLE=n
 
