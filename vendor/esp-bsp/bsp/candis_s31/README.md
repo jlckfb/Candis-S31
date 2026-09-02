@@ -12,9 +12,10 @@ camera connector, a microSD slot, and one addressable RGB LED.
 
 This BSP follows schematic revision 0.5. The implementation and examples are
 compile-tested with ESP-IDF 6.1, and the EVT1 hardware has completed bring-up
-for the display, touch, audio, storage, USB, RTC, and PMIC domains. Camera
-support is pending a corrected FPC adapter board; treat remaining
-electrical-behavior notes as EVT1-validated unless marked otherwise.
+for the display, touch, audio, storage, USB, camera, RTC, and PMIC domains.
+The corrected camera FPC adapter board is fitted: DVP streaming, color-bar
+capture, and on-display preview are verified on EVT1 hardware; treat
+remaining electrical-behavior notes as EVT1-validated unless marked otherwise.
 
 ## Capabilities and dependencies
 

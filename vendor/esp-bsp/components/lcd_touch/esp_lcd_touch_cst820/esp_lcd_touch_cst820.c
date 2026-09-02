@@ -12,39 +12,14 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_touch.h"
 #include "esp_log.h"
+#include "esp_rom_sys.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 #define CST820_TOUCH_REPORT_REG         (0x00)
 #define CST820_TOUCH_REPORT_SIZE        (15)
 #define CST820_TOUCH_COUNT_OFFSET       (2)
 #define CST820_FIRST_POINT_OFFSET       (3)
 #define CST820_CHIP_ID_REG              (0xA7)
-
-/*
- * Sleep command register and value - ASSUMPTION, pending EVT verification.
- *
- * The CST820 datasheet (DS_CST_820 V1.2, Hynitron) defines three power modes
- * (dynamic ~1.9 mA / standby ~10 uA / sleep ~2 uA) and states that sleep mode
- * is entered by a "sleep command", but it does not publish any register map.
- * The address/value below come from public CST816-family sources, which
- * disagree with each other:
- *
- *  - 0xA5 <- 0x03: fbiego/CST816S Arduino library (MIT), function documented
- *    as "put the touch screen in standby mode" (source of this driver's
- *    choice, used since component v1.1.0).
- *  - 0xE5 <- 0x03: DriveBus Arduino_CST816x (Waveshare examples), documented
- *    as the SleepMode register; the library notes sleep can be entered but
- *    not exited by a register write.
- *
- * One reading that reconciles both sources: 0xA5 selects standby (low-freq
- * scan, touch wake via INT still working) while 0xE5 selects deep sleep
- * (wake by reset only). Treat any effect of 0xA5 on this module's firmware
- * as unverified until measured on EVT hardware; wake-up here always uses
- * the datasheet-sanctioned reset path, which works regardless.
- */
-#define CST820_SLEEP_MODE_REG           (0xA5)
-#define CST820_SLEEP_MODE_DEEP          (0x03)
 #define CST820_MAX_TOUCH_POINTS         (2)
 #define CST820_TOUCH_RECORD_SIZE        (6)
 #define CST820_TOUCH_COUNT_MASK         (0x0F)
@@ -58,14 +33,11 @@ static bool esp_lcd_touch_cst820_get_xy(esp_lcd_touch_handle_t tp, uint16_t *x, 
                                         uint16_t *strength, uint8_t *point_num, uint8_t max_point_num);
 static esp_err_t esp_lcd_touch_cst820_get_track_id(esp_lcd_touch_handle_t tp, uint8_t *track_id,
         uint8_t max_point_num);
-static esp_err_t esp_lcd_touch_cst820_enter_sleep(esp_lcd_touch_handle_t tp);
-static esp_err_t esp_lcd_touch_cst820_exit_sleep(esp_lcd_touch_handle_t tp);
 static esp_err_t esp_lcd_touch_cst820_del(esp_lcd_touch_handle_t tp);
 
 static esp_err_t touch_cst820_i2c_read(esp_lcd_touch_handle_t tp, uint8_t reg, uint8_t *data, size_t len);
 static esp_err_t touch_cst820_i2c_write(esp_lcd_touch_handle_t tp, uint8_t reg, uint8_t data);
 static esp_err_t touch_cst820_reset(esp_lcd_touch_handle_t tp);
-static esp_err_t touch_cst820_send_sleep_command(esp_lcd_touch_handle_t tp);
 static esp_err_t touch_cst820_wake_by_reset(esp_lcd_touch_handle_t tp);
 #ifndef CONFIG_ESP_LCD_TOUCH_CST820_DISABLE_READ_ID
 static esp_err_t touch_cst820_read_id(esp_lcd_touch_handle_t tp);
@@ -90,8 +62,6 @@ esp_err_t esp_lcd_touch_new_i2c_cst820(const esp_lcd_panel_io_handle_t io,
     cst820->read_data = esp_lcd_touch_cst820_read_data;
     cst820->get_xy = esp_lcd_touch_cst820_get_xy;
     cst820->get_track_id = esp_lcd_touch_cst820_get_track_id;
-    cst820->enter_sleep = esp_lcd_touch_cst820_enter_sleep;
-    cst820->exit_sleep = esp_lcd_touch_cst820_exit_sleep;
     cst820->del = esp_lcd_touch_cst820_del;
     cst820->data.lock.owner = portMUX_FREE_VAL;
     memcpy(&cst820->config, config, sizeof(esp_lcd_touch_config_t));
@@ -226,25 +196,6 @@ static esp_err_t esp_lcd_touch_cst820_get_track_id(esp_lcd_touch_handle_t tp, ui
     return ESP_OK;
 }
 
-static esp_err_t esp_lcd_touch_cst820_enter_sleep(esp_lcd_touch_handle_t tp)
-{
-    return touch_cst820_send_sleep_command(tp);
-}
-
-static esp_err_t esp_lcd_touch_cst820_exit_sleep(esp_lcd_touch_handle_t tp)
-{
-    return touch_cst820_wake_by_reset(tp);
-}
-
-esp_err_t esp_lcd_touch_cst820_sleep(esp_lcd_touch_handle_t tp)
-{
-    return touch_cst820_send_sleep_command(tp);
-}
-
-esp_err_t esp_lcd_touch_cst820_wakeup(esp_lcd_touch_handle_t tp)
-{
-    return touch_cst820_wake_by_reset(tp);
-}
 
 esp_err_t esp_lcd_touch_cst820_enter_monitor_mode(esp_lcd_touch_handle_t tp)
 {
@@ -256,9 +207,7 @@ esp_err_t esp_lcd_touch_cst820_enter_monitor_mode(esp_lcd_touch_handle_t tp)
      * host can be woken by the panel. No undocumented register write is sent
      * here on purpose: per the datasheet the controller drops into standby
      * automatically 2 s after the last touch, and that path is the one that
-     * is guaranteed to keep INT wake alive. If EVT verifies a forced-standby
-     * command for this firmware (see the CST820_SLEEP_MODE_REG provenance
-     * note), it belongs here without changing the API contract.
+     * is guaranteed to keep INT wake alive.
      */
     touch_cst820_clear_points(tp);
 
@@ -313,39 +262,24 @@ static esp_err_t touch_cst820_reset(esp_lcd_touch_handle_t tp)
 
     ESP_RETURN_ON_ERROR(gpio_set_level(tp->config.rst_gpio_num, tp->config.levels.reset),
                         TAG, "Failed to assert reset");
-    vTaskDelay(pdMS_TO_TICKS(5));
+    /* Reset pulse width: a busy-wait keeps it independent of the FreeRTOS
+     * tick rate (pdMS_TO_TICKS(5) degenerates to 0 at the default 100 Hz). */
+    esp_rom_delay_us(5000);
     ESP_RETURN_ON_ERROR(gpio_set_level(tp->config.rst_gpio_num, !tp->config.levels.reset),
                         TAG, "Failed to release reset");
-    vTaskDelay(pdMS_TO_TICKS(100));
+    /* Tron (100 ms), rounded up with one tick of phase margin. */
+    vTaskDelay(pdMS_TO_TICKS(100) + 1);
 
     return ESP_OK;
 }
 
-static esp_err_t touch_cst820_send_sleep_command(esp_lcd_touch_handle_t tp)
-{
-    ESP_RETURN_ON_FALSE(tp != NULL, ESP_ERR_INVALID_ARG, TAG, "Touch controller handle can't be NULL");
-
-    /*
-     * Deep-sleep tier (~2 uA). The controller stops scanning and stops
-     * answering I2C; INT goes inactive, so touch cannot wake it - only a
-     * reset cycle (touch_cst820_wake_by_reset) or a supply power cycle can.
-     * The command register/value is an unverified assumption, see the
-     * CST820_SLEEP_MODE_REG provenance note at the top of this file
-     * (pending EVT verification).
-     */
-    ESP_RETURN_ON_ERROR(touch_cst820_i2c_write(tp, CST820_SLEEP_MODE_REG,
-                        CST820_SLEEP_MODE_DEEP), TAG, "Sleep command failed");
-
-    return ESP_OK;
-}
 
 static esp_err_t touch_cst820_wake_by_reset(esp_lcd_touch_handle_t tp)
 {
     ESP_RETURN_ON_FALSE(tp != NULL, ESP_ERR_INVALID_ARG, TAG, "Touch controller handle can't be NULL");
 
-    /* The datasheet names reset as the way out of sleep/standby; the
-     * controller does not answer I2C while asleep, so there is no
-     * software-only wake path without a reset GPIO. */
+    /* The datasheet names reset as the way out of standby; this forces the
+     * controller back to dynamic mode without waiting for a touch. */
     ESP_RETURN_ON_FALSE(tp->config.rst_gpio_num != GPIO_NUM_NC, ESP_ERR_NOT_SUPPORTED, TAG,
                         "Reset GPIO is required to wake the controller");
     ESP_RETURN_ON_ERROR(touch_cst820_reset(tp), TAG, "Wake-up reset failed");

@@ -23,6 +23,7 @@
 #define RX8130CE_REG_CONTROL1         0x1F
 #define RX8130CE_REG_RAM              0x20
 #define RX8130CE_REG_DIGITAL_OFFSET   0x30
+#define RX8130CE_REG_EXTENSION1       0x31
 #define RX8130CE_ALARM_AE             (1U << 7)
 #define RX8130CE_EXTENSION_TE         (1U << 4)
 #define RX8130CE_EXTENSION_WADA       (1U << 3)
@@ -33,6 +34,8 @@
 #define RX8130CE_CONTROL0_AIE         (1U << 3)
 #define RX8130CE_CONTROL1_CHGEN       (1U << 5)
 #define RX8130CE_CONTROL1_INIEN       (1U << 4)
+#define RX8130CE_CONTROL1_BFVSEL_MASK 0x03
+#define RX8130CE_EXTENSION1_VBLFE     (1U << 0)
 #define RX8130CE_INTERRUPT_FLAGS      (RX8130CE_FLAG_UF | RX8130CE_FLAG_TF | RX8130CE_FLAG_AF)
 #define RX8130CE_TIMEOUT_MS           100
 #define RX8130CE_BACKUP_RECOVERY_MS   35
@@ -43,6 +46,10 @@
 struct rx8130ce_device_t {
     i2c_master_dev_handle_t i2c_device;
     SemaphoreHandle_t lock;
+    /* Backup policy copied from the create-time configuration so the
+     * runtime charge switch re-applies the same settings. */
+    rx8130ce_charge_cutoff_t charge_cutoff;
+    bool backup_voltage_low_detect;
 };
 
 static const char *TAG = "rx8130ce";
@@ -305,18 +312,29 @@ static esp_err_t rx8130ce_configure_backup_supply(rx8130ce_handle_t handle,
         bool charge_enable)
 {
     /* Appman 14.7.2: INIEN=1 enables automatic supply switchover; CHGEN
-     * selects charging, which suits only rechargeable backup sources. */
+     * selects charging, which suits only rechargeable backup sources.
+     * BFVSEL changes in the same write as CHGEN, so charging never runs
+     * with a retained setting (the cutoff-less 11b is unreachable). */
     uint8_t control1 = 0;
     ESP_RETURN_ON_ERROR(rx8130ce_read(handle, RX8130CE_REG_CONTROL1,
                                       &control1, 1), TAG,
                         "backup control read failed");
+    control1 &= ~RX8130CE_CONTROL1_BFVSEL_MASK;
+    control1 |= (uint8_t)handle->charge_cutoff;
     if (charge_enable) {
         control1 |= RX8130CE_CONTROL1_CHGEN;
     } else {
         control1 &= ~RX8130CE_CONTROL1_CHGEN;
     }
     control1 |= RX8130CE_CONTROL1_INIEN;
-    return rx8130ce_write(handle, RX8130CE_REG_CONTROL1, &control1, 1);
+    ESP_RETURN_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_CONTROL1,
+                                       &control1, 1), TAG,
+                        "backup control write failed");
+    /* Appman Table 42: VBLFE=1 makes VBLF detectable while CHGEN=0;
+     * bits 7-1 of 31h are manufacturer test bits kept at 0 (Table 12). */
+    const uint8_t extension1 = handle->backup_voltage_low_detect
+                               ? RX8130CE_EXTENSION1_VBLFE : 0;
+    return rx8130ce_write(handle, RX8130CE_REG_EXTENSION1, &extension1, 1);
 }
 
 static esp_err_t rx8130ce_initialize_all_registers(rx8130ce_handle_t handle,
@@ -334,33 +352,55 @@ static esp_err_t rx8130ce_initialize_all_registers(rx8130ce_handle_t handle,
     const uint8_t control0_running = 0;
     const uint8_t flags = 0;
     const uint8_t control1 = RX8130CE_CONTROL1_INIEN |
+                             (uint8_t)handle->charge_cutoff |
                              (charge_enable ? RX8130CE_CONTROL1_CHGEN : 0);
     const uint8_t digital_offset = 0;
+    /* Appman Table 42: VBLFE gates the VBLF detection for a primary cell;
+     * bits 7-1 of 31h are manufacturer test bits kept at 0 (Table 12). */
+    const uint8_t extension1 = handle->backup_voltage_low_detect
+                               ? RX8130CE_EXTENSION1_VBLFE : 0;
 
-    ESP_RETURN_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_CONTROL0,
-                                       &control0_stopped, 1), TAG,
-                        "initial counter stop failed");
-    ESP_RETURN_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_SECONDS,
-                                       calendar, sizeof(calendar)), TAG,
-                        "initial calendar write failed");
-    ESP_RETURN_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_ALARM_MINUTE,
-                                       alarm_timer_extension,
-                                       sizeof(alarm_timer_extension)), TAG,
-                        "alarm/timer initialization failed");
-    ESP_RETURN_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_FLAGS,
-                                       &flags, 1), TAG,
-                        "flag initialization failed");
-    ESP_RETURN_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_CONTROL1,
-                                       &control1, 1), TAG,
-                        "backup control initialization failed");
-    ESP_RETURN_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_RAM,
-                                       ram, sizeof(ram)), TAG,
-                        "RAM initialization failed");
-    ESP_RETURN_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_DIGITAL_OFFSET,
-                                       &digital_offset, 1), TAG,
-                        "digital offset initialization failed");
-    return rx8130ce_write(handle, RX8130CE_REG_CONTROL0,
-                          &control0_running, 1);
+    esp_err_t ret = ESP_OK;
+    esp_err_t restore_error;
+    ESP_GOTO_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_CONTROL0,
+                                     &control0_stopped, 1), restore_stop, TAG,
+                      "initial counter stop failed");
+    ESP_GOTO_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_SECONDS,
+                                     calendar, sizeof(calendar)), restore_stop,
+                      TAG, "initial calendar write failed");
+    ESP_GOTO_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_ALARM_MINUTE,
+                                     alarm_timer_extension,
+                                     sizeof(alarm_timer_extension)),
+                      restore_stop, TAG,
+                      "alarm/timer initialization failed");
+    ESP_GOTO_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_CONTROL1,
+                                     &control1, 1), restore_stop, TAG,
+                      "backup control initialization failed");
+    ESP_GOTO_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_RAM,
+                                     ram, sizeof(ram)), restore_stop, TAG,
+                      "RAM initialization failed");
+    ESP_GOTO_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_DIGITAL_OFFSET,
+                                     &digital_offset, 1), restore_stop, TAG,
+                      "digital offset initialization failed");
+    ESP_GOTO_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_EXTENSION1,
+                                     &extension1, 1), restore_stop, TAG,
+                      "backup flag detection initialization failed");
+    /* Restart the counter before clearing VLF: while VLF stays set, a
+     * failure makes the next create() retry this whole sequence instead
+     * of succeeding with a halted clock. */
+    ESP_GOTO_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_CONTROL0,
+                                     &control0_running, 1), restore_stop,
+                      TAG, "initial counter start failed");
+    /* Written last, so VLF clears only after the initialization fully
+     * succeeded and the time counter runs again. */
+    return rx8130ce_write(handle, RX8130CE_REG_FLAGS, &flags, 1);
+
+restore_stop:
+    /* Do not leave the time counter stopped on a failed initialization;
+     * preserve the programming error if the restart fails too. */
+    restore_error = rx8130ce_write(handle, RX8130CE_REG_CONTROL0,
+                                   &control0_running, 1);
+    return ret != ESP_OK ? ret : restore_error;
 }
 
 esp_err_t rx8130ce_create(i2c_master_bus_handle_t bus,
@@ -380,6 +420,11 @@ esp_err_t rx8130ce_create(i2c_master_bus_handle_t bus,
                         config->scl_speed_hz <= RX8130CE_I2C_CLOCK_HZ,
                         ESP_ERR_INVALID_ARG, TAG,
                         "invalid I2C configuration");
+    /* Keeps the cutoff-less 11b encoding out of BFVSEL. */
+    ESP_RETURN_ON_FALSE(config->backup_charge_cutoff <=
+                        RX8130CE_CHARGE_CUTOFF_2_92V,
+                        ESP_ERR_INVALID_ARG, TAG,
+                        "invalid backup charge cutoff");
 
     rx8130ce_handle_t handle = calloc(1, sizeof(*handle));
     ESP_RETURN_ON_FALSE(handle != NULL, ESP_ERR_NO_MEM, TAG,
@@ -389,6 +434,8 @@ esp_err_t rx8130ce_create(i2c_master_bus_handle_t bus,
         free(handle);
         return ESP_ERR_NO_MEM;
     }
+    handle->charge_cutoff = config->backup_charge_cutoff;
+    handle->backup_voltage_low_detect = config->backup_voltage_low_detect;
     const i2c_device_config_t device_config = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = config->device_address,
@@ -397,8 +444,10 @@ esp_err_t rx8130ce_create(i2c_master_bus_handle_t bus,
     esp_err_t error = i2c_master_bus_add_device(bus, &device_config,
                       &handle->i2c_device);
     if (error == ESP_OK) {
-        /* Covers the specified t_int after return from backup operation. */
-        vTaskDelay(pdMS_TO_TICKS(RX8130CE_BACKUP_RECOVERY_MS));
+        /* Covers the specified t_int after return from backup operation.
+         * pdMS_TO_TICKS rounds down, so one extra tick guarantees the
+         * wait is never shorter than the specification. */
+        vTaskDelay(pdMS_TO_TICKS(RX8130CE_BACKUP_RECOVERY_MS) + 1);
         uint8_t flags = 0;
         error = rx8130ce_read(handle, RX8130CE_REG_FLAGS, &flags, 1);
         if (error == ESP_OK && (flags & RX8130CE_FLAG_VLF) != 0) {
@@ -571,9 +620,12 @@ static esp_err_t set_time_locked(rx8130ce_handle_t handle,
         }
     }
 
+    /* Always clear STOP when restoring: a leftover STOP bit would keep the
+     * clock halted while rx8130ce_set_time() reports success. */
+    const uint8_t restart_control0 = control0 & ~RX8130CE_CONTROL0_STOP;
     const esp_err_t restart_error = rx8130ce_write(handle,
                                     RX8130CE_REG_CONTROL0,
-                                    &control0, 1);
+                                    &restart_control0, 1);
     return error != ESP_OK ? error : restart_error;
 }
 
@@ -605,31 +657,40 @@ static esp_err_t set_alarm_locked(rx8130ce_handle_t handle,
     ESP_RETURN_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_CONTROL0,
                                        &disabled_control0, 1), TAG,
                         "alarm interrupt disable failed");
-    ESP_RETURN_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_ALARM_MINUTE,
-                                       registers, sizeof(registers)), TAG,
-                        "alarm register write failed");
+
+    esp_err_t ret = ESP_OK;
+    esp_err_t restore_error;
+    ESP_GOTO_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_ALARM_MINUTE,
+                                     registers, sizeof(registers)), restore_aie,
+                      TAG, "alarm register write failed");
 
     uint8_t extension = 0;
-    ESP_RETURN_ON_ERROR(rx8130ce_read(handle, RX8130CE_REG_EXTENSION,
-                                      &extension, 1), TAG,
-                        "extension register read failed");
+    ESP_GOTO_ON_ERROR(rx8130ce_read(handle, RX8130CE_REG_EXTENSION,
+                                    &extension, 1), restore_aie, TAG,
+                      "extension register read failed");
     if (use_day_alarm) {
         extension |= RX8130CE_EXTENSION_WADA;
     } else {
         extension &= ~RX8130CE_EXTENSION_WADA;
     }
-    ESP_RETURN_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_EXTENSION,
-                                       &extension, 1), TAG,
-                        "alarm target select failed");
+    ESP_GOTO_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_EXTENSION,
+                                     &extension, 1), restore_aie, TAG,
+                      "alarm target select failed");
 
     /* Drop any alarm event latched while the registers changed. */
     uint8_t flags = 0;
-    ESP_RETURN_ON_ERROR(rx8130ce_read(handle, RX8130CE_REG_FLAGS, &flags, 1),
-                        TAG, "flag read failed");
+    ESP_GOTO_ON_ERROR(rx8130ce_read(handle, RX8130CE_REG_FLAGS, &flags, 1),
+                      restore_aie, TAG, "flag read failed");
     flags &= ~RX8130CE_FLAG_AF;
-    ESP_RETURN_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_FLAGS, &flags, 1),
-                        TAG, "alarm flag clear failed");
-    return rx8130ce_write(handle, RX8130CE_REG_CONTROL0, &control0, 1);
+    ESP_GOTO_ON_ERROR(rx8130ce_write(handle, RX8130CE_REG_FLAGS, &flags, 1),
+                      restore_aie, TAG, "alarm flag clear failed");
+
+restore_aie:
+    /* Once AIE has been gated, restore its previous state on every exit path.
+     * Preserve the programming error if both it and restoration fail. */
+    restore_error = rx8130ce_write(handle, RX8130CE_REG_CONTROL0,
+                                   &control0, 1);
+    return ret != ESP_OK ? ret : restore_error;
 }
 
 esp_err_t rx8130ce_set_alarm(rx8130ce_handle_t handle,
@@ -934,10 +995,25 @@ esp_err_t rx8130ce_get_and_clear_interrupts(rx8130ce_handle_t handle,
 
 static bool rx8130ce_reg_is_user_accessible(uint8_t reg)
 {
-    /* appman 13.2.1 note *6: only the documented user registers (10h-23h
-     * and 30h) may be accessed; the manufacturer registers are excluded. */
+    /* appman 13.2.1 note *6: only the documented user registers (10h-23h,
+     * 30h and 31h) may be accessed; the manufacturer registers are
+     * excluded. */
     return (reg >= RX8130CE_REG_USER_REGISTERS_FIRST && reg <= RX8130CE_REG_USER_REGISTERS_LAST) ||
-           reg == RX8130CE_REG_DIGITAL_OFFSET;
+           reg == RX8130CE_REG_DIGITAL_OFFSET ||
+           reg == RX8130CE_REG_EXTENSION1;
+}
+
+static bool rx8130ce_reg_window_is_user_accessible(uint8_t start, size_t length)
+{
+    /* The whole transfer must stay inside the user registers: crossing a
+     * gap would read or write a reserved register, because the address
+     * counter wraps only at 1Fh, 2Fh and 3Fh (appman 14.12.4). */
+    for (size_t i = 0; i < length; ++i) {
+        if (!rx8130ce_reg_is_user_accessible((uint8_t)(start + i))) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /* The caller must already hold the device lock. */
@@ -1154,8 +1230,9 @@ esp_err_t rx8130ce_read_registers(rx8130ce_handle_t handle, uint8_t start_regist
                         "invalid device handle");
     ESP_RETURN_ON_FALSE(data != NULL && length > 0, ESP_ERR_INVALID_ARG, TAG,
                         "invalid read buffer");
-    ESP_RETURN_ON_FALSE(rx8130ce_reg_is_user_accessible(start_register),
-                        ESP_ERR_INVALID_ARG, TAG, "not a user register address");
+    ESP_RETURN_ON_FALSE(
+        rx8130ce_reg_window_is_user_accessible(start_register, length),
+        ESP_ERR_INVALID_ARG, TAG, "not a user register address");
     ESP_RETURN_ON_ERROR(lock_device(handle), TAG, "device lock failed");
     const esp_err_t error = rx8130ce_read(handle, start_register, data, length);
     unlock_device(handle);

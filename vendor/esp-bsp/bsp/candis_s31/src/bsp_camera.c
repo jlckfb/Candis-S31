@@ -20,10 +20,9 @@ static bool s_started;
 
 /* The selected OV5640 table is authored for a nominal 24 MHz XCLK, so keep
  * BSP_CAMERA_XCLK_CLOCK_MHZ as that table identifier. The S31 DVP clock
- * router cannot generate an exact 24 MHz integer divider; the board-validated
- * LEDC path below uses the 40 MHz XTAL divided by two (20 MHz, measured about
- * 20.1 MHz by PCNT). This intentional timing deviation is reported by the
- * headless camera test; it must not be mistaken for a measured 24 MHz clock. */
+ * router cannot generate an exact 24 MHz integer divider. This diagnostic
+ * operating point uses XTAL/4 (10 MHz) so the proven issue #692 PLL ratio
+ * produces a receiver-safe 30 MHz PCLK. */
 _Static_assert(BSP_CAMERA_XCLK_CLOCK_MHZ == 24,
                "OV5640 table identifier must remain 24 MHz");
 
@@ -55,11 +54,7 @@ _Static_assert(BSP_CAMERA_XCLK_CLOCK_MHZ == 24,
 static esp_err_t xclk_ledc_start(void)
 {
 #if CONFIG_BSP_CAMERA_XCLK_USE_LEDC
-    /* Use the exact XTAL/2 setting that was measured on the S31 board. The
-     * PLL_DIV path's nominal 24 MHz request measured about 18.75 MHz, while
-     * its compensation setting was not stable across the tested clock paths.
-     * The camera diagnostic reports the resulting frame period so this
-     * deliberate 20 MHz operating point remains visible in evidence. */
+    /* Match the OV5640 DVP table and the previously stable board setting. */
     const ledc_timer_config_t timer_config = {
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .duty_resolution = LEDC_TIMER_1_BIT,
@@ -120,7 +115,13 @@ static esp_err_t xclk_ledc_stop(void)
  *    the table's own ceiling 0x03d8 to keep dim-light frame rate stable.
  *
  * The capture buffer therefore matches both V4L2_PIX_FMT_RGB565X and
- * the LV_COLOR_FORMAT_RGB565_SWAPPED image source used by the app. */
+ * the LV_COLOR_FORMAT_RGB565_SWAPPED image source used by the app.
+ *
+ * The board supplies DVDD externally from TG28 DCDC2. OV5640 register
+ * 0x3031 resets with its internal core regulator enabled; leaving both
+ * regulators active back-drives CAM_DVDD_1V5_SW to about 1.63 V even when
+ * DCDC2 is programmed lower. Set SC PWC bit 3 so the external rail is the
+ * only core supply, as required by the datasheet's external-DVDD sequence. */
 static esp_err_t camera_sensor_workaround(void)
 {
     static const uint16_t isp_block[][2] = {
@@ -207,6 +208,69 @@ static esp_err_t camera_sensor_workaround(void)
         i2c_master_bus_rm_device(sccb);
         return ESP_OK;
     }
+    uint8_t requested_format = 0xff;
+    uint8_t requested_mux = 0xff;
+    error = i2c_master_transmit_receive(sccb,
+                                        (const uint8_t[]){0x43, 0x00},
+                                        2, &requested_format, 1, 100);
+    if (error == ESP_OK) {
+        error = i2c_master_transmit_receive(sccb,
+                                            (const uint8_t[]){0x50, 0x1f},
+                                            2, &requested_mux, 1, 100);
+    }
+    if (error != ESP_OK) {
+        ESP_LOGW(TAG, "sensor workaround: output format read failed: %s",
+                 esp_err_to_name(error));
+        i2c_master_bus_rm_device(sccb);
+        return error;
+    }
+    /* RGB tables need 0x61; preserve a valid YUV request, and use RGB as
+     * the safe fallback while the sensor is still in reset state. */
+    const bool is_rgb = (requested_mux & 0x07U) == 0x01U;
+    const bool is_yuv = (requested_mux & 0x07U) == 0x00U &&
+                       (requested_format & 0xf0U) == 0x30U;
+    const uint8_t output_format = is_rgb || !is_yuv ? 0x61U : requested_format;
+    const uint8_t output_mux = is_rgb || !is_yuv ? 0x01U : requested_mux;
+    if (!is_rgb && !is_yuv) {
+        ESP_LOGW(TAG, "sensor workaround: unknown output request "
+                 "0x%02x/0x%02x, using RGB565 fallback",
+                 requested_format, requested_mux);
+    }
+    uint8_t power_control = 0xff;
+    error = i2c_master_transmit_receive(sccb,
+                                        (const uint8_t[]){0x30, 0x31},
+                                        2, &power_control, 1, 100);
+    if (error == ESP_OK) {
+        error = i2c_master_transmit(sccb, (const uint8_t[]){
+#if CONFIG_BSP_CAMERA_USE_INTERNAL_DVDD
+            0x30, 0x31, (uint8_t)(power_control & (uint8_t)~0x08U),
+#else
+            0x30, 0x31, (uint8_t)(power_control | 0x08U),
+#endif
+        }, 3, 100);
+    }
+    uint8_t power_control_check = 0xff;
+    if (error == ESP_OK) {
+        error = i2c_master_transmit_receive(sccb,
+                                            (const uint8_t[]){0x30, 0x31},
+                                            2, &power_control_check, 1, 100);
+    }
+#if CONFIG_BSP_CAMERA_USE_INTERNAL_DVDD
+    const char *expected_mode = "internal";
+    const bool dvdd_mode_ok = (power_control_check & 0x08U) == 0;
+#else
+    const char *expected_mode = "external";
+    const bool dvdd_mode_ok = (power_control_check & 0x08U) != 0;
+#endif
+    if (error != ESP_OK || !dvdd_mode_ok) {
+        ESP_LOGW(TAG,
+                 "sensor workaround: DVDD mode setup failed "
+                 "0x3031=0x%02x expected_%s error=%s",
+                 power_control_check, expected_mode,
+                 esp_err_to_name(error));
+        i2c_master_bus_rm_device(sccb);
+        return error != ESP_OK ? error : ESP_FAIL;
+    }
     for (size_t i = 0; i < sizeof(isp_block) / sizeof(isp_block[0]); ++i) {
         error = i2c_master_transmit(sccb, (const uint8_t[]){
             (uint8_t)(isp_block[i][0] >> 8), (uint8_t)isp_block[i][0],
@@ -221,10 +285,10 @@ static esp_err_t camera_sensor_workaround(void)
     }
     /* The module's working RGB565 sequence emits RGB565X byte order. */
     error = i2c_master_transmit(sccb,
-        (const uint8_t[]){0x50, 0x1f, 0x01}, 3, 100);
+        (const uint8_t[]){0x50, 0x1f, output_mux}, 3, 100);
     if (error == ESP_OK) {
         error = i2c_master_transmit(sccb,
-            (const uint8_t[]){0x43, 0x00, 0x61}, 3, 100);
+            (const uint8_t[]){0x43, 0x00, output_format}, 3, 100);
     }
     if (error != ESP_OK) {
         ESP_LOGW(TAG, "sensor workaround: output format write failed: %s",
@@ -252,17 +316,22 @@ static esp_err_t camera_sensor_workaround(void)
                                             (const uint8_t[]){0x50, 0x1f},
                                             2, &mux_check, 1, 100);
     }
-    if (error != ESP_OK || check != 0x61 || mux_check != 0x01) {
+    if (error != ESP_OK || check != output_format ||
+            mux_check != output_mux) {
         ESP_LOGW(TAG,
                  "sensor workaround: readback failed 0x4300=0x%02x "
-                 "0x501f=0x%02x error=%s",
-                 check, mux_check, esp_err_to_name(error));
+                 "0x501f=0x%02x expected=0x%02x/0x%02x error=%s",
+                 check, mux_check, output_format, output_mux,
+                 esp_err_to_name(error));
         i2c_master_bus_rm_device(sccb);
         return error != ESP_OK ? error : ESP_FAIL;
     }
-    ESP_LOGI(TAG, "sensor workaround applied: 0x4300=0x%02x, "
-             "%u ISP regs, AEC ceilings restored",
-             check, (unsigned)(sizeof(isp_block) / sizeof(isp_block[0])));
+    ESP_LOGI(TAG, "sensor workaround applied: 0x3031=0x%02x, "
+             "output=0x%02x/0x%02x, %u ISP regs, AEC ceilings restored "
+             "mode=%s",
+             power_control_check, check, mux_check,
+             (unsigned)(sizeof(isp_block) / sizeof(isp_block[0])),
+             expected_mode);
     i2c_master_bus_rm_device(sccb);
     return ESP_OK;
 }
@@ -306,10 +375,21 @@ esp_err_t bsp_camera_start(const bsp_camera_cfg_t *cfg)
         .pwdn_pin = BSP_CAMERA_PWDN,
         .dvp_pin = {
             .data_width = 8,
+            /* The fitted FD6540/OV5640-compatible module does not use the
+             * reference camera's D0-D7 order. Three OV5640 built-in patterns
+             * identify D0<->D1 and D3<->D4; keep the schematic net names but
+             * route them into the controller's logical bit positions here. */
+#if CONFIG_BSP_CAMERA_SENSOR_DATA_REMAP
+            .data_io = {
+                BSP_CAMERA_D1, BSP_CAMERA_D0, BSP_CAMERA_D2, BSP_CAMERA_D4,
+                BSP_CAMERA_D3, BSP_CAMERA_D5, BSP_CAMERA_D6, BSP_CAMERA_D7,
+            },
+#else
             .data_io = {
                 BSP_CAMERA_D0, BSP_CAMERA_D1, BSP_CAMERA_D2, BSP_CAMERA_D3,
                 BSP_CAMERA_D4, BSP_CAMERA_D5, BSP_CAMERA_D6, BSP_CAMERA_D7,
             },
+#endif
             .vsync_io = BSP_CAMERA_VSYNC,
             .de_io = BSP_CAMERA_HSYNC,
             .pclk_io = BSP_CAMERA_PCLK,

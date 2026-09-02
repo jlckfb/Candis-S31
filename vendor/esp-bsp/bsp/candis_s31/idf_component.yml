@@ -12,7 +12,7 @@ dependencies:
   idf: ">=6.1"
 
   espressif/fusb303b:
-    version: "^0.2.0"
+    version: "^0.3.0"
     public: false
     override_path: "../../components/fusb303b"
 

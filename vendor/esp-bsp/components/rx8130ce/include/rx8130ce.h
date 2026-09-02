@@ -35,6 +35,20 @@ extern "C" {
 /** Opaque RX8130CE device handle. */
 typedef struct rx8130ce_device_t *rx8130ce_handle_t;
 
+/**
+ * Backup charge cutoff voltage (BFVSEL1-0, appman Table 39).
+ *
+ * The values match the BFVSEL1-BFVSEL0 encoding of the control 1 register,
+ * so they can be applied to the register image directly. 11b (charging
+ * without a voltage cutoff) is deliberately not selectable: without the
+ * cutoff the backup source depends entirely on the external current limit.
+ */
+typedef enum {
+    RX8130CE_CHARGE_CUTOFF_3_02V = 0, /**< Stop charging at 3.02 V (POR default). */
+    RX8130CE_CHARGE_CUTOFF_3_08V = 1, /**< Stop charging at 3.08 V. */
+    RX8130CE_CHARGE_CUTOFF_2_92V = 2, /**< Stop charging at 2.92 V. */
+} rx8130ce_charge_cutoff_t;
+
 /** I2C and backup supply configuration used when creating a device. */
 typedef struct {
     uint8_t device_address;
@@ -47,6 +61,22 @@ typedef struct {
      * supercapacitor) that must be charged from VDD.
      */
     bool backup_charge_enable;
+    /**
+     * Full-charge detection voltage that stops backup charging (BFVSEL1-0,
+     * appman Table 39), applied together with the charge policy in both the
+     * normal power-up path and the VLF=1 full-register initialization.
+     * When charging is enabled, the board must limit the charge current
+     * externally to 40 mA max (appman Table 33).
+     */
+    rx8130ce_charge_cutoff_t backup_charge_cutoff;
+    /**
+     * Enable the backup low-voltage detection while charging is disabled
+     * (VBLFE, appman Table 42). Keep true for a primary (non-rechargeable)
+     * backup cell: with VBLFE=0 and CHGEN=0 the VBLF flag never asserts,
+     * so rx8130ce_status_t.backup_voltage_low would stay false regardless
+     * of the backup voltage.
+     */
+    bool backup_voltage_low_detect;
 } rx8130ce_config_t;
 
 /** Default RX8130CE configuration: I2C defaults, backup charging off. */
@@ -55,6 +85,8 @@ typedef struct {
         .device_address = RX8130CE_I2C_ADDRESS_DEFAULT, \
         .scl_speed_hz = RX8130CE_I2C_CLOCK_HZ,    \
         .backup_charge_enable = false,            \
+        .backup_charge_cutoff = RX8130CE_CHARGE_CUTOFF_3_02V, \
+        .backup_voltage_low_detect = true,        \
     }
 
 /** Calendar time represented by the RX8130CE. */
@@ -213,8 +245,9 @@ void rx8130ce_timer_encode(const rx8130ce_timer_t *timer,
  * Create a device on an existing I2C bus and verify register access.
  *
  * A NULL config selects RX8130CE_CONFIG_DEFAULT(). The configured backup
- * charge policy is applied after normal power-up and as part of the VLF=1
- * full-register initialization.
+ * charge policy, charge cutoff, and backup low-voltage detection setting
+ * are applied after normal power-up and as part of the VLF=1 full-register
+ * initialization.
  */
 esp_err_t rx8130ce_create(i2c_master_bus_handle_t bus,
                           const rx8130ce_config_t *config,
@@ -258,6 +291,8 @@ esp_err_t rx8130ce_check_power(rx8130ce_handle_t handle,
  * enable only when the board carries a rechargeable backup source. The
  * default after rx8130ce_create() comes from
  * rx8130ce_config_t.backup_charge_enable (off unless configured otherwise).
+ * Every call re-applies the configured charge cutoff and VBLFE setting, so
+ * charging can never (re-)start with the cutoff-less BFVSEL setting.
  */
 esp_err_t rx8130ce_set_backup_charge(rx8130ce_handle_t handle, bool enable);
 
@@ -379,7 +414,7 @@ typedef enum {
  *
  * The offset register applies a signed correction in 3.05e-6 steps;
  * positive values make the clock run faster. The representable range is
- * -64..+63 steps (+192.26e-6 to -195.31e-6).
+ * -64..+63 steps (-195.31e-6 to +192.26e-6).
  */
 #define RX8130CE_DIGITAL_OFFSET_STEP_PPM  3.05f
 #define RX8130CE_DIGITAL_OFFSET_MIN_STEPS (-64)
@@ -471,23 +506,26 @@ esp_err_t rx8130ce_get_digital_offset(rx8130ce_handle_t handle, bool *out_enable
                                       int8_t *out_offset_steps);
 
 /**
- * Raw register read fallback (user registers 10h-23h and 30h only).
+ * Raw register read fallback (user registers 10h-23h, 30h and 31h only).
  *
  * The application manual restricts access to the documented user registers
- * (13.2.1 note *6); the start address is validated against them. Reads
- * follow the device auto-increment wrap-around (1Fh wraps to 10h, 2Fh to
- * 20h, 3Fh to 30h; appman 14.12.4). Use this for feature blocks without a
- * structured API (SMPTSEL/RSVSEL/BFVSEL power-detection tuning and similar).
+ * (13.2.1 note *6); the complete [start, start + length) window is
+ * validated against them, so a transfer crossing into a reserved register
+ * is rejected. Reads follow the device auto-increment wrap-around (1Fh
+ * wraps to 10h, 2Fh to 20h, 3Fh to 30h; appman 14.12.4). Use this for
+ * feature blocks without a structured API (SMPTSEL/RSVSEL power-detection
+ * tuning and similar).
  */
 esp_err_t rx8130ce_read_registers(rx8130ce_handle_t handle, uint8_t start_register,
                                   uint8_t *data, size_t length);
 
 /**
- * Raw register write fallback (user registers 10h-23h and 30h only).
+ * Raw register write fallback (user registers 10h-23h, 30h and 31h only).
  *
  * See rx8130ce_read_registers() for the address policy. Writes a single
  * register; no driver state is updated, so prefer the structured APIs
- * whenever one exists for the target field.
+ * whenever one exists for the target field. In register 31h only bit 0
+ * (VBLFE) is defined; keep the remaining manufacturer test bits at 0.
  */
 esp_err_t rx8130ce_write_register(rx8130ce_handle_t handle, uint8_t reg,
                                   uint8_t value);

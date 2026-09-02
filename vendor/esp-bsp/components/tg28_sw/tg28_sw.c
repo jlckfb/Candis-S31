@@ -553,6 +553,52 @@ void tg28_sw_decode_low_battery_warning(uint8_t value, uint8_t *level1_percent,
     *level2_percent = (uint8_t)(((value >> 4) & 0x0F) + 5);
 }
 
+static esp_err_t encode_from_table(uint16_t value, const uint16_t *table,
+                                   uint8_t table_size, uint8_t *code)
+{
+    for (uint8_t i = 0; i < table_size; i++) {
+        if (table[i] == value) {
+            *code = i;
+            return ESP_OK;
+        }
+    }
+    return ESP_ERR_INVALID_ARG;
+}
+
+/* REG27 power-key timing windows (datasheet 6.13.2.25): bits5:4 IRQLEVEL
+ * 1000/1500/2000/2500 ms, bits3:2 OFFLEVEL 4000/6000/8000/10000 ms, and
+ * bits1:0 ONLEVEL 128/512/1000/2000 ms. Every byte value decodes to a
+ * valid window triplet. */
+static const uint16_t s_irqlevel_windows[4] = {1000, 1500, 2000, 2500};
+static const uint16_t s_offlevel_windows[4] = {4000, 6000, 8000, 10000};
+static const uint16_t s_onlevel_windows[4] = {128, 512, 1000, 2000};
+
+esp_err_t tg28_sw_encode_powerkey_levels(uint16_t irqlevel_ms,
+        uint16_t offlevel_ms, uint16_t onlevel_ms, uint8_t *value)
+{
+    ESP_RETURN_ON_FALSE(value != NULL, ESP_ERR_INVALID_ARG, TAG, "value is NULL");
+    uint8_t irqlevel = 0, offlevel = 0, onlevel = 0;
+    esp_err_t error = encode_from_table(irqlevel_ms, s_irqlevel_windows, 4, &irqlevel);
+    if (error == ESP_OK) {
+        error = encode_from_table(offlevel_ms, s_offlevel_windows, 4, &offlevel);
+    }
+    if (error == ESP_OK) {
+        error = encode_from_table(onlevel_ms, s_onlevel_windows, 4, &onlevel);
+    }
+    if (error == ESP_OK) {
+        *value = (uint8_t)((irqlevel << 4) | (offlevel << 2) | onlevel);
+    }
+    return error;
+}
+
+void tg28_sw_decode_powerkey_levels(uint8_t value, uint16_t *irqlevel_ms,
+                                    uint16_t *offlevel_ms, uint16_t *onlevel_ms)
+{
+    *irqlevel_ms = s_irqlevel_windows[(value & TG28_SW_IRQLEVEL_MASK) >> 4];
+    *offlevel_ms = s_offlevel_windows[(value & TG28_SW_OFFLEVEL_MASK) >> 2];
+    *onlevel_ms = s_onlevel_windows[value & TG28_SW_ONLEVEL_MASK];
+}
+
 static esp_err_t encode_voltage(const regulator_config_t *config,
                                 uint16_t millivolts, uint8_t *code)
 {
@@ -786,8 +832,10 @@ esp_err_t tg28_sw_get_status(tg28_sw_handle_t handle, tg28_sw_status_t *status)
         status->common_status1 = raw[1];
         status->vbus_present = (raw[0] & TG28_SW_VBUS_PRESENT_MASK) != 0;
         status->battery_present = (raw[0] & TG28_SW_BATTERY_PRESENT_MASK) != 0;
+        /* REG01 bits2:0: 0 trickle, 1 pre-charge, 2 CC, 3 CV - all active
+         * charging; 4 charge done, 5 not charging. */
         const uint8_t charge_state = raw[1] & TG28_SW_CHARGE_STATE_MASK;
-        status->charging = charge_state >= 1 && charge_state <= 3;
+        status->charging = charge_state < TG28_SW_CHARGE_STATE_DONE;
         status->charge_done = charge_state == TG28_SW_CHARGE_STATE_DONE;
         error = read_adc_channel_locked(handle, TG28_SW_ADC_CHANNEL_VBAT,
                                         &status->battery_mv);
@@ -821,13 +869,12 @@ esp_err_t tg28_sw_power_off(tg28_sw_handle_t handle)
     const esp_err_t error = update_bits(handle, TG28_SW_REG_COMMON_CONFIG,
                                         TG28_SW_SOFT_PWROFF_MASK,
                                         TG28_SW_SOFT_PWROFF_MASK);
-    if (error != ESP_OK) {
-        unlock_device(handle);
-    }
-    /* On success the write is acknowledged and the PMU enters its off state:
-     * every DCDC and LDO but the RTCLDO shuts down, the board supply
-     * collapses, and this call does not return in practice. There is nothing
-     * left to unlock, so the device lock is released only on failure. */
+    /* On success the write is acknowledged and the PMU enters its off
+     * state, so this call often does not return. The lock is still
+     * released unconditionally: a board can survive the command (external
+     * supply, delayed rail collapse, tests), and a held mutex would
+     * deadlock every later TG28 call. */
+    unlock_device(handle);
     return error;
 }
 
@@ -1109,9 +1156,16 @@ esp_err_t tg28_sw_program_battery_model(tg28_sw_handle_t handle,
     const bool module_state_valid = error == ESP_OK;
     bool brom_open = false;
     if (error == ESP_OK) {
-        const uint8_t charger_off = module_enable & ~TG28_SW_CHARGER_ENABLE_MASK;
+        /* Pause both the charger and the watchdog for the whole download:
+         * the 128-byte stream plus verification outlasts the shortest
+         * watchdog period, and a mid-download expiry would reset or
+         * power-cycle the PMU and leave a partial model behind. REG18 is
+         * restored from the saved image on every exit path below. */
+        const uint8_t modules_paused = module_enable &
+                                       ~(TG28_SW_CHARGER_ENABLE_MASK |
+                                         TG28_SW_WATCHDOG_ENABLE_MASK);
         error = write_registers(handle, TG28_SW_REG_MODULE_ENABLE,
-                                &charger_off, sizeof(charger_off));
+                                &modules_paused, sizeof(modules_paused));
     }
     if (error == ESP_OK) {
         vTaskDelay(pdMS_TO_TICKS(TG28_SW_CHARGER_SETTLE_MS));
@@ -1157,8 +1211,9 @@ esp_err_t tg28_sw_program_battery_model(tg28_sw_handle_t handle,
                                     TG28_SW_BROM_UPDATE_MARK_MASK,
                                     TG28_SW_BROM_UPDATE_MARK_MASK);
     }
-    /* Always reset the gauge MCU before restoring the charger, including on
-     * a failed download or verification, so it cannot remain in BROM state. */
+    /* Always reset the gauge MCU before restoring the module enables,
+     * including on a failed download or verification, so it cannot remain
+     * in BROM state. */
     const esp_err_t gauge_reset_error = reset_gauge_mcu(handle);
     if (cleanup_error == ESP_OK) {
         cleanup_error = gauge_reset_error;
@@ -1945,19 +2000,6 @@ esp_err_t tg28_sw_get_min_sys_voltage(tg28_sw_handle_t handle, uint16_t *millivo
     return ESP_OK;
 }
 
-/* REG27 timing-window tables (datasheet 6.13.2.25). */
-static esp_err_t encode_from_table(uint16_t value, const uint16_t *table,
-                                   uint8_t table_size, uint8_t *code)
-{
-    for (uint8_t i = 0; i < table_size; i++) {
-        if (table[i] == value) {
-            *code = i;
-            return ESP_OK;
-        }
-    }
-    return ESP_ERR_INVALID_ARG;
-}
-
 /* Power-off policy (datasheet 6.13.2.20-22,25). REG23 bit4 is reserved with
  * a POR-1 value; the read-modify-write below preserves it. */
 esp_err_t tg28_sw_set_poweroff_config(tg28_sw_handle_t handle,
@@ -1966,27 +2008,26 @@ esp_err_t tg28_sw_set_poweroff_config(tg28_sw_handle_t handle,
     ESP_RETURN_ON_FALSE(handle != NULL && config != NULL, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
     ESP_RETURN_ON_FALSE(config->dcdc_uvp_shutdown_mask <= 0x0F,
                         ESP_ERR_INVALID_ARG, TAG, "invalid UVP mask");
-    static const uint16_t irqlevel_table[4] = {1000, 1500, 2000, 2500};
-    static const uint16_t offlevel_table[4] = {4000, 6000, 8000, 10000};
-    static const uint16_t onlevel_table[4] = {128, 512, 1000, 2000};
-    uint8_t irqlevel = 0, offlevel = 0, onlevel = 0, voff = 0;
-    ESP_RETURN_ON_ERROR(encode_from_table(config->irqlevel_ms, irqlevel_table, 4, &irqlevel),
-                        TAG, "invalid IRQLEVEL");
-    ESP_RETURN_ON_ERROR(encode_from_table(config->offlevel_ms, offlevel_table, 4, &offlevel),
-                        TAG, "invalid OFFLEVEL");
-    ESP_RETURN_ON_ERROR(encode_from_table(config->onlevel_ms, onlevel_table, 4, &onlevel),
-                        TAG, "invalid ONLEVEL");
+    uint8_t levels = 0, voff = 0;
+    ESP_RETURN_ON_ERROR(tg28_sw_encode_powerkey_levels(config->irqlevel_ms,
+                                                       config->offlevel_ms,
+                                                       config->onlevel_ms, &levels),
+                        TAG, "invalid power-key timing window");
     ESP_RETURN_ON_ERROR(encode_step_mv(config->voff_mv, TG28_SW_VOFF_VOLTAGE_BASE_MV,
                                        TG28_SW_VOFF_VOLTAGE_STEP_MV,
                                        TG28_SW_VOFF_VOLTAGE_MASK, &voff),
                         TAG, "invalid VOFF threshold");
     ESP_RETURN_ON_ERROR(lock_device(handle), TAG, "device lock failed");
+    /* Order matters: the immediate power-off sources are cleared first and
+     * enabled again only after the new thresholds land. Writing the
+     * PWRON>OFFLEVEL enable before REG27 could shut the board down under
+     * the old window while the key happens to be pressed. A failure in the
+     * middle leaves the sources disabled - the safe direction - and the
+     * caller sees the error. */
     esp_err_t error = update_bits(handle, TG28_SW_REG_PWROFF_EN,
                                   TG28_SW_PWROFF_DIE_OT2_MASK |
                                   TG28_SW_PWROFF_OFFLEVEL_MASK |
                                   TG28_SW_PWROFF_BUTTON_RESTART_MASK,
-                                  (config->die_ot_level2_off_enable ? TG28_SW_PWROFF_DIE_OT2_MASK : 0) |
-                                  (config->pwron_offlevel_off_enable ? TG28_SW_PWROFF_OFFLEVEL_MASK : 0) |
                                   (config->button_off_as_restart ? TG28_SW_PWROFF_BUTTON_RESTART_MASK : 0));
     if (error == ESP_OK) {
         error = update_bits(handle, TG28_SW_REG_DCDC_PWROFF_EN,
@@ -2001,7 +2042,15 @@ esp_err_t tg28_sw_set_poweroff_config(tg28_sw_handle_t handle,
     if (error == ESP_OK) {
         error = update_bits(handle, TG28_SW_REG_POWER_KEY_LEVELS,
                             TG28_SW_IRQLEVEL_MASK | TG28_SW_OFFLEVEL_MASK | TG28_SW_ONLEVEL_MASK,
-                            (irqlevel << 4) | (offlevel << 2) | onlevel);
+                            levels);
+    }
+    if (error == ESP_OK) {
+        /* Enable the requested power-off sources only now that every
+         * threshold they act on holds its new value. */
+        error = update_bits(handle, TG28_SW_REG_PWROFF_EN,
+                            TG28_SW_PWROFF_DIE_OT2_MASK | TG28_SW_PWROFF_OFFLEVEL_MASK,
+                            (config->die_ot_level2_off_enable ? TG28_SW_PWROFF_DIE_OT2_MASK : 0) |
+                            (config->pwron_offlevel_off_enable ? TG28_SW_PWROFF_OFFLEVEL_MASK : 0));
     }
     unlock_device(handle);
     return error;
@@ -2011,9 +2060,6 @@ esp_err_t tg28_sw_get_poweroff_config(tg28_sw_handle_t handle,
                                       tg28_sw_poweroff_config_t *config)
 {
     ESP_RETURN_ON_FALSE(handle != NULL && config != NULL, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
-    static const uint16_t irqlevel_table[4] = {1000, 1500, 2000, 2500};
-    static const uint16_t offlevel_table[4] = {4000, 6000, 8000, 10000};
-    static const uint16_t onlevel_table[4] = {128, 512, 1000, 2000};
     ESP_RETURN_ON_ERROR(lock_device(handle), TAG, "device lock failed");
     uint8_t pwroff_en = 0, dcdc_pwroff = 0, voff_reg = 0, levels = 0;
     esp_err_t error = read_registers(handle, TG28_SW_REG_PWROFF_EN, &pwroff_en, 1);
@@ -2035,9 +2081,8 @@ esp_err_t tg28_sw_get_poweroff_config(tg28_sw_handle_t handle,
     config->dcdc_uvp_shutdown_mask = dcdc_pwroff & TG28_SW_DCDC_UVP_PWROFF_MASK;
     config->voff_mv = TG28_SW_VOFF_VOLTAGE_BASE_MV +
                       (voff_reg & TG28_SW_VOFF_VOLTAGE_MASK) * TG28_SW_VOFF_VOLTAGE_STEP_MV;
-    config->irqlevel_ms = irqlevel_table[(levels & TG28_SW_IRQLEVEL_MASK) >> 4];
-    config->offlevel_ms = offlevel_table[(levels & TG28_SW_OFFLEVEL_MASK) >> 2];
-    config->onlevel_ms = onlevel_table[levels & TG28_SW_ONLEVEL_MASK];
+    tg28_sw_decode_powerkey_levels(levels, &config->irqlevel_ms,
+                                   &config->offlevel_ms, &config->onlevel_ms);
     return ESP_OK;
 }
 
@@ -2174,14 +2219,14 @@ esp_err_t tg28_sw_soft_reset(tg28_sw_handle_t handle)
     ESP_RETURN_ON_ERROR(lock_device(handle), TAG, "device lock failed");
     /* REG10 bit1 is an RWAC command bit (datasheet 6.13.2.7): once the write
      * is acknowledged the whole PMU restarts, every rail cycles, and the
-     * system registers reset to defaults; there is nothing left to unlock
-     * on success. */
+     * system registers reset to defaults, so the call often does not
+     * return. The lock is still released unconditionally: the board can
+     * survive the reset, and a held mutex would deadlock every later TG28
+     * call. */
     const esp_err_t error = update_bits(handle, TG28_SW_REG_COMMON_CONFIG,
                                         TG28_SW_SOFTWARE_RESET_MASK,
                                         TG28_SW_SOFTWARE_RESET_MASK);
-    if (error != ESP_OK) {
-        unlock_device(handle);
-    }
+    unlock_device(handle);
     return error;
 }
 
@@ -2231,8 +2276,15 @@ esp_err_t tg28_sw_read_battery_model(tg28_sw_handle_t handle,
     /* Mirror the verification half of tg28_sw_program_battery_model():
      * gauge reset, BROM open, source select, 128 reads of REGA1, BROM
      * close, gauge reset. No register content is modified apart from the
-     * REGA2 source-select bit, which is restored to SRAM operation. */
-    esp_err_t error = reset_gauge_mcu(handle);
+     * REGA2 source-select bit, which is restored to the value found on
+     * entry: forcing SRAM here would leave a POR-default (ROM) gauge
+     * running from an unprogrammed model. */
+    uint8_t gauge_control = 0;
+    esp_err_t error = read_registers(handle, TG28_SW_REG_FUEL_GAUGE_CONTROL,
+                                     &gauge_control, sizeof(gauge_control));
+    if (error == ESP_OK) {
+        error = reset_gauge_mcu(handle);
+    }
     if (error == ESP_OK) {
         error = set_brom_writer(handle, false);
     }
@@ -2252,10 +2304,9 @@ esp_err_t tg28_sw_read_battery_model(tg28_sw_handle_t handle,
 
     esp_err_t cleanup_error = set_brom_writer(handle, false);
     if (cleanup_error == ESP_OK) {
-        /* Leave the gauge running from SRAM, the normal operating state. */
         cleanup_error = update_bits(handle, TG28_SW_REG_FUEL_GAUGE_CONTROL,
                                     TG28_SW_BROM_UPDATE_MARK_MASK,
-                                    TG28_SW_BROM_UPDATE_MARK_MASK);
+                                    gauge_control & TG28_SW_BROM_UPDATE_MARK_MASK);
     }
     const esp_err_t gauge_reset_error = reset_gauge_mcu(handle);
     if (cleanup_error == ESP_OK) {

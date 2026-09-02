@@ -295,6 +295,51 @@ static void test_low_battery_warning_coding(void)
     assert(level1 == 15 && level2 == 20);
 }
 
+static void test_powerkey_level_coding(void)
+{
+    /* REG27 (datasheet 6.13.2.25): bits5:4 IRQLEVEL 1000-2500 ms,
+     * bits3:2 OFFLEVEL 4000-10000 ms, bits1:0 ONLEVEL 128-2000 ms. Every
+     * selectable triplet round-trips, so the uint16_t struct fields can
+     * carry each window without truncation. */
+    static const uint16_t irqlevel[] = {1000, 1500, 2000, 2500};
+    static const uint16_t offlevel[] = {4000, 6000, 8000, 10000};
+    static const uint16_t onlevel[] = {128, 512, 1000, 2000};
+    for (uint8_t i = 0; i < 4; ++i) {
+        for (uint8_t j = 0; j < 4; ++j) {
+            for (uint8_t k = 0; k < 4; ++k) {
+                uint8_t value = 0;
+                assert(tg28_sw_encode_powerkey_levels(irqlevel[i], offlevel[j],
+                                                      onlevel[k], &value) == ESP_OK);
+                assert(value == (uint8_t)((i << 4) | (j << 2) | k));
+                uint16_t irq_ms = 0, off_ms = 0, on_ms = 0;
+                tg28_sw_decode_powerkey_levels(value, &irq_ms, &off_ms, &on_ms);
+                assert(irq_ms == irqlevel[i]);
+                assert(off_ms == offlevel[j]);
+                assert(on_ms == onlevel[k]);
+            }
+        }
+    }
+
+    uint8_t value = 0;
+    assert(tg28_sw_encode_powerkey_levels(0, 4000, 128, &value) == ESP_ERR_INVALID_ARG);
+    assert(tg28_sw_encode_powerkey_levels(1000, 0, 128, &value) == ESP_ERR_INVALID_ARG);
+    assert(tg28_sw_encode_powerkey_levels(1000, 4000, 0, &value) == ESP_ERR_INVALID_ARG);
+    assert(tg28_sw_encode_powerkey_levels(3000, 4000, 128, &value) == ESP_ERR_INVALID_ARG);
+    assert(tg28_sw_encode_powerkey_levels(1000, 11000, 128, &value) == ESP_ERR_INVALID_ARG);
+    assert(tg28_sw_encode_powerkey_levels(1000, 4000, 2001, &value) == ESP_ERR_INVALID_ARG);
+
+    uint16_t irq_ms = 0, off_ms = 0, on_ms = 0;
+    tg28_sw_decode_powerkey_levels(0xFF, &irq_ms, &off_ms, &on_ms);
+    assert(irq_ms == 2500 && off_ms == 10000 && on_ms == 2000);
+
+    /* The widest windows exceed 255 ms, so the config fields must stay
+     * wide enough to hold them. */
+    tg28_sw_poweroff_config_t poweroff = {0};
+    assert(sizeof(poweroff.irqlevel_ms) == sizeof(uint16_t));
+    assert(sizeof(poweroff.offlevel_ms) == sizeof(uint16_t));
+    assert(sizeof(poweroff.onlevel_ms) == sizeof(uint16_t));
+}
+
 /* The feature-block enums are the register codes themselves (datasheet
  * 6.13.2.x); assert the ordering so an accidental reorder breaks the build
  * tests instead of silently programming wrong values. */
@@ -393,6 +438,7 @@ void app_main(void)
     test_switch_names();
     test_irq_numbering();
     test_low_battery_warning_coding();
+    test_powerkey_level_coding();
     test_feature_block_enum_codings();
     test_feature_block_null_rejections();
 }

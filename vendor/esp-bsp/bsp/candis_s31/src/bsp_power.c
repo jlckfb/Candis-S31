@@ -453,6 +453,7 @@ esp_err_t bsp_peripheral_power_set(bsp_peripheral_t peripheral, bool enable)
                 return error;
             }
             vTaskDelay(pdMS_TO_TICKS(1));
+#if !CONFIG_BSP_CAMERA_USE_INTERNAL_DVDD
             error = regulator_start(BSP_PMIC_DCDC2, 1500);
             if (error != ESP_OK) {
                 rollback_note("camera AVDD",
@@ -461,6 +462,7 @@ esp_err_t bsp_peripheral_power_set(bsp_peripheral_t peripheral, bool enable)
                               bsp_pmic_regulator_enable(BSP_PMIC_BLDO1, false));
                 return error;
             }
+#endif
             vTaskDelay(pdMS_TO_TICKS(5));
             return ESP_OK;
         }
@@ -475,10 +477,12 @@ esp_err_t bsp_peripheral_power_set(bsp_peripheral_t peripheral, bool enable)
                                              sizeof(s_camera_pins) /
                                              sizeof(s_camera_pins[0])),
                                      "camera pins hi-Z");
+#if !CONFIG_BSP_CAMERA_USE_INTERNAL_DVDD
         camera_error = safe_state_note(
                            camera_error,
                            bsp_pmic_regulator_enable(BSP_PMIC_DCDC2, false),
                            "camera DVDD disable");
+#endif
         camera_error = safe_state_note(
                            camera_error,
                            bsp_pmic_regulator_enable(BSP_PMIC_ALDO4, false),

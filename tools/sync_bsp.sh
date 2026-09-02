@@ -17,7 +17,11 @@ if [ ! -f "$ESP_BSP_ROOT/bsp/candis_s31/include/bsp/candis_s31.h" ]; then
     exit 1
 fi
 
-RSYNC=(rsync -a --delete
+# --delete-excluded keeps the snapshot clean: rsync's plain --delete never
+# removes excluded files left over in $VENDOR from earlier syncs, so a stale
+# dependencies.lock (or managed_components/) recorded fork-local override
+# paths and broke vendored test-app builds after the source moved.
+RSYNC=(rsync -a --delete --delete-excluded
        --exclude='build*/' --exclude='sdkconfig' --exclude='dependencies.lock'
        --exclude='.git' --exclude='managed_components/')
 
@@ -28,14 +32,19 @@ for comp in tg28_sw rx8130ce fusb303b esp_lvgl_port; do
 done
 "${RSYNC[@]}" "$ESP_BSP_ROOT/components/lcd_touch/esp_lcd_touch_cst820" "$VENDOR/components/lcd_touch/"
 
-{
-    git -C "$ESP_BSP_ROOT" rev-parse HEAD 2>/dev/null || echo "unknown"
-    git -C "$ESP_BSP_ROOT" status --porcelain --untracked-files=no >/dev/null 2>&1 || true
-} > /dev/null
+# Vendored adaptation: in the esp-bsp repo the CST820 manifest carries
+# "override_path: ../esp_lcd_touch" so the repo's CI resolves the common
+# component in-tree. The vendor snapshot deliberately does not carry the
+# common esp_lcd_touch component (it resolves from the Registry here), so
+# the in-repo override must be stripped or every fresh build fails to
+# resolve dependencies.
+sed -i '/override_path: \.\.\/esp_lcd_touch/d' \
+    "$VENDOR/components/lcd_touch/esp_lcd_touch_cst820/idf_component.yml"
+
 COMMIT=$(git -C "$ESP_BSP_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)
 DIRTY=$(git -C "$ESP_BSP_ROOT" status --porcelain --untracked-files=no 2>/dev/null | wc -l)
 {
-    echo "source: $ESP_BSP_ROOT"
+    echo "source: LeenixP/esp-bsp (local worktree)"
     echo "commit: $COMMIT"
     echo "dirty_files: $DIRTY"
     echo "synced_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"

@@ -798,6 +798,7 @@ esp_err_t bsp_camera_start(const bsp_camera_cfg_t *cfg);
 /** Reapply the board sensor override after esp_video_open() reloads its table. */
 esp_err_t bsp_camera_apply_workaround(void);
 esp_err_t bsp_camera_stop(void);
+/** @} */
 
 /** @addtogroup g06_led
  *  @{

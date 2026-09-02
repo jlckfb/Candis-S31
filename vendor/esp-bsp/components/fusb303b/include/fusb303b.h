@@ -34,8 +34,8 @@ typedef struct fusb303b_device_t *fusb303b_handle_t;
 
 /** I2C configuration used when creating a FUSB303B device. */
 typedef struct {
-    uint8_t device_address;
-    uint32_t scl_speed_hz;
+    uint8_t device_address;  /*!< FUSB303B_I2C_ADDRESS_LOW or FUSB303B_I2C_ADDRESS_HIGH. */
+    uint32_t scl_speed_hz;   /*!< Bus speed, 1 Hz to FUSB303B_I2C_CLOCK_HZ (400 kHz datasheet limit). */
 } fusb303b_config_t;
 
 /** Default FUSB303B I2C configuration for an ADDR/ORIENT-low device. */
@@ -53,12 +53,24 @@ typedef enum {
     FUSB303B_ROLE_DRP,
 } fusb303b_role_t;
 
-/** Source current advertisement selected in the Control register. */
+/**
+ * Current level for the source advertisement (fusb303b_set_role()) and for
+ * the BC_LVL status field decoded by fusb303b_decode_bc_level().
+ */
 typedef enum {
-    FUSB303B_CURRENT_DEFAULT = 0,
-    FUSB303B_CURRENT_1_5_A,
-    FUSB303B_CURRENT_3_0_A,
+    FUSB303B_CURRENT_NONE = 0,  /*!< BC_LVL=00: Ra or nothing attached. */
+    FUSB303B_CURRENT_DEFAULT,   /*!< USB default current (BC_LVL=01). */
+    FUSB303B_CURRENT_1_5_A,     /*!< 1.5 A advertisement (BC_LVL=10). */
+    FUSB303B_CURRENT_3_0_A,     /*!< 3.0 A advertisement (BC_LVL=11). */
 } fusb303b_current_t;
+
+/**
+ * Decode a raw BC_LVL status field (bits 1:2 of the Status register).
+ *
+ * Only 01/10/11 are valid advertisements; BC_LVL=00 means Ra or nothing
+ * attached and decodes to FUSB303B_CURRENT_NONE.
+ */
+fusb303b_current_t fusb303b_decode_bc_level(uint8_t bc_level);
 
 /** Connection and interrupt snapshot. */
 typedef struct {
@@ -76,7 +88,7 @@ typedef struct {
     bool fault;
     bool remedy_active;
     uint8_t orientation;
-    fusb303b_current_t advertised_current; /*!< Current advertised by the attached partner. */
+    fusb303b_current_t advertised_current; /*!< Partner advertisement; FUSB303B_CURRENT_NONE when BC_LVL reports Ra or nothing attached. */
 } fusb303b_status_t;
 
 /** Return true when the identity registers describe a FUSB303B. */
@@ -157,7 +169,13 @@ esp_err_t fusb303b_get_status(fusb303b_handle_t handle,
                               fusb303b_status_t *status,
                               bool clear_interrupts);
 
-/** Read and clear both write-one-to-clear interrupt registers. */
+/**
+ * Read and clear both write-one-to-clear interrupt registers.
+ *
+ * Task context only: the call takes the device lock (portMAX_DELAY) and
+ * performs synchronous I2C transfers. A GPIO ISR wired to INT_N must only
+ * notify a task, which then calls this function.
+ */
 esp_err_t fusb303b_get_and_clear_interrupts(fusb303b_handle_t handle,
         uint8_t *interrupt,
         uint8_t *interrupt1);

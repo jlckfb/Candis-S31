@@ -12,10 +12,9 @@
 #include "fusb303b.h"
 
 /* The pins only have to exist on the target: no case below starts an I2C
- * transfer, so the tests run on a board without a FUSB303B. Defaults match
- * the Candis-S31 main I2C bus; override in menuconfig for other boards. */
-#define TEST_I2C_SCL_IO  CONFIG_FUSB303B_TEST_I2C_SCL
-#define TEST_I2C_SDA_IO  CONFIG_FUSB303B_TEST_I2C_SDA
+ * transfer, so the tests run on a board without a FUSB303B. */
+#define TEST_I2C_SCL_IO  (GPIO_NUM_18)
+#define TEST_I2C_SDA_IO  (GPIO_NUM_8)
 
 TEST_CASE("identity check accepts the FUSB303B version and type",
           "[fusb303b]")
@@ -25,6 +24,19 @@ TEST_CASE("identity check accepts the FUSB303B version and type",
     TEST_ASSERT_TRUE(fusb303b_is_supported_identity(0x1F, 0x03));
     TEST_ASSERT_FALSE(fusb303b_is_supported_identity(0x20, 0x03));
     TEST_ASSERT_FALSE(fusb303b_is_supported_identity(0x10, 0x00));
+}
+
+TEST_CASE("BC_LVL decode maps only attached states to current levels",
+          "[fusb303b]")
+{
+    /* BC_LVL=00 is Ra or nothing attached: not a current advertisement. */
+    TEST_ASSERT_EQUAL(FUSB303B_CURRENT_NONE, fusb303b_decode_bc_level(0));
+    TEST_ASSERT_EQUAL(FUSB303B_CURRENT_DEFAULT, fusb303b_decode_bc_level(1));
+    TEST_ASSERT_EQUAL(FUSB303B_CURRENT_1_5_A, fusb303b_decode_bc_level(2));
+    TEST_ASSERT_EQUAL(FUSB303B_CURRENT_3_0_A, fusb303b_decode_bc_level(3));
+    /* Bits outside the two-bit field are ignored. */
+    TEST_ASSERT_EQUAL(FUSB303B_CURRENT_NONE, fusb303b_decode_bc_level(0xF0));
+    TEST_ASSERT_EQUAL(FUSB303B_CURRENT_3_0_A, fusb303b_decode_bc_level(0x1B));
 }
 
 TEST_CASE("create rejects invalid arguments before any I2C transfer",
@@ -58,6 +70,12 @@ TEST_CASE("create rejects invalid arguments before any I2C transfer",
 
     config.device_address = FUSB303B_I2C_ADDRESS_LOW;
     config.scl_speed_hz = 0;
+    TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
+                      fusb303b_create(bus, &config, &device));
+    TEST_ASSERT_NULL(device);
+
+    /* The datasheet caps the bus at 400 kHz. */
+    config.scl_speed_hz = FUSB303B_I2C_CLOCK_HZ + 1;
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
                       fusb303b_create(bus, &config, &device));
     TEST_ASSERT_NULL(device);

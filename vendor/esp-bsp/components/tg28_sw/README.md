@@ -43,7 +43,9 @@ fuel-gauge, regulator, load-switch, ADC, and interrupt control:
 - GPIO1 output (REG1B), DCDC operating modes (force CCM, DVM ramp,
   per-rail force PWM, spread spectrum, REG80/REG81), whole-PMIC software
   reset (REG10 bit1), and the BATFET off-state keep for ship mode (REG12);
-- interrupt status read and write-one-to-clear handling;
+- interrupt status read and write-one-to-clear handling, to be called from
+  task context only (the PMIC IRQ GPIO ISR must just notify a task), with
+  condition-latched bits re-asserting until the condition clears;
 - raw register read (`tg28_sw_read_registers`) and single-register write
   (`tg28_sw_write_register`) escape hatches for anything not yet wrapped.
 

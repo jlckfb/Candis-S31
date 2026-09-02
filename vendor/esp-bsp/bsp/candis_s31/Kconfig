@@ -145,6 +145,25 @@ menu "Board Support Package (Candis-S31)"
             range 0 7
             help
                 Only used when BSP_CAMERA_XCLK_USE_LEDC is enabled.
+        config BSP_CAMERA_USE_INTERNAL_DVDD
+            bool "Use the OV5640 internal DVDD regulator"
+            default n
+            help
+                Diagnostic option for boards whose external 1.5 V camera
+                core rail is unavailable. Clears OV5640 SC_PWC bit 3 and
+                leaves TG28 DCDC2 off. Use only with AVDD/DOVDD present;
+                the OV5640 datasheet warns that internal regulation with
+                2.8 V I/O can increase sensor heat.
+
+        config BSP_CAMERA_SENSOR_DATA_REMAP
+            bool "Remap the fitted camera DVP data lines"
+            default y
+            help
+                Keep the board-local D0/D1 and D3/D4 remap identified by
+                the EVT1 pattern measurements. Disable for an A/B check
+                against the schematic-order wiring without changing the
+                sensor format or display path.
+
     endmenu
 
     menu "RGB LED"

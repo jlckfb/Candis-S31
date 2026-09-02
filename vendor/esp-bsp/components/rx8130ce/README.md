@@ -23,9 +23,9 @@ manual:
   signed 3.05 ppm steps);
 - decode retained voltage, reset, alarm, timer, and update flags;
 - read and clear the three interrupt flags that can assert `/IRQ`;
-- raw read/write access to the documented user registers (10h-23h, 30h) for
-  the few fields without a structured API (the power-detection tuning bits
-  SMPTSEL/RSVSEL/BFVSEL).
+- raw read/write access to the documented user registers (10h-23h, 30h,
+  31h) for the few fields without a structured API (the power-detection
+  tuning bits SMPTSEL/RSVSEL).
 
 The alarm hardware compares either a day of month or one weekday; matching
 multiple weekdays at once (supported by the hardware's weekday bit map) is
@@ -38,7 +38,15 @@ The driver always sets `INIEN` (automatic supply switchover is enabled),
 while `CHGEN` follows `rx8130ce_config_t.backup_charge_enable`: keep the
 default `false` for a primary (non-rechargeable) backup cell so charging
 stays off, or set it to `true` when the board carries a rechargeable backup
-source (secondary cell or supercapacitor) that must be charged from VDD. The
+source (secondary cell or supercapacitor) that must be charged from VDD.
+When charging is enabled, `rx8130ce_config_t.backup_charge_cutoff` selects
+the full-charge voltage that stops charging (2.92 V, 3.02 V, or 3.08 V,
+default 3.02 V); the cutoff-less datasheet setting is not selectable, and
+the board must limit the charge current externally to 40 mA max (application
+manual, switching-element characteristics). Independently,
+`rx8130ce_config_t.backup_voltage_low_detect` (default `true`) sets `VBLFE`
+so the low-backup-voltage flag can assert even while charging stays
+disabled. The
 configured policy is applied after normal power-up and as part of the `VLF=1`
 full-register initialization. After `VLF=1`, the driver waits for oscillator
 startup and initializes all documented user registers. The calendar starts at
@@ -64,7 +72,8 @@ ESP_ERROR_CHECK(rx8130ce_delete(rtc));
 ```
 
 The fixed 7-bit address is `0x32`. `RX8130CE_CONFIG_DEFAULT()` selects a
-400 kHz I2C clock and keeps backup charging off. Passing `NULL` as the config
+400 kHz I2C clock, keeps backup charging off with the 3.02 V charge cutoff,
+and leaves backup low-voltage detection on. Passing `NULL` as the config
 selects the same defaults.
 
 ## Setting time
@@ -103,8 +112,10 @@ preset (registers 1Ah-1Bh, 1-65535 counts) and the source clock selected by
 settings change, as the application manual requires, and clears any latched
 `TF`. With `timer.enable` set, the countdown then starts from the preset;
 with it cleared, the timer stays stopped and the counter registers hold the
-preset for readback. The first countdown can be up to one source-clock period
-shorter than configured.
+preset for readback. For the 4096 Hz, 64 Hz, and 1 Hz source clocks the
+first countdown can be up to one period of the selected source clock
+shorter than configured; for the 1/60 Hz and 1/3600 Hz source clocks it can
+be up to one second shorter (application manual 14.2.2).
 
 `rx8130ce_get_timer()` reads the settings back. While the timer runs, `count`
 is the live down-count and is not latched during the read, so read twice until
@@ -121,7 +132,11 @@ is cleared through `rx8130ce_get_and_clear_interrupts()`.
 `status.time_valid` is false while the `VLF` flag is set. A successful I2C read
 does not by itself prove that retained time is valid.
 
-`status.backup_voltage_low` reports only the `VBLF` flag (low backup battery).
+`status.backup_voltage_low` reports only the `VBLF` flag (low backup
+battery). While charging is disabled, that flag can only assert when the
+detection is enabled through `rx8130ce_config_t.backup_voltage_low_detect`
+(default on, `VBLFE` bit).
+
 `status.backup_battery_full` reports `VBFF` (backup battery charge threshold
 reached); it never sets while charging stays disabled on a primary cell.
 

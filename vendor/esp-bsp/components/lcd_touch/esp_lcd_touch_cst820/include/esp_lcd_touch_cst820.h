@@ -36,63 +36,14 @@ esp_err_t esp_lcd_touch_new_i2c_cst820(const esp_lcd_panel_io_handle_t io,
                                        esp_lcd_touch_handle_t *tp);
 
 /**
- * @brief Put the CST820 into deep sleep mode (~2 uA, datasheet "sleep mode")
- *
- * Sends the controller sleep command. While asleep the controller stops
- * scanning, stops answering I2C and its INT pin stays inactive: a touch can
- * NOT wake the controller in this mode. The only ways back to dynamic mode
- * are a hardware reset cycle on RST (see esp_lcd_touch_cst820_wakeup()) or a
- * power cycle of the touch supply rail.
- *
- * @note Register assumption, pending EVT verification: the CST820 datasheet
- *       (DS_CST_820 V1.2, Hynitron) documents the sleep command but does not
- *       publish its register address. This driver uses 0xA5 <- 0x03, taken
- *       from public CST816-family sources; see esp_lcd_touch_cst820.c for the
- *       full provenance and the conflicting 0xE5 claim.
- *
- * @note Equivalent to esp_lcd_touch_enter_sleep() for this controller.
- *
- * @param tp Touch controller handle
- * @return
- *      - ESP_OK on success
- *      - ESP_ERR_INVALID_ARG if tp is NULL
- *      - ESP_FAIL or I2C error code if the controller did not acknowledge
- *        the command (some firmware variants may not implement it)
- */
-esp_err_t esp_lcd_touch_cst820_sleep(esp_lcd_touch_handle_t tp);
-
-/**
- * @brief Wake the CST820 from deep sleep with a hardware reset cycle
- *
- * Toggles the RST pin and waits the datasheet re-initialization time
- * (Tron = 100 ms), then clears any cached touch points and re-reads the ID
- * register (unless CONFIG_ESP_LCD_TOUCH_CST820_DISABLE_READ_ID) to confirm
- * the controller is back on the bus.
- *
- * @note A reset GPIO is mandatory: the controller ignores I2C while asleep,
- *       so there is no software-only wake path. Without a reset GPIO this
- *       function returns ESP_ERR_NOT_SUPPORTED.
- *
- * @note Equivalent to esp_lcd_touch_exit_sleep() for this controller.
- *
- * @param tp Touch controller handle
- * @return
- *      - ESP_OK on success
- *      - ESP_ERR_INVALID_ARG if tp is NULL
- *      - ESP_ERR_NOT_SUPPORTED if no reset GPIO was configured
- *      - Other error codes propagated from GPIO or panel IO operations
- */
-esp_err_t esp_lcd_touch_cst820_wakeup(esp_lcd_touch_handle_t tp);
-
-/**
  * @brief Prepare the CST820 for monitor (standby) mode (~10 uA, touch wake)
  *
  * Monitor mode is the low-power mode in which the controller keeps scanning
  * the panel at a low frequency. On a touch (or a predefined standby gesture)
  * it autonomously returns to dynamic mode and pulses the INT pin, which can
  * wake the host from light/deep sleep. This is the mode to use for
- * "wake the product by touching the screen" scenarios; deep sleep
- * (esp_lcd_touch_cst820_sleep()) cannot be woken by touch.
+ * "wake the product by touching the screen" scenarios; in standby a touch
+ * keeps INT fully functional.
  *
  * This function deliberately sends no undocumented register write. Per the
  * CST820 datasheet the controller enters standby automatically when no touch
@@ -123,7 +74,7 @@ esp_err_t esp_lcd_touch_cst820_enter_monitor_mode(esp_lcd_touch_handle_t tp);
  * Per the datasheet, standby is exited either by detecting a touch or by a
  * reset; this function takes the reset path so the host does not have to
  * wait for a touch. Waits Tron = 100 ms after the reset pulse and clears
- * cached points, mirroring esp_lcd_touch_cst820_wakeup().
+ * cached points.
  *
  * @note A reset GPIO is mandatory; without one this function returns
  *       ESP_ERR_NOT_SUPPORTED (the controller still exits standby on its

@@ -202,8 +202,10 @@ typedef struct {
 /**
  * Battery temperature-sense thresholds (REG52-REG57, datasheet 6.13.2.48-53;
  * the charger reacts to them per 6.7.4.4). The four limit fields hold the TS
- * pin voltage in millivolts: charging pauses below vltf_charge_mv or above
- * vhtf_charge_mv, and discharge pauses below vltf_work_mv or above
+ * pin voltage in millivolts. With the usual NTC driven by a constant
+ * current the TS voltage rises as the battery gets colder, so charging
+ * pauses above vltf_charge_mv (over-cold) or below vhtf_charge_mv
+ * (over-hot), and discharge pauses above vltf_work_mv or below
  * vhtf_work_mv. Their mapping to temperatures follows the NTC network
  * transfer function (default codes place the charge window around 0-45 C
  * with a 10 kOhm NTC driven by 50 uA, datasheet Table 6-5).
@@ -339,7 +341,9 @@ typedef struct {
  * The button_pwrkey_off bits (REG22) control whether the die
  * over-temperature level-2 and the PWRON-beyond-OFFLEVEL sources are
  * allowed to power off. irqlevel/offlevel/onlevel (REG27) set the PWRON
- * key timing windows.
+ * key timing windows and only take the discrete datasheet values:
+ * irqlevel_ms 1000/1500/2000/2500 ms, offlevel_ms 4000/6000/8000/10000 ms,
+ * and onlevel_ms 128/512/1000/2000 ms.
  */
 typedef struct {
     uint16_t voff_mv;
@@ -348,9 +352,9 @@ typedef struct {
     bool die_ot_level2_off_enable;
     bool pwron_offlevel_off_enable;
     bool button_off_as_restart;
-    uint8_t irqlevel_ms;
-    uint8_t offlevel_ms;
-    uint8_t onlevel_ms;
+    uint16_t irqlevel_ms;
+    uint16_t offlevel_ms;
+    uint16_t onlevel_ms;
 } tg28_sw_poweroff_config_t;
 
 /**
@@ -417,7 +421,11 @@ typedef struct {
     uint8_t battery_percent;
     bool battery_present;
     bool vbus_present;
+    /** True in every active charge phase: trickle (REG01 2:0 = 0),
+     * pre-charge (1), constant current (2), or constant voltage (3). */
     bool charging;
+    /** True when the charge cycle finished (REG01 2:0 = 4); 5 means no
+     * charging is in progress and leaves both flags false. */
     bool charge_done;
 } tg28_sw_status_t;
 
@@ -462,8 +470,9 @@ esp_err_t tg28_sw_get_power_on_source(tg28_sw_handle_t handle, uint8_t *source);
  * 6.5.4.3 and 6.13.2.7). Once the write is acknowledged the PMU enters its
  * off state: every DCDC and LDO but the RTCLDO shuts down, the main system
  * rails collapse, and the call does not return in practice. Flush any
- * pending log output before calling. The device lock is released only when
- * the register write fails.
+ * pending log output before calling. The device lock is released before
+ * returning either way, so later TG28 calls stay usable on a board that
+ * survives the command (external supply, delayed rail collapse).
  */
 esp_err_t tg28_sw_power_off(tg28_sw_handle_t handle);
 
@@ -628,10 +637,11 @@ esp_err_t tg28_sw_get_low_battery_warning(tg28_sw_handle_t handle,
  * Download and verify a battery-specific fuel-gauge model through REGA1.
  *
  * The sequence follows the vendor reference driver: temporarily disable the
- * charger, reset the gauge MCU, open BROM, stream the model, reopen BROM for
- * verification, set the update mark, reset the gauge MCU, and restore the
- * original charger-enable state. Call once per boot, or pass the model in the
- * create configuration to have the driver do so automatically.
+ * charger and the PMIC watchdog, reset the gauge MCU, open BROM, stream the
+ * model, reopen BROM for verification, set the update mark, reset the gauge
+ * MCU, and restore the original REG18 module-enable state. Call once per
+ * boot, or pass the model in the create configuration to have the driver do
+ * so automatically.
  *
  * size must equal TG28_SW_BATTERY_MODEL_SIZE (128 bytes); any other size
  * returns ESP_ERR_INVALID_SIZE. The model content is battery-specific and
@@ -655,9 +665,11 @@ typedef enum {
  * 6.13.2.86; procedure per hardware design guide 6.2).
  *
  * Mirrors the verification half of tg28_sw_program_battery_model(): gauge
- * MCU reset, BROM open, 128 sequential reads of REGA1, BROM close, gauge
- * reset. size must equal TG28_SW_BATTERY_MODEL_SIZE. The charger state is
- * not touched.
+ * MCU reset, BROM open, source select, 128 sequential reads of REGA1, BROM
+ * close, gauge reset. size must equal TG28_SW_BATTERY_MODEL_SIZE. The
+ * charger state is not touched, and the REGA2 model-source bit is restored
+ * to the value found on entry, so a POR-default (ROM) gauge keeps its
+ * source after the read.
  *
  * EVT note: whether the gauge's automatic learning (datasheet 6.11) lands
  * in the readable SRAM area, and whether the ROM area holds a meaningful
@@ -703,7 +715,18 @@ esp_err_t tg28_sw_switch_enable(tg28_sw_handle_t handle,
 esp_err_t tg28_sw_switch_is_enabled(tg28_sw_handle_t handle,
                                     tg28_sw_power_switch_t sw, bool *enabled);
 
-/** Read and clear the three interrupt status registers. */
+/**
+ * Read the three interrupt status registers (REG48-REG4A) and attempt to
+ * clear every set bit by writing it back (write-one-to-clear).
+ *
+ * Call this from task context only: it takes the device lock for as long
+ * as the blocking I2C traffic needs, so a PMIC IRQ GPIO ISR must not call
+ * it directly - the ISR should only notify a task.
+ *
+ * Several REG48-REG4A bits are condition-latched and clear only after the
+ * condition itself clears (VBUS removal, LDO overcurrent recovery,
+ * temperature recovery); those bits re-assert while the condition persists.
+ */
 esp_err_t tg28_sw_get_and_clear_interrupts(tg28_sw_handle_t handle,
         uint8_t status[3]);
 
@@ -862,7 +885,10 @@ esp_err_t tg28_sw_get_min_sys_voltage(tg28_sw_handle_t handle, uint16_t *millivo
  * unbootable or trigger unexpected shutdowns; see
  * tg28_sw_poweroff_config_t. irqlevel_ms accepts 1000/1500/2000/2500,
  * offlevel_ms accepts 4000/6000/8000/10000, onlevel_ms accepts
- * 128/512/1000/2000; anything else returns ESP_ERR_INVALID_ARG.
+ * 128/512/1000/2000; anything else returns ESP_ERR_INVALID_ARG. The driver
+ * clears the power-off sources first and enables the requested ones only
+ * after the new thresholds land, so a power key held across the update
+ * cannot trip the old OFFLEVEL window.
  */
 esp_err_t tg28_sw_set_poweroff_config(tg28_sw_handle_t handle,
                                       const tg28_sw_poweroff_config_t *config);
@@ -913,7 +939,7 @@ esp_err_t tg28_sw_get_dcdc_mode(tg28_sw_handle_t handle,
  * Software-reset the whole PMIC (REG10 bit1, RWAC, datasheet 6.13.2.7 and
  * 6.5.4.5). WARNING: this restarts the entire PMU; all rails cycle and
  * system registers reset to defaults. The call does not return in practice
- * on success and the device lock is released only on failure.
+ * on success; the device lock is released before returning either way.
  */
 esp_err_t tg28_sw_soft_reset(tg28_sw_handle_t handle);
 
