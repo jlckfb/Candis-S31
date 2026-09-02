@@ -1,6 +1,7 @@
 # ESP-IDF
 **/build/
 **/build-*/
+**/build_esp32s31/
 sdkconfig
 /firmware/factory/sdkconfig.qio80_psram200
 sdkconfig.old
