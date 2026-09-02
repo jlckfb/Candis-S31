@@ -122,6 +122,25 @@ esp_err_t svc_ble_connect(const uint8_t addr[6], uint8_t addr_type,
                           svc_ble_conn_cb_t cb, void *user);
 esp_err_t svc_ble_disconnect(void);
 
+/* ---------------- RF suspend/resume (screen-off orchestration) ---------------- */
+
+/**
+ * Park the radios for the screen-off period: abort any WiFi connect/link
+ * without callbacks, stop the WiFi driver, and cancel a running BLE scan.
+ * Serialized on the network task through its command queue; safe from any
+ * task. Link events trailing the shutdown are absorbed by the service -
+ * they never reach the UI while the screen is dark.
+ */
+esp_err_t svc_net_suspend_rf(void);
+
+/**
+ * Undo svc_net_suspend_rf(): restart the WiFi driver and, when NVS
+ * credentials exist, reconnect (no callback, so a failing AP stays
+ * silent on wake); restart the BLE scan exactly when one was running at
+ * suspend time, with its original callback.
+ */
+esp_err_t svc_net_resume_rf(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -16,8 +16,11 @@
  *        transitions. Zero touch-controller resets: a reset landing on
  *        a touched panel poisons the baseline and latches phantom touches
  *        (2026-08-21 post-wake CPU storm root cause).
- * Wake sources while off: touch INT held low until the report is read
- * (50 ms poll, two samples), BOOT key, PWR key.
+ * Wake sources while off: touch (50 ms poll, two samples - the CST820 INT
+ * level on GPIO3 plus a direct report-register poll over I2C, because the
+ * INT pulse width in the screen-off power tier is unverified on EVT),
+ * BOOT key, PWR key. The radios are parked while the screen is off
+ * (svc_net_suspend_rf) and restored on wake.
  *
  * Deep sleep copies the verified recipe from low_power_main.c: RTC alarm
  * (RX8130CE, no 32.768 kHz xtal on this board) + EXT1 ANY_LOW on GPIO2 with

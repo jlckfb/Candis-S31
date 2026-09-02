@@ -21,6 +21,8 @@ idf_component_register(
         "ui/ui_menu.c"
         "ui/ui_watchface.c"
         "ui/ui_keyboard.c"
+        "ui/ui_perf.c"
+        "ui/ui_page_walk.c"
         "ui/ui_widgets.c"
         "ui/fonts/candis_ui_20.c"
         "ui/fonts/candis_ui_24.c"

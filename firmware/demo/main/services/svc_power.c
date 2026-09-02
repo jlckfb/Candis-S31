@@ -8,7 +8,9 @@
  *   screen off: hold LVGL lock, stop invalidation + indev, unlock,
  *               bsp_display_enter_sleep_panel(). The CST820 is left
  *               untouched (no sleep command, no reset): it auto-enters
- *               standby and asserts INT on touch.
+ *               standby and asserts INT on touch. The radios are parked
+ *               for the dark period (svc_net_suspend_rf: WiFi driver
+ *               stop, BLE scan cancel) and restored on wake.
  *   screen on:  bsp_display_exit_sleep_panel(), hold lock, re-enable
  *               invalidation + indev, full-screen invalidate, unlock.
  *               Zero touch-controller resets (a reset on a touched panel
@@ -17,8 +19,11 @@
  *               still reports a physical finger; an unconditional arm
  *               would swallow the first real touch after a no-finger
  *               (key) wake (AGENT-AI.md §0F / §8-22).
- *   wake detection while off: 50 ms poll of BSP_TOUCH_INT (GPIO3) low,
- *               two consecutive samples; BOOT/PWR wake through
+ *   wake detection while off: 50 ms poll of BSP_TOUCH_INT (GPIO3) low
+ *               plus a direct CST820 report poll over I2C (the indev is
+ *               disabled while off; the INT pulse width in the
+ *               screen-off power tier is unverified on EVT), both with
+ *               a two consecutive-sample confirm; BOOT/PWR wake through
  *               svc_power_activity() = turn on.
  *   deep sleep: drain shared IRQ, RX8130CE alarm (no 32.768 kHz xtal on
  *               this board), EXT1 ANY_LOW on GPIO2 with rtc_gpio pull-up
@@ -52,6 +57,7 @@
 #include "rx8130ce.h"
 
 #include "services/svc_audio.h"
+#include "services/svc_net.h"
 #include "services/svc_storage.h"
 #include "ui/ui_manager.h"
 
@@ -80,6 +86,24 @@ static volatile int64_t s_last_activity_us;
 static volatile int s_screen_timeout_s;
 static volatile bool s_screen_off;
 static bool s_touch_wake_confirm; /* require two low samples on GPIO3 */
+
+/* Touch-wake diagnostics (power task only), reset at every screen-off:
+ * raw GPIO3 level transitions seen between the 50 ms polls plus the
+ * direct CST820 report-poll results. Printed only while advancing and
+ * once at wake, so a touch that fails to wake the panel can be
+ * classified from the log: int edges > 0 -> the CST820 does assert INT
+ * but too briefly for a 50 ms level poll; edges == 0 while i2c press
+ * climbs -> no INT in the screen-off power tier at all. */
+#define POWER_DIAG_TICKS 100   /* 5 s between diagnostic prints */
+static int s_wake_int_edges;
+static int s_wake_int_low;
+static int s_wake_i2c_pressed;
+static int s_wake_i2c_fail;
+static int s_wake_int_last_level = -1;
+static int s_wake_diag_last_edges;
+static int s_wake_diag_last_pressed;
+static int s_wake_diag_last_fail;
+static int s_wake_diag_ticks;
 
 /* Bounded wake-failure retry (power task only): a failed SLPOUT is
  * retried every 500 ms, at most 3 times, then falls back to waiting for
@@ -149,8 +173,59 @@ static void power_indev_wait_release_if_pressed(lv_indev_t *indev)
     }
 }
 
+/* One screen-off touch sample. Reads the CST820 report registers over
+ * I2C - the LVGL indev is disabled while the screen is off, so nothing
+ * else polls the controller - and treats a low INT level as a wake
+ * signal too. The I2C poll exists because the CST820 INT behaviour in
+ * the screen-off power tier is unverified on EVT (driver provenance
+ * note in esp_lcd_touch_cst820.c): a short INT pulse can fall entirely
+ * between the 50 ms level samples, while the report registers answer
+ * regardless of INT shape. Power task only. */
+static bool power_touch_sample(void)
+{
+    const int level = gpio_get_level(BSP_TOUCH_INT);
+    if (level != s_wake_int_last_level) {
+        if (s_wake_int_last_level >= 0) {
+            ++s_wake_int_edges;
+        }
+        s_wake_int_last_level = level;
+    }
+    if (level == 0) {
+        ++s_wake_int_low;
+    }
+
+    esp_lcd_touch_handle_t touch = bsp_touch_get_handle();
+    if (touch == NULL) {
+        return level == 0;
+    }
+    bool pressed = false;
+    if (esp_lcd_touch_read_data(touch) == ESP_OK) {
+        uint8_t point_count = 0;
+        esp_lcd_touch_point_data_t point = {0};
+        if (esp_lcd_touch_get_data(touch, &point, &point_count, 1) == ESP_OK) {
+            pressed = point_count > 0;
+        } else {
+            ++s_wake_i2c_fail;
+        }
+    } else {
+        ++s_wake_i2c_fail;
+    }
+    if (pressed) {
+        ++s_wake_i2c_pressed;
+    }
+    return pressed || level == 0;
+}
+
+static void power_wake_diag_log(const char *when)
+{
+    ESP_LOGI(TAG, "wake diag (%s): int edges=%d low=%d i2c press=%d i2c fail=%d",
+             when, s_wake_int_edges, s_wake_int_low, s_wake_i2c_pressed,
+             s_wake_i2c_fail);
+}
+
 static void screen_off_run(void)
 {
+
     if (s_screen_off) {
         return;
     }
@@ -215,6 +290,20 @@ static void screen_off_run(void)
     s_touch_wake_confirm = false;
     s_wake_retry_count = 0;
     s_wake_retry_due_us = 0;
+    s_wake_int_edges = 0;
+    s_wake_int_low = 0;
+    s_wake_i2c_pressed = 0;
+    s_wake_i2c_fail = 0;
+    s_wake_int_last_level = gpio_get_level(BSP_TOUCH_INT);
+    s_wake_diag_last_edges = 0;
+    s_wake_diag_last_pressed = 0;
+    s_wake_diag_last_fail = 0;
+    s_wake_diag_ticks = 0;
+    /* Park the radios for the dark period: a running BLE scan and the
+     * WiFi driver dominate the screen-off power budget. Queued through
+     * svc_net's own task; failures are logged by that service and never
+     * block or fail the sleep sequence. */
+    (void)svc_net_suspend_rf();
     ESP_LOGI(TAG, "screen off");
     svc_power_status_t snapshot;
     svc_power_get_status(&snapshot);
@@ -272,6 +361,9 @@ static void screen_on_run(void)
     ui_unlock();
 
     s_screen_off = false;
+    /* Radios back on: svc_net restarts the WiFi driver (reconnecting
+     * when NVS credentials exist) and a BLE scan that was parked. */
+    (void)svc_net_resume_rf();
     s_wake_retry_count = 0;
     s_wake_retry_due_us = 0;
     s_last_activity_us = esp_timer_get_time();
@@ -851,21 +943,38 @@ static void power_task(void *arg)
         }
 
         if (s_screen_off) {
-            /* The CST820 keeps scanning (auto-standby) while the panel is
-             * off. Nobody reads its I2C report registers in this state, so
-             * a touch asserts INT and - per the datasheet contract - the
-             * line stays low until the report is fetched. Two consecutive
-             * low samples at the 50 ms tick (>=50-100 ms held) still gate
-             * out a residual edge from the sleep-in transition itself. */
-            if (gpio_get_level(BSP_TOUCH_INT) == 0) {
+            /* Two independent detectors, both with a two-sample confirm
+             * (>=50-100 ms of evidence, which gates out a residual edge
+             * from the sleep-in transition): (a) the CST820 INT level on
+             * GPIO3 - the datasheet contract says the line stays low
+             * until the report is read; (b) a direct report-register poll
+             * over I2C (power_touch_sample) - the indev is disabled, so
+             * nothing else reads the controller, and the report answers
+             * regardless of the INT pulse shape. */
+            const bool wake_signal = power_touch_sample();
+            if (wake_signal) {
                 if (s_touch_wake_confirm) {
                     s_touch_wake_confirm = false;
+                    power_wake_diag_log("wake");
                     screen_on_run();
                 } else {
                     s_touch_wake_confirm = true;
                 }
             } else {
                 s_touch_wake_confirm = false;
+            }
+            /* Diagnostics: print only while the counters advance, so an
+             * untouched screen stays silent in the log. */
+            if (++s_wake_diag_ticks >= POWER_DIAG_TICKS) {
+                s_wake_diag_ticks = 0;
+                if (s_wake_int_edges != s_wake_diag_last_edges ||
+                        s_wake_i2c_pressed != s_wake_diag_last_pressed ||
+                        s_wake_i2c_fail != s_wake_diag_last_fail) {
+                    s_wake_diag_last_edges = s_wake_int_edges;
+                    s_wake_diag_last_pressed = s_wake_i2c_pressed;
+                    s_wake_diag_last_fail = s_wake_i2c_fail;
+                    power_wake_diag_log("poll");
+                }
             }
         } else {
             const int timeout_s = s_screen_timeout_s;

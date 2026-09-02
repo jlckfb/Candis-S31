@@ -860,11 +860,11 @@ typedef struct {
     void *user;
 } play_ctx_t;
 
-static void play_teardown(FILE **file, esp_codec_dev_handle_t *speaker,
+static void play_teardown(FILE **file, esp_codec_dev_handle_t speaker,
                           bool *open_attempted)
 {
     if (*open_attempted) {
-        esp_codec_dev_close(*speaker);
+        esp_codec_dev_close(speaker);
         *open_attempted = false;
     }
     if (*file != NULL) {

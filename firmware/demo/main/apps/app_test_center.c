@@ -30,7 +30,7 @@
 #include "tests/test_registry.h"
 #include "tests/test_report.h"
 #include "ui/ui_manager.h"
-#include "ui/ui_theme.h"
+#include "ui/ui_perf.h"
 #include "ui/ui_widgets.h"
 
 #define OVERVIEW_REFRESH_MS 1000
@@ -528,7 +528,9 @@ static lv_obj_t *domain_detail_create(test_domain_t d)
     st->domain = d;
 
     lv_obj_t *content = NULL;
+    ui_perf_create_begin("domain_detail");
     lv_obj_t *root = ui_app_scaffold(test_domain_name(d), &content);
+    ui_perf_create_end();
     st->screen = root;
 
     lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);

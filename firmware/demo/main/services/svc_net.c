@@ -84,6 +84,8 @@ typedef enum {
     MSG_BLE_DISCONNECT,
     MSG_BLE_ADV,         /* de-duplicated advertisement from the host task */
     MSG_BLE_EVENT,       /* connect/disconnect/discovery-done notifications */
+    MSG_NET_RF_SUSPEND,  /* screen-off: park the WiFi driver + BLE scan */
+    MSG_NET_RF_RESUME,   /* screen-on: restore the radios */
 } net_msg_type_t;
 
 typedef enum {
@@ -168,6 +170,12 @@ static struct {
     svc_ble_conn_cb_t conn_cb;
     void *conn_user;
 } s_ble;
+
+/* RF suspend state (network task only): what to restore on resume. */
+static bool s_rf_suspended;
+static bool s_rf_scan_was_running;
+static svc_ble_scan_cb_t s_rf_scan_cb;
+static void *s_rf_scan_user;
 
 /* Written on the NimBLE host task only. */
 static struct {
@@ -451,6 +459,16 @@ static void net_wifi_cred_forget(void)
 
 static void net_wifi_on_event(const net_msg_t *msg)
 {
+    if (s_rf_suspended) {
+        /* Screen-off RF park: the DISCONNECTED that trails
+         * esp_wifi_disconnect()/esp_wifi_stop() belongs to the suspend
+         * orchestration and must never surface as a UI event (no
+         * toast while the screen is dark). */
+        s_wifi.user_disconnect = false;
+        s_wifi.connecting = false;
+        return;
+    }
+
     if (msg->wifi_event.sub == WIFI_EV_GOT_IP) {
         char ip[16];
         /* Same octet order as lwip's IP2STR(). */
@@ -895,6 +913,120 @@ static void net_ble_on_event(const net_msg_t *msg)
     }
 }
 
+/* ---------------- RF suspend/resume (screen off/on) ---------------- */
+
+/* Park the radios for the screen-off period. Network task only. WiFi:
+ * abort any in-flight attempt without callbacks, disconnect, stop the
+ * driver (the trailing DISCONNECTED is absorbed by the s_rf_suspended
+ * gate in net_wifi_on_event). BLE: cancel a running scan, remembering
+ * its callback for resume; GATT links are left alone - only the scan
+ * is the screen-off drain. */
+static void net_rf_do_suspend(void)
+{
+    if (s_rf_suspended) {
+        return;
+    }
+    s_rf_suspended = true;
+
+    s_rf_scan_was_running = s_ble.scanning;
+    s_rf_scan_cb = s_ble.scan_cb;
+    s_rf_scan_user = s_ble.scan_user;
+    if (s_ble.scanning) {
+        const int rc = ble_gap_disc_cancel();
+        if (rc != 0 && rc != BLE_HS_EALREADY) {
+            ESP_LOGW(NET_TAG, "disc_cancel at suspend: %d", rc);
+        }
+        s_ble.scanning = false;
+    }
+    s_ble.scan_cb = NULL;
+    s_ble.scan_user = NULL;
+    if (s_adv_queue != NULL) {
+        xQueueReset(s_adv_queue);
+    }
+
+    const bool wifi_was_active = s_wifi.connecting || s_wifi.connected;
+    s_wifi.cb = NULL;
+    s_wifi.cb_user = NULL;
+    s_wifi.user_disconnect = false;
+    s_wifi.connecting = false;
+    s_wifi.password[0] = '\0';
+    if (s_wifi_mutex != NULL &&
+            xSemaphoreTake(s_wifi_mutex, pdMS_TO_TICKS(50)) == pdPASS) {
+        s_wifi.connected = false;
+        s_wifi.ip[0] = '\0';
+        xSemaphoreGive(s_wifi_mutex);
+    } else {
+        s_wifi.connected = false;
+        s_wifi.ip[0] = '\0';
+    }
+    if (s_wifi.up) {
+        if (wifi_was_active) {
+            esp_wifi_disconnect(); /* quiet: the event is gated */
+        }
+        const esp_err_t err = esp_wifi_stop();
+        if (err != ESP_OK) {
+            ESP_LOGW(NET_TAG, "esp_wifi_stop: %s", esp_err_to_name(err));
+        }
+    }
+    if (s_wifi_ev_queue != NULL) {
+        xQueueReset(s_wifi_ev_queue);
+    }
+    ESP_LOGI(NET_TAG, "RF suspended (WiFi %s, BLE scan %s)",
+             s_wifi.up ? "stopped" : "unavailable",
+             s_rf_scan_was_running ? "stopped" : "idle");
+}
+
+/* Restore what net_rf_do_suspend() parked. Network task only: restart
+ * the WiFi driver and reconnect from the persisted credentials (cb
+ * stays NULL - a failing AP must not toast on wake), then restart a
+ * BLE scan that was running at suspend time with its original
+ * callback. */
+static void net_rf_do_resume(void)
+{
+    if (!s_rf_suspended) {
+        return;
+    }
+    s_rf_suspended = false;
+
+    if (s_wifi.up) {
+        const esp_err_t err = esp_wifi_start();
+        if (err != ESP_OK) {
+            ESP_LOGW(NET_TAG, "esp_wifi_start: %s", esp_err_to_name(err));
+        } else {
+            char ssid[33];
+            char pass[65];
+            if (svc_net_wifi_saved(ssid, sizeof(ssid), pass, sizeof(pass)) &&
+                    ssid[0] != '\0') {
+                net_msg_t msg = { .type = MSG_WIFI_CONNECT };
+                snprintf(msg.wifi_connect.ssid,
+                         sizeof(msg.wifi_connect.ssid), "%s", ssid);
+                snprintf(msg.wifi_connect.password,
+                         sizeof(msg.wifi_connect.password), "%s", pass);
+                msg.wifi_connect.cb = NULL;
+                msg.wifi_connect.user = NULL;
+                net_wifi_do_connect(&msg);
+            }
+        }
+    }
+
+    if (s_rf_scan_was_running) {
+        s_rf_scan_was_running = false;
+        if (s_ble.ready && s_ble.synced && s_rf_scan_cb != NULL) {
+            net_msg_t msg = { .type = MSG_BLE_SCAN_START };
+            msg.ble_scan.cb = s_rf_scan_cb;
+            msg.ble_scan.user = s_rf_scan_user;
+            net_ble_do_scan_start(&msg);
+        } else {
+            ESP_LOGW(NET_TAG, "BLE scan not restored (host state changed)");
+        }
+        s_rf_scan_cb = NULL;
+        s_rf_scan_user = NULL;
+    }
+    ESP_LOGI(NET_TAG, "RF resumed (WiFi driver %s)",
+             s_wifi.up ? "up" : "unavailable");
+}
+
+
 /* ---------------- network task ---------------- */
 
 static void net_task(void *arg)
@@ -956,6 +1088,12 @@ static void net_task(void *arg)
                 break;
             case MSG_BLE_EVENT:
                 net_ble_on_event(&msg);
+                break;
+            case MSG_NET_RF_SUSPEND:
+                net_rf_do_suspend();
+                break;
+            case MSG_NET_RF_RESUME:
+                net_rf_do_resume();
                 break;
             default:
                 break;
@@ -1209,5 +1347,23 @@ esp_err_t svc_ble_disconnect(void)
         return ESP_ERR_INVALID_STATE;
     }
     net_msg_t msg = { .type = MSG_BLE_DISCONNECT };
+    return net_send(&msg, pdMS_TO_TICKS(100)) ? ESP_OK : ESP_ERR_TIMEOUT;
+}
+
+esp_err_t svc_net_suspend_rf(void)
+{
+    if (!s_started) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    net_msg_t msg = { .type = MSG_NET_RF_SUSPEND };
+    return net_send(&msg, pdMS_TO_TICKS(100)) ? ESP_OK : ESP_ERR_TIMEOUT;
+}
+
+esp_err_t svc_net_resume_rf(void)
+{
+    if (!s_started) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    net_msg_t msg = { .type = MSG_NET_RF_RESUME };
     return net_send(&msg, pdMS_TO_TICKS(100)) ? ESP_OK : ESP_ERR_TIMEOUT;
 }

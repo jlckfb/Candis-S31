@@ -31,6 +31,7 @@
 #include "tests/svc_test.h"
 #include "tests/test_registry.h"
 #include "ui/ui_manager.h"
+#include "ui/ui_perf.h"
 #include "ui/ui_theme.h"
 #include "ui/ui_widgets.h"
 
@@ -306,7 +307,9 @@ void app_test_run_open(const char *test_id)
     v->interactive = (tc->flags & TEST_F_INTERACTIVE) != 0;
 
     lv_obj_t *content = NULL;
+    ui_perf_create_begin(v->test_id);
     lv_obj_t *root = ui_app_scaffold(tc->name, &content);
+    ui_perf_create_end();
     v->screen = root;
     v->content = content;
     lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_OFF);

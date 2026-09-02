@@ -20,6 +20,7 @@
 #include "services/svc_storage.h"
 #include "tests/svc_test.h"
 #include "ui/ui_manager.h"
+#include "ui/ui_page_walk.h"
 
 static const char *TAG = "candis_demo";
 
@@ -110,5 +111,10 @@ void app_main(void)
     svc_log_start("net", svc_net_start());
     svc_log_start("test", svc_test_start());
 
+#if CONFIG_DEMO_PAGE_WALK
+    /* One-shot navigation timing walk (see ui_page_walk.c); one ui_perf
+     * log line per transition on the monitor. */
+    ui_page_walk_start();
+#endif
     ESP_LOGI(TAG, "Candis-S31 watch demo started");
 }
