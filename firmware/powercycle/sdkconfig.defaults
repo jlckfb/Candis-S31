@@ -1,0 +1,52 @@
+# Candis-S31 powercycle harness: board-critical subset of the demo defaults
+# (flash, PSRAM, display pipeline). Wi-Fi/BLE/audio/camera are left at IDF
+# defaults and never initialized by this app.
+CONFIG_IDF_TARGET="esp32s31"
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# Report peripheral failures instead of aborting on them.
+CONFIG_BSP_ERROR_CHECK=n
+
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# Single 8 MB app partition (no OTA); see partitions.csv.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# PSRAM: same 250 MHz octal grade as the validated demo configuration.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+CONFIG_SPIRAM_SPEED_250M=y
+CONFIG_SPIRAM_MEMTEST=y
+
+# Display pipeline: QSPI 48 MHz, TE sync, two internal DMA buffers.
+CONFIG_BSP_LCD_PIXEL_CLOCK_MHZ=48
+CONFIG_BSP_LCD_TE_SYNC=y
+CONFIG_LV_DEF_REFR_PERIOD=15
+CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=48
+CONFIG_BSP_LCD_DRAW_BUF_DOUBLE=y
+
+# Rendering baseline proven on this board: single SW draw unit, no native
+# PPA unit (S31 lacks the Kconfig symbol), 64-byte cache-line alignment.
+CONFIG_LV_USE_CLIB_MALLOC=y
+CONFIG_LV_USE_CLIB_STRING=y
+CONFIG_LV_USE_CLIB_SPRINTF=y
+CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=1
+CONFIG_LV_USE_PPA=n
+CONFIG_LV_DRAW_BUF_ALIGN=64
+
+# 1 ms tick paces LVGL refresh against the TE period.
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# LVGL private heap and the one font the harness needs.
+CONFIG_LV_MEM_SIZE_KILOBYTES=64
+CONFIG_LV_FONT_MONTSERRAT_16=y
