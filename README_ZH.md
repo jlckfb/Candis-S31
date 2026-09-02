@@ -4,7 +4,7 @@
 
 Candis-S31 是一块围绕 ESP32-S31 和 2.0 英寸 460 × 460 方形 AMOLED 设计的开发板。板上还包含触摸、充电与电源管理、RTC、双 USB Type-C、音频、DVP 摄像头接口、TF 卡、按键和一颗 RGB LED。
 
-> **硬件状态：** EVT1（原理图 v0.5，2026-08-03 投板 `v0.5_260803_1544`）已回板，点亮工作已大部分完成。实物已验证：AMOLED 显示（460×460 QSPI，TE 同步 LVGL 管线）、电容触摸、音频输出（扬声器）与输入（双麦克风）、microSD、USB Type-C2 Host 与 Device 角色、Wi-Fi、BLE、RTC、PMIC/电池充电域（含 17 个应用的手表形态 LVGL 综合演示）。相机等待修正版 FPC 转接板；长时老化与低功耗功耗表征未开始。
+> **硬件状态：** EVT1（原理图 v0.5，2026-08-03 投板 `v0.5_260803_1544`）已回板，点亮工作已大部分完成。实物已验证：AMOLED 显示（460×460 QSPI，TE 同步 LVGL 管线）、电容触摸、音频输出（扬声器）与输入（双麦克风）、microSD、USB Type-C2 Host 与 Device 角色、Wi-Fi、BLE、RTC、PMIC/电池充电域（含 16 个应用的手表形态 LVGL 综合演示）。相机已可用：FPC 转接板已到位，DVP 取流、内建彩条与带屏实时预览已在 EVT1 实板验证通过（2026-09-01/02）；拍照落卡目前为 RGB565 裸帧（JPEG 落卡开发中）。长时老化与低功耗功耗表征未开始。
 >
 > **内测用户：** 见 [BETA.md](BETA.md)——装好 ESP-IDF 环境后克隆本仓库即可直接编译全部固件工程。
 
@@ -33,26 +33,25 @@ idf.py --preview -p PORT flash monitor
 
 Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会加入。单独的 variant 或 board JSON 不能带来一个新 SoC 的支持。本仓库不提供私有 ESP-IDF 分叉、修改版框架或复制的第三方库。
 
-### 构建验证 — 2026-08-22
+### 构建验证 — 2026-09-02
 
-基线：ESP-IDF `v6.1-rc1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 14 个目标；2026-08-22 完整回归 14/14 通过。`display_usb_hid` 示例不在矩阵内：它通过 `esp_lvgl_port` 助手驱动 HID 输入，而本板 BSP 使用 `esp_lvgl_adapter`。
+基线：ESP-IDF `v6.1-rc1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 13 个默认目标；2026-09-02 完整回归 13/13 通过（日志见 `build-logs/p0-fix/` 与 `build-logs/review-20260902/`）。`example:*` 目标为维护者专享：它们从外部 esp-bsp 检出（`ESP_BSP_ROOT`）编译 esp-bsp 示例，检出缺失时报 SKIP——详见 `tools/build-all.sh` 头注释。`display_usb_hid` 示例不在矩阵内：它通过 `esp_lvgl_port` 助手驱动 HID 输入，而本板 BSP 使用 `esp_lvgl_adapter`。
 
-| 目标（`tools/build-all.sh --list`） | 源码位置 | 状态（2026-08-22） |
+| 目标（`tools/build-all.sh --list`） | 源码位置 | 状态（2026-09-02） |
 |---|---|---|
-| `example:display` | esp-bsp `examples/display` | 编译通过 |
-| `example:display_camera_video` | esp-bsp `examples/display_camera_video` | 编译通过 |
-| `example:display_lvgl_demos` | esp-bsp `examples/display_lvgl_demos` | 编译通过 |
-| `example:display_lvgl_benchmark` | esp-bsp `examples/display_lvgl_benchmark` | 编译通过 |
-| `example:display_sdcard` | esp-bsp `examples/display_sdcard` | 编译通过 |
-| `example:audio` | esp-bsp `examples/audio` | 编译通过 |
-| `example:display_audio_photo` | esp-bsp `examples/display_audio_photo` | 编译通过 |
-| `testapp:tg28_sw` | esp-bsp `components/tg28_sw/test_apps` | 编译通过 |
-| `testapp:rx8130ce` | esp-bsp `components/rx8130ce/test_apps` | 编译通过 |
-| `testapp:fusb303b` | esp-bsp `components/fusb303b/test_apps` | 编译通过 |
-| `testapp:cst820` | esp-bsp `components/lcd_touch/esp_lcd_touch_cst820/test_apps` | 编译通过 |
 | `factory` | `firmware/factory` | 编译通过 |
 | `getting-started` | `examples/esp-idf/getting-started` | 编译通过 |
 | `low-power` | `examples/esp-idf/low-power` | 编译通过 |
+| `player` | `examples/esp-idf/player` | 编译通过 |
+| `demo` | `firmware/demo` | 编译通过 |
+| `camera-test` | `firmware/camera_test` | 编译通过 |
+| `powercycle` | `firmware/powercycle` | 编译通过 |
+| `usb-cdc-device` | `firmware/usb_cdc_device` | 编译通过 |
+| `testapp:candis_s31` | `vendor/esp-bsp/bsp/candis_s31/test_apps` | 编译通过 |
+| `testapp:tg28_sw` | `vendor/esp-bsp/components/tg28_sw/test_apps` | 编译通过 |
+| `testapp:rx8130ce` | `vendor/esp-bsp/components/rx8130ce/test_apps` | 编译通过 |
+| `testapp:fusb303b` | `vendor/esp-bsp/components/fusb303b/test_apps` | 编译通过 |
+| `testapp:cst820` | `vendor/esp-bsp/components/lcd_touch/esp_lcd_touch_cst820/test_apps` | 编译通过 |
 
 全部固件目标基于仓内 [`vendor/esp-bsp/`](vendor/esp-bsp/README.md) 的内置 BSP 快照构建，普通克隆即可编译，无需额外出库或环境变量。
 
@@ -64,10 +63,17 @@ Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会
 ├── examples/
 │   └── esp-idf/
 │       ├── getting-started/   # 独立 ESP-IDF 工程
-│       └── low-power/        # S0/S1/深睡/S2 状态机原型
+│       ├── low-power/         # S0/S1/深睡/S2 状态机原型
+│       └── player/            # TF 卡音视频播放器（基于 ESP-GMF）
 ├── firmware/
+│   ├── camera_test/           # 相机/DVP 自动诊断与带屏实时预览
+│   ├── demo/                  # 手表形态综合 LVGL 演示
 │   ├── factory/               # Factory Bring-up 源码和发布约定
-│   └── recovery/              # 恢复流程
+│   ├── powercycle/            # 功耗测量辅助固件
+│   ├── recovery/              # 恢复流程
+│   └── usb_cdc_device/        # Type-C2 USB CDC 设备诊断
+├── tools/                     # 构建验证、BSP 同步与发布脚本
+├── vendor/                    # 内置 esp-bsp BSP 快照
 └── .github/workflows/         # 构建验证
 ```
 
@@ -89,13 +95,13 @@ Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会
 
 Candis-S31 按照代码职责分别提交到对应上游：
 
-- Candis-S31 BSP 与可复用的 TG28_SW / RX8130CE / FUSB303B / CST820 驱动托管在公开的 [`LeenixP/esp-bsp`](https://github.com/LeenixP/esp-bsp) fork（`feat/candis-s31` 分支；各驱动组件的 `pr/*` 分支已按上游提交备好）——本仓库在 [`vendor/esp-bsp/`](vendor/esp-bsp/README.md) 内置了可直接编译的 BSP 快照，普通克隆即可编译全部固件；
+- Candis-S31 BSP 本体托管在公开的 [`LeenixP/esp-bsp`](https://github.com/LeenixP/esp-bsp) fork（`feat/candis-s31` 分支）；可复用的 TG28_SW / RX8130CE / FUSB303B / CST820 驱动组件按官方指引提交 [`espressif/idf-extra-components`](https://github.com/espressif/idf-extra-components)——本仓库在 [`vendor/esp-bsp/`](vendor/esp-bsp/README.md) 内置了可直接编译的 BSP 快照，普通克隆即可编译全部固件；
 - 完整 ESP-IDF 板级定义进入 ESP Board Manager 的 [`espressif/esp_friends_boards`](https://components.espressif.com/components/espressif/esp_friends_boards)；
 - 可复用器件驱动进入各自源码仓库并发布到 [ESP Component Registry](https://components.espressif.com/)；
 - Arduino-ESP32 具备 ESP32-S31 Core 后，再向 [Arduino-ESP32](https://github.com/espressif/arduino-esp32) 提交 board 与 variant；
 - PlatformIO Espressif32 具备 ESP32-S31 平台支持后，再向 [platform-espressif32](https://github.com/platformio/platform-espressif32) 提交 board manifest。
 
-ESP32-S31 的通用问题才需要修改 ESP-IDF 本身。Candis-S31 的引脚分配和器件选择通常不需要进入 ESP-IDF 核心仓库。BSP 遵循 ESP-BSP 公共 API，让 Factory 固件和上游示例验证同一份实现。驱动组件经维护方讨论后提交 ESP-BSP 上游；Board Manager 定义单独维护。
+ESP32-S31 的通用问题才需要修改 ESP-IDF 本身。Candis-S31 的引脚分配和器件选择通常不需要进入 ESP-IDF 核心仓库。BSP 遵循 ESP-BSP 公共 API，让 Factory 固件和上游示例验证同一份实现。esp-bsp 官方维护方答复（espressif/esp-bsp#823）只接收 Espressif 与 M5Stack 官方板，因此驱动组件改投 idf-extra-components；Board Manager 定义单独维护。
 
 BSP 开发时把 `CANDIS_S31_BSP_PATH` 指向活的 esp-bsp 工作区即可覆盖内置快照；维护者用 `tools/sync_bsp.sh` 刷新快照。逐仓库的提交范围见[上游归属和贡献路径](UPSTREAM.md)。
 

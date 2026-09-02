@@ -6,7 +6,7 @@ the serial console so an unverified peripheral is never enabled as a side
 effect of booting the firmware.
 
 > EVT1 Bring-Up is in progress on physical `v0.5_260803_1544` boards. The
-> Factory image compiles with ESP-IDF `v6.1-beta1-dirty`, and S1-S4 plus substantial
+> Factory image compiles with ESP-IDF `v6.1-rc1`, and S1-S4 plus substantial
 > S5-S7 evidence has been collected. Camera, audio, RF closure, and S8-S10
 > remain open. The 2026-08-20 low-power/RF-stop/rail/microphone updates are
 > compile-verified only and have not been flashed or run on hardware; a

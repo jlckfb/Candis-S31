@@ -5,7 +5,7 @@ This project checks the ESP32-S31 build, flash, and serial path without enabling
 | Item | Current value |
 |---|---|
 | Target | ESP32-S31 preview target |
-| Tested ESP-IDF | `v6.1-beta1` |
+| Tested ESP-IDF | `v6.1-rc1` |
 | Flash configuration | 16 MB |
 | Managed components | None |
 | Compile status | Verified |
@@ -24,16 +24,16 @@ It does not initialize the AMOLED, touch controller, PMIC, RTC, audio, camera, T
 
 ## Install ESP-IDF
 
-ESP32-S31 is currently a preview target. Install the official `v6.1-beta1` tag:
+ESP32-S31 is currently a preview target. Install the official `v6.1-rc1` tag:
 
 ```bash
-git clone -b v6.1-beta1 --recursive https://github.com/espressif/esp-idf.git
+git clone -b v6.1-rc1 --recursive https://github.com/espressif/esp-idf.git
 cd esp-idf
 ./install.sh esp32s31
 . ./export.sh
 ```
 
-If ESP-IDF is already installed through Espressif Installation Manager (EIM), select its `v6.1-beta1` environment. A Candis-specific IDF installation is not required.
+If ESP-IDF is already installed through Espressif Installation Manager (EIM), select its `v6.1-rc1` environment. A Candis-specific IDF installation is not required.
 
 ## Build from a terminal
 
@@ -49,7 +49,7 @@ idf.py --preview build
 ## Build with VS Code
 
 1. Install the official **Espressif IDF** extension.
-2. Install or select ESP-IDF `v6.1-beta1` through EIM.
+2. Install or select ESP-IDF `v6.1-rc1` through EIM.
 3. Open this `getting-started` directory, not the Candis-S31 repository root.
 4. Run **ESP-IDF: Select Current ESP-IDF Version** and choose the same environment.
 5. Set the target to `esp32s31` and keep preview-target support enabled.
