@@ -19,7 +19,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="508" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="508" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="556" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="556" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g01__i2c_1gaa6817a14a21673842bdc988aedf23bcd" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -35,7 +35,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="509" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="509" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="557" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="557" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g01__i2c_1ga7379e225eb4230551bdb96d2ed2dabca" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>i2c_master_bus_handle_t</type>
@@ -51,7 +51,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="510" column="25" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="510" declcolumn="25"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="558" column="25" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="558" declcolumn="25"/>
       </memberdef>
       <memberdef kind="function" id="group__g01__i2c_1ga4b36017056ce7628c3d8a770ff1af369" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -68,7 +68,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="513" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="513" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="561" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="561" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g01__i2c_1ga9985b4526ed71d157bf00a16b9706008" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -84,7 +84,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="514" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="514" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="562" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="562" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g01__i2c_1gac90ad124040688b4fa07ca50c1abd6e4" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>i2c_master_bus_handle_t</type>
@@ -100,7 +100,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="515" column="25" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="515" declcolumn="25"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="563" column="25" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="563" declcolumn="25"/>
       </memberdef>
     </sectiondef>
     <sectiondef kind="define">

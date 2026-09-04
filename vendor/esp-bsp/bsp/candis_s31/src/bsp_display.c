@@ -50,11 +50,19 @@ static void touch_clamp_coordinates(esp_lcd_touch_handle_t touch,
                                     uint16_t *x, uint16_t *y,
                                     uint16_t *strength, uint8_t *point_num,
                                     uint8_t max_point_num);
+static esp_err_t display_apply_rotation(void);
+
 /* Last brightness chosen through bsp_display_brightness_set(); restored by
  * bsp_display_backlight_on() so a wake returns to the operator's level
  * instead of forcing 100 %. The init sequence remains dark at 0 %, then this
  * saved default is applied only after the first complete redraw. */
 static uint8_t s_brightness_percent = CO5300_FIRST_BRIGHTNESS_PERCENT;
+#if defined(CONFIG_BSP_DISPLAY_ROTATE_180) && CONFIG_BSP_DISPLAY_ROTATE_180
+#define BSP_DISPLAY_ROTATE_180_ENABLED 1
+#else
+#define BSP_DISPLAY_ROTATE_180_ENABLED 0
+#endif
+
 
 #define CO5300_CMD_DEEP_STANDBY_ON       0x4F
 #define CO5300_DEEP_STANDBY_PARAMETER    0x01
@@ -351,6 +359,14 @@ esp_err_t bsp_display_new_with_handles(const bsp_display_config_t *config,
     if (error != ESP_OK) {
         goto fail;
     }
+    /* Apply the board's physical mounting orientation for both the raw
+     * panel API and the LVGL path. LVGL reapplies its relative rotation
+     * during display registration; this first write covers NoGLIB users. */
+    error = display_apply_rotation();
+    if (error != ESP_OK) {
+        goto fail;
+    }
+
     error = esp_lcd_panel_disp_on_off(s_display.panel, false);
     if (error != ESP_OK) {
         goto fail;
@@ -472,11 +488,18 @@ esp_err_t bsp_touch_new(const bsp_touch_config_t *config,
         return error;
     }
 
-    const bsp_touch_config_t default_config = {0};
+    /* EVT1 mounts the panel upside down: default the touch orientation to
+     * the same 180-degree flip the panel applies via MADCTL, so raw CST820
+     * coordinates land in the LVGL logical space. An explicit caller config
+     * still overrides these flags. */
+    const bsp_touch_config_t default_config = {
+        .mirror_x = BSP_DISPLAY_ROTATE_180_ENABLED,
+        .mirror_y = BSP_DISPLAY_ROTATE_180_ENABLED,
+    };
     const bsp_touch_config_t *orientation = config != NULL ? config : &default_config;
     const esp_lcd_touch_config_t touch_config = {
-        .x_max = BSP_LCD_H_RES,
-        .y_max = BSP_LCD_V_RES,
+        .x_max = BSP_LCD_H_RES - 1,
+        .y_max = BSP_LCD_V_RES - 1,
         .rst_gpio_num = BSP_TOUCH_RST,
         .int_gpio_num = BSP_TOUCH_INT,
         .levels = {
@@ -589,6 +612,19 @@ static void touch_clamp_coordinates(esp_lcd_touch_handle_t touch,
     }
 }
 
+/* Apply the physical mounting flip after panel initialization. Runtime LVGL
+ * rotations are relative to this base orientation and are restored by the
+ * CO5300 driver's cached MADCTL during panel_init(), so deep wake must not
+ * overwrite them with a base-only mirror. */
+static esp_err_t display_apply_rotation(void)
+{
+#if BSP_DISPLAY_ROTATE_180_ENABLED
+    return esp_lcd_panel_mirror(s_display.panel, true, true);
+#else
+    return ESP_OK;
+#endif
+}
+
 #if (BSP_CONFIG_NO_GRAPHIC_LIB == 0)
 static void co5300_rounder_cb(lv_area_t *area)
 {
@@ -637,8 +673,8 @@ static lv_display_t *display_lvgl_init(const bsp_display_cfg_t *config)
         .te_gpio_num = BSP_LCD_TE,
         .rotation = {
             .swap_xy = false,
-            .mirror_x = false,
-            .mirror_y = false,
+            .mirror_x = BSP_DISPLAY_ROTATE_180_ENABLED,
+            .mirror_y = BSP_DISPLAY_ROTATE_180_ENABLED,
         },
 #if LVGL_VERSION_MAJOR >= 9
         .color_format = BSP_LCD_BIGENDIAN ? LV_COLOR_FORMAT_RGB565_SWAPPED : LV_COLOR_FORMAT_RGB565,

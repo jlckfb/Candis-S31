@@ -43,8 +43,9 @@ static void cst820_test_open(i2c_master_bus_handle_t *i2c_bus,
     TEST_ESP_OK(esp_lcd_new_panel_io_i2c(*i2c_bus, &io_config, touch_io));
 
     const esp_lcd_touch_config_t touch_config = {
-        .x_max = TEST_TOUCH_H_RES,
-        .y_max = TEST_TOUCH_V_RES,
+        .x_max = TEST_TOUCH_H_RES - 1,
+        .y_max = TEST_TOUCH_V_RES - 1,
+
         .rst_gpio_num = TEST_TOUCH_GPIO_RST,
         .int_gpio_num = TEST_TOUCH_GPIO_INT,
         .levels = {
@@ -118,7 +119,8 @@ TEST_CASE("CST820 monitor mode wakes the host on touch", "[cst820][hw][waketest]
     TEST_ESP_OK(esp_light_sleep_start());
 
     /* Execution resumes here after the touch. */
-    TEST_ASSERT_EQUAL(ESP_SLEEP_WAKEUP_GPIO, esp_sleep_get_wakeup_cause());
+    TEST_ASSERT(esp_sleep_get_wakeup_causes() & BIT(ESP_SLEEP_WAKEUP_GPIO));
+
     printf("cst820: woke up by touch interrupt\n");
 
     TEST_ESP_OK(gpio_wakeup_disable(TEST_TOUCH_GPIO_INT));
@@ -143,46 +145,6 @@ TEST_CASE("CST820 monitor mode wakes the host on touch", "[cst820][hw][waketest]
     cst820_test_close(i2c_bus, touch_io, touch);
 }
 
-/* Current measurement points (temporary, not for upstream): park the
- * controller in its lowest state and the SoC in deep sleep so a series
- * meter on the touch supply reads steady-state current. Reset the board to
- * get back to the test menu. */
-static void cst820_measure_park(esp_lcd_touch_handle_t touch, bool send_sleep_command)
-{
-    TEST_ESP_OK(esp_lcd_touch_cst820_enter_monitor_mode(touch));
-    if (send_sleep_command) {
-        /* Candidate deep-sleep command: no effect on I2C per EVT, but the
-         * meter decides whether it changes anything below standby. */
-        TEST_ESP_OK(esp_lcd_touch_cst820_write_reg(touch, 0xA5, 0x03));
-        printf("measure: 0xA5 <- 0x03 sent\n");
-    }
-    /* Park forever: RST stays deasserted (high) and I2C idle. The SoC stays
-     * awake but draws on its own rail, which the touch-rail meter does not
-     * see. Reset the board to get back to the test menu. */
-    printf("measure: parked - meter window opens; reset board for menu\n");
-    vTaskDelay(pdMS_TO_TICKS(100));
-    for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-}
-
-TEST_CASE("measure current: standby only", "[cst820][measure]")
-{
-    i2c_master_bus_handle_t i2c_bus = NULL;
-    esp_lcd_panel_io_handle_t touch_io = NULL;
-    esp_lcd_touch_handle_t touch = NULL;
-    cst820_test_open(&i2c_bus, &touch_io, &touch);
-    cst820_measure_park(touch, false);
-}
-
-TEST_CASE("measure current: standby plus sleep command", "[cst820][measure]")
-{
-    i2c_master_bus_handle_t i2c_bus = NULL;
-    esp_lcd_panel_io_handle_t touch_io = NULL;
-    esp_lcd_touch_handle_t touch = NULL;
-    cst820_test_open(&i2c_bus, &touch_io, &touch);
-    cst820_measure_park(touch, true);
-}
 
 void app_main(void)
 {

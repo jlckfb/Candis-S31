@@ -4,6 +4,9 @@
     <compoundname>g09_battery</compoundname>
     <title>Battery and Power</title>
     <innerclass refid="structbsp__pmic__status__t" prot="public">bsp_pmic_status_t</innerclass>
+    <innerclass refid="structbsp__pmic__early__snapshot__t" prot="public">bsp_pmic_early_snapshot_t</innerclass>
+    <innerclass refid="structbsp__pmic__adc__diagnostic__sample__t" prot="public">bsp_pmic_adc_diagnostic_sample_t</innerclass>
+    <innerclass refid="structbsp__pmic__adc__diagnostic__t" prot="public">bsp_pmic_adc_diagnostic_t</innerclass>
     <sectiondef kind="enum">
       <memberdef kind="enum" id="group__g09__battery_1ga5929cf8913b89aa21ff1c45160893e9b" prot="public" static="no" strong="no">
         <type></type>
@@ -65,7 +68,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="266" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="266" bodyend="274"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="269" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="269" bodyend="277"/>
       </memberdef>
       <memberdef kind="enum" id="group__g09__battery_1ga408de3110e2918554aa4d36ace442b8c" prot="public" static="no" strong="no">
         <type></type>
@@ -127,7 +130,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="277" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="277" bodyend="285"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="280" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="280" bodyend="288"/>
       </memberdef>
       <memberdef kind="enum" id="group__g09__battery_1gaa353fa146bc1485b690ef9016bb1be41" prot="public" static="no" strong="no">
         <type></type>
@@ -240,7 +243,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="288" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="288" bodyend="307"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="291" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="291" bodyend="310"/>
       </memberdef>
       <memberdef kind="enum" id="group__g09__battery_1gacf064b98544101023591b83a0071769e" prot="public" static="no" strong="no">
         <type></type>
@@ -277,7 +280,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="318" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="318" bodyend="322"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="321" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="321" bodyend="325"/>
       </memberdef>
       <memberdef kind="enum" id="group__g09__battery_1gac085a9cd0c93def85a85dad2282712d8" prot="public" static="no" strong="no">
         <type></type>
@@ -332,7 +335,51 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="348" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="348" bodyend="355"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="351" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="351" bodyend="358"/>
+      </memberdef>
+      <memberdef kind="enum" id="group__g09__battery_1gab13d9119d820e189faaf92ec3e0a5a74" prot="public" static="no" strong="no">
+        <type></type>
+        <name>bsp_pmic_early_snapshot_valid_t</name>
+        <enumvalue id="group__g09__battery_1ggab13d9119d820e189faaf92ec3e0a5a74a86cb49f9c82762870ab4bcff1f56e9c9" prot="public">
+          <name>BSP_PMIC_EARLY_STATUS_VALID</name>
+          <initializer>= 1U &lt;&lt; 0</initializer>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggab13d9119d820e189faaf92ec3e0a5a74aa270fb8315c3ce326b78de70652e6a76" prot="public">
+          <name>BSP_PMIC_EARLY_POWER_SOURCE_VALID</name>
+          <initializer>= 1U &lt;&lt; 1</initializer>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggab13d9119d820e189faaf92ec3e0a5a74ac1b29109980b20351ce0124ff5192208" prot="public">
+          <name>BSP_PMIC_EARLY_ADC_CONTROL_VALID</name>
+          <initializer>= 1U &lt;&lt; 2</initializer>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <enumvalue id="group__g09__battery_1ggab13d9119d820e189faaf92ec3e0a5a74a7d970c79775810f7c4a215d051bb6a17" prot="public">
+          <name>BSP_PMIC_EARLY_IRQ_STATUS_VALID</name>
+          <initializer>= 1U &lt;&lt; 3</initializer>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Valid fields in <ref refid="structbsp__pmic__early__snapshot__t" kindref="compound">bsp_pmic_early_snapshot_t</ref>. Each register group is read independently so a transient I2C failure does not discard the other power-loss evidence. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="363" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="363" bodyend="368"/>
       </memberdef>
     </sectiondef>
     <sectiondef kind="typedef">
@@ -348,7 +395,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="526" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="526" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="574" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="574" bodyend="-1"/>
       </memberdef>
     </sectiondef>
     <sectiondef kind="func">
@@ -372,7 +419,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="529" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="529" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="577" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="577" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga6b469c2a77aa6b0c0bfc0a583d0cdd7c" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -389,7 +436,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="536" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="536" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="584" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="584" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga6815b434b3a8b8eb860940b14b860d21" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -410,7 +457,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="537" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="537" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="585" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="585" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga16fada7a8e906b1f2e9016e8794978c8" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -432,7 +479,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="540" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="540" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="588" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="588" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1gaef0a60164e964ddeddc1001685289c85" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>const char *</type>
@@ -449,7 +496,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="541" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="541" declcolumn="12"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="589" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="589" declcolumn="12"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga7c60a9055e616ad51f86e907bf0317ae" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -471,7 +518,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="544" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="544" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="592" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="592" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga1f4be05cf35cac6fee49c6b8ff7b4639" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>const char *</type>
@@ -488,7 +535,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="545" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="545" declcolumn="12"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="593" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="593" declcolumn="12"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1gad1caa4e50a16d2f324ac951bbeb42b19" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -505,7 +552,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="586" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="586" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="634" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="634" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1gaf1d78af64e7d062832e6c75b188153f0" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -521,7 +568,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="587" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="587" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="635" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="635" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga30c586b6a0caea405a312fa1f59cf54e" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -538,7 +585,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="588" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="588" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="636" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="636" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1gaeea872af43207493bf2d4b75bf045a9d" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -555,7 +602,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="589" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="589" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="637" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="637" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga9cdf624e0593e7a4582fc7f889011f91" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -573,7 +620,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="592" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="592" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="640" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="640" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1gac0ec6d23ad992978a64d4bc3d0249c5b" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -590,7 +637,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="593" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="593" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="641" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="641" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1gaddeaae34102244adeb9e7e015c2af622" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -612,7 +659,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="596" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="596" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="644" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="644" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga81a2d77795ddd9b3ec58bb1dddfebdc5" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -633,7 +680,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="597" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="597" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="645" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="645" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga3ad2aaf4f775ed125c3e9dd0482f9a42" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -651,7 +698,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="603" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="603" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="651" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="651" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga7a408f6424c743b98cd35d5552cd5b89" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -668,7 +715,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="609" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="609" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="657" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="657" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga3fd886b8835e5fe365fa8ea9e1a371e5" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -685,7 +732,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="611" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="611" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="659" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="659" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1gaad14fadbcaa174a90bb12cffa8eed4ea" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -702,7 +749,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="612" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="612" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="660" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="660" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga2e5fdaad56894e867a7d2810e88c2e04" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -719,7 +766,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="613" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="613" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="661" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="661" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1gafa3ee604e4347a08ba2f5554c55641c3" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -736,7 +783,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="614" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="614" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="662" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="662" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga5f091e7407afbd8a7735ea42946c74df" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -753,7 +800,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="615" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="615" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="663" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="663" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga9fddd2e9e7c050fad35a4af0704334d8" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -770,7 +817,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="616" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="616" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="664" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="664" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga64af40e3cab3917d20f3a438477de3c0" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -787,7 +834,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="617" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="617" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="665" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="665" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga662d8d0510d4c47af1a6449446f85669" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -804,7 +851,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="618" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="618" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="666" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="666" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga601acfd1dbccacae4c9ecae64261892d" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -829,7 +876,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="619" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="619" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="667" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="667" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga2a7d58647b9731c1fed6e1fccc307e23" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -855,7 +902,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="625" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="625" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="673" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="673" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1gabc606e9b3bb7f32ac13ec9704adc8b51" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -876,7 +923,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="627" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="627" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="675" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="675" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga0eee43ecb6d40d4427affc1ec8405a23" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -897,7 +944,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="628" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="628" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="676" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="676" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1gad7026a90e7848837e8a91fffc5f5fb46" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -918,7 +965,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="629" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="629" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="677" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="677" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga3f47f2e32d1d454e40bf597adf3c6906" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -939,7 +986,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="630" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="630" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="678" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="678" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga0dd9e40de8aa13aad08e907845ebf6e1" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -960,7 +1007,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="631" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="631" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="679" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="679" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1gaa94ef4fe16b2c167fa253102aa1ea514" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -982,7 +1029,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="637" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="637" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="685" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="685" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga2c626ec2f50e48dd505b7fed215c73b5" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -1003,7 +1050,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="638" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="638" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="686" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="686" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga56a2fb03598dc4a732478c2c3c381c61" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>const char *</type>
@@ -1020,7 +1067,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="639" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="639" declcolumn="12"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="687" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="687" declcolumn="12"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1gaff505337d71d51f74aa5ae6eede3c5c9" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -1038,7 +1085,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="641" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="641" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="689" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="689" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga1490945aa7172ca14c858343e5eb7c1d" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -1061,7 +1108,25 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="648" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="648" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="696" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="696" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1gaab609a59b232d77293486c512e261ec1" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_get_early_snapshot</definition>
+        <argsstring>(bsp_pmic_early_snapshot_t *snapshot)</argsstring>
+        <name>bsp_pmic_get_early_snapshot</name>
+        <param>
+          <type><ref refid="structbsp__pmic__early__snapshot__t" kindref="compound">bsp_pmic_early_snapshot_t</ref> *</type>
+          <declname>snapshot</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Copy the first post-create/pre-configuration register snapshot. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="699" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="699" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1gaa44b7d74a92cd2310fbbc2fd65706376" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>const char *</type>
@@ -1078,7 +1143,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="649" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="649" declcolumn="12"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="700" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="700" declcolumn="12"/>
       </memberdef>
       <memberdef kind="function" id="group__g09__battery_1ga85117edc3eb1227d64acbff80e325a70" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -1096,11 +1161,29 @@
         <briefdescription>
         </briefdescription>
         <detaileddescription>
-<para>Read one TG28_SW ADC channel in millivolts. The TDIE channel reports the die-temperature sensor voltage, not a temperature; the TS channel reads the fixed external input fitted on this board (no battery NTC). A channel disabled at the OTP level is enabled for the measurement and restored afterwards. </para>
+<para>Read one TG28_SW ADC channel in millivolts. The TDIE channel reports the die-temperature sensor voltage, not a temperature; EVT1 fixes TS to ground and has no battery NTC, so a TS value is never a valid battery temperature. A channel disabled at the OTP level is enabled for the measurement and restored afterwards. Prefer <ref refid="group__g09__battery_1ga3f92ddf7f40afc153f2ac3d1b1597afa" kindref="member">bsp_pmic_run_adc_diagnostic()</ref> when raw codes, conversion settling, or overflow validity matter. </para>
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="656" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="656" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="708" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="708" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g09__battery_1ga3f92ddf7f40afc153f2ac3d1b1597afa" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_pmic_run_adc_diagnostic</definition>
+        <argsstring>(bsp_pmic_adc_diagnostic_t *diagnostic)</argsstring>
+        <name>bsp_pmic_run_adc_diagnostic</name>
+        <param>
+          <type><ref refid="structbsp__pmic__adc__diagnostic__t" kindref="compound">bsp_pmic_adc_diagnostic_t</ref> *</type>
+          <declname>diagnostic</declname>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Capture raw ADC data at 0/50/100/200/500/1000/2000 ms after enabling REG30 bits 0,2,3,4 in one write. The original control byte is restored and verified before return. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="713" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="713" declcolumn="11"/>
       </memberdef>
     </sectiondef>
     <sectiondef kind="define">
@@ -1192,6 +1275,17 @@
         </inbodydescription>
         <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="128" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="128" bodyend="-1"/>
       </memberdef>
+      <memberdef kind="define" id="group__g09__battery_1gaadd3b5e61fbcc9638b59c07d566b6847" prot="public" static="no">
+        <name>BSP_PMIC_ADC_DIAGNOSTIC_SAMPLE_COUNT</name>
+        <initializer>7</initializer>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="382" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="382" bodyend="-1"/>
+      </memberdef>
       <memberdef kind="define" id="group__g09__battery_1ga473c8b8ab4b9775468e305f849136224" prot="public" static="no">
         <name>BSP_PMIC_SAFE_CHARGE_CURRENT_MA</name>
         <initializer>50</initializer>
@@ -1202,7 +1296,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="553" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="553" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="601" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="601" bodyend="-1"/>
       </memberdef>
       <memberdef kind="define" id="group__g09__battery_1ga1086e9aea588b000af5cb00e4e7102dc" prot="public" static="no">
         <name>BSP_PMIC_SAFE_CHARGE_VOLTAGE_MV</name>
@@ -1214,7 +1308,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="564" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="564" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="612" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="612" bodyend="-1"/>
       </memberdef>
       <memberdef kind="define" id="group__g09__battery_1ga31745caedc1b93d5f1db332af4c2b74e" prot="public" static="no">
         <name>BSP_PMIC_SAFE_PRECHARGE_CURRENT_MA</name>
@@ -1225,7 +1319,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="565" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="565" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="613" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="613" bodyend="-1"/>
       </memberdef>
       <memberdef kind="define" id="group__g09__battery_1ga4e0e2a289c1fa202a64fba8ae054ffa2" prot="public" static="no">
         <name>BSP_PMIC_SAFE_TERMINATION_CURRENT_MA</name>
@@ -1236,7 +1330,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="566" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="566" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="614" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="614" bodyend="-1"/>
       </memberdef>
       <memberdef kind="define" id="group__g09__battery_1ga334d73a23b278a2378637ebac0750d5e" prot="public" static="no">
         <name>BSP_PMIC_SAFE_INPUT_CURRENT_LIMIT_MA</name>
@@ -1248,7 +1342,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="577" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="577" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="625" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="625" bodyend="-1"/>
       </memberdef>
     </sectiondef>
     <briefdescription>

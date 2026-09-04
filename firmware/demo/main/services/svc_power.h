@@ -58,22 +58,21 @@ typedef enum {
 
 typedef struct {
     int battery_mv;
-    /**< TG28 SOC percent, or -1 when there is no battery or no model is
-     * programmed this boot. A voltage-derived percent must never be
-     * substituted. */
+    /**< TG28 SOC percent, or -1 when there is no battery or no valid model
+     * this boot. A voltage-derived percent must never be substituted. */
     int percent;
     bool present;
     bool vbus;
     bool charging;
     bool charge_done;
-    /** True only while the TG28 SOC is backed by a programmed battery
-     * model (BSP reference default or a successful runtime override) -
-     * see percent. */
+    /** True while the TG28 SOC is backed by the verified factory ROM model
+     * or a successfully programmed runtime override; see percent. */
     bool fuel_gauge_valid;
-    /** True while the active model is the BSP reference default: the
-     *  SOC is reference accuracy (参考模型), never per-battery
-     *  calibrated. False = custom model. */
+    /** True while the active model is the TG28 factory ROM model. Its SOC is
+     * reference accuracy, never per-battery calibrated. False = custom model
+     * or no valid model. */
     bool fuel_gauge_reference_model;
+
     /** Verified REG62 target written by the charge controller (mA); 0
      *  while no VBUS session is active. Target/register, not measurement. */
     int charge_target_ma;

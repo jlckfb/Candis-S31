@@ -2280,9 +2280,11 @@ esp_err_t tg28_sw_read_battery_model(tg28_sw_handle_t handle,
      * entry: forcing SRAM here would leave a POR-default (ROM) gauge
      * running from an unprogrammed model. */
     uint8_t gauge_control = 0;
+    bool gauge_control_valid = false;
     esp_err_t error = read_registers(handle, TG28_SW_REG_FUEL_GAUGE_CONTROL,
                                      &gauge_control, sizeof(gauge_control));
     if (error == ESP_OK) {
+        gauge_control_valid = true;
         error = reset_gauge_mcu(handle);
     }
     if (error == ESP_OK) {
@@ -2303,7 +2305,7 @@ esp_err_t tg28_sw_read_battery_model(tg28_sw_handle_t handle,
     }
 
     esp_err_t cleanup_error = set_brom_writer(handle, false);
-    if (cleanup_error == ESP_OK) {
+    if (cleanup_error == ESP_OK && gauge_control_valid) {
         cleanup_error = update_bits(handle, TG28_SW_REG_FUEL_GAUGE_CONTROL,
                                     TG28_SW_BROM_UPDATE_MARK_MASK,
                                     gauge_control & TG28_SW_BROM_UPDATE_MARK_MASK);

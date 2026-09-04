@@ -20,7 +20,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="732" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="732" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="789" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="789" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g03__audio_1ga299dfaf6a4351e3fa02a6e3495ca7920" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -36,7 +36,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="733" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="733" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="790" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="790" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g03__audio_1gae4b89fc97eebedb191e6a831281fe113" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>const audio_codec_data_if_t *</type>
@@ -52,7 +52,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="734" column="29" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="734" declcolumn="29"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="791" column="29" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="791" declcolumn="29"/>
       </memberdef>
       <memberdef kind="function" id="group__g03__audio_1ga8d613375571e64ce7e65c87997900752" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_codec_dev_handle_t</type>
@@ -68,7 +68,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="735" column="24" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="735" declcolumn="24"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="792" column="24" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="792" declcolumn="24"/>
       </memberdef>
       <memberdef kind="function" id="group__g03__audio_1gad7ce449cdaa2fbac88496acc1770bb35" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_codec_dev_handle_t</type>
@@ -84,7 +84,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="736" column="24" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="736" declcolumn="24"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="793" column="24" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="793" declcolumn="24"/>
       </memberdef>
       <memberdef kind="function" id="group__g03__audio_1ga7c8a335f27475238a2df0dae613b79c8" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -101,7 +101,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="737" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="737" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="794" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="794" declcolumn="11"/>
       </memberdef>
     </sectiondef>
     <sectiondef kind="define">

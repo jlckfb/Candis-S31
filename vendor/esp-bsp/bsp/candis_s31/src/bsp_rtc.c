@@ -54,6 +54,8 @@ esp_err_t bsp_rtc_init(void)
         .device_address = BSP_RX8130CE_I2C_ADDRESS,
         .scl_speed_hz = RX8130CE_I2C_CLOCK_HZ,
         .backup_charge_enable = false,
+        .backup_charge_cutoff = RX8130CE_CHARGE_CUTOFF_3_02V,
+        .backup_voltage_low_detect = true,
     };
     return rx8130ce_create(bus, &config, &s_rtc);
 }

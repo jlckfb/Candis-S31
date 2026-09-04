@@ -86,9 +86,8 @@ static void power_refresh_cb(lv_timer_t *timer)
     svc_power_get_status(&st);
 
     if (st.present && st.percent >= 0) {
-        /* Reference model = vendor generic SOC (参考); any runtime
-         * override is a custom model of unproven cell specificity -
-         * neutral 自定, never a calibration claim. */
+        /* "ref" means the TG28 factory ROM model; a runtime override is
+         * labelled "custom" and neither label implies cell calibration. */
         lv_label_set_text_fmt(s_power.lbl_voltage,
                               "Battery: %d mV  SOC: %d%% (%s)",
                               st.battery_mv, st.percent,

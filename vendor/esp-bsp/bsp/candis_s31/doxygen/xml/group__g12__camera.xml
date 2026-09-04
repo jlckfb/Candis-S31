@@ -21,7 +21,24 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="744" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="744" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="801" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="801" declcolumn="11"/>
+      </memberdef>
+      <memberdef kind="function" id="group__g12__camera_1gafe03973a12d37b25a1ae41612af5d67b" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
+        <type>esp_err_t</type>
+        <definition>esp_err_t bsp_camera_apply_workaround</definition>
+        <argsstring>(void)</argsstring>
+        <name>bsp_camera_apply_workaround</name>
+        <param>
+          <type>void</type>
+        </param>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Reapply the board sensor override after esp_video_open() reloads its table. </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="803" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="803" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g12__camera_1ga563084d63808df72dc933b05a4a1ee65" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -37,7 +54,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="745" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="745" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="804" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="804" declcolumn="11"/>
       </memberdef>
     </sectiondef>
     <sectiondef kind="define">
@@ -223,10 +240,11 @@
         <briefdescription>
         </briefdescription>
         <detaileddescription>
+<para>Nominal XCLK used by the selected OV5640 register-table identifier (MHz). EVT1&apos;s LEDC workaround runs at 20 MHz nominal, measured about 20.1 MHz; this value must not be read as an exact runtime clock measurement. </para>
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="231" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="231" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="234" column="9" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="234" bodyend="-1"/>
       </memberdef>
     </sectiondef>
     <briefdescription>

@@ -170,7 +170,7 @@
         {"name": "espressif/tg28_sw", "version": "^0.3.0", "public": "false", "min_idf": "5.3"},
         {"name": "esp_codec_dev", "version": "^1.6.2", "public": "true", "min_idf": "5.0"},
         {"name": "espressif/esp_lvgl_port", "version": "^2", "public": "true", "min_idf": "5.1"},
-        {"name": "espressif/esp_lcd_co5300", "version": "^2.0.3", "public": "false", "min_idf": "5.1"},
+        {"name": "espressif/esp_lcd_co5300", "version": "^2.1.0", "public": "false", "min_idf": "5.1"},
         {"name": "espressif/esp_lcd_touch_cst820", "version": "^1.0.0", "public": "false", "min_idf": "5.2"},
         {"name": "esp_video", "version": "~2.2", "public": "true", "min_idf": "5.4"},
         {"name": "led_indicator", "version": "^2", "public": "true", "min_idf": "5.0"},

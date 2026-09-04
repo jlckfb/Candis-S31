@@ -32,12 +32,9 @@ for comp in tg28_sw rx8130ce fusb303b esp_lvgl_port; do
 done
 "${RSYNC[@]}" "$ESP_BSP_ROOT/components/lcd_touch/esp_lcd_touch_cst820" "$VENDOR/components/lcd_touch/"
 
-# Vendored adaptation: in the esp-bsp repo the CST820 manifest carries
-# "override_path: ../esp_lcd_touch" so the repo's CI resolves the common
-# component in-tree. The vendor snapshot deliberately does not carry the
-# common esp_lcd_touch component (it resolves from the Registry here), so
-# the in-repo override must be stripped or every fresh build fails to
-# resolve dependencies.
+# Defensive cleanup for older source snapshots: the published CST820 manifest
+# must resolve the namespaced `espressif/esp_lcd_touch` dependency from the
+# registry, never a sibling path that is absent from this vendored snapshot.
 sed -i '/override_path: \.\.\/esp_lcd_touch/d' \
     "$VENDOR/components/lcd_touch/esp_lcd_touch_cst820/idf_component.yml"
 

@@ -5,12 +5,12 @@ Candis-S31 低功耗状态机原型。四档功耗状态 + LP core 管家，演�
 | 项目 | 当前值 |
 |---|---|
 | 目标芯片 | ESP32-S31（preview target） |
-| 测试 ESP-IDF | `v6.1-beta1` |
-| 主路径 | **light sleep → deep sleep → TG28 软关机**（deep sleep 可用，见"已知约束 §1"） |
+| 测试 ESP-IDF | `v6.1-rc1` |
+| 主路径 | **light sleep → deep sleep → TG28 软关机**（代码路径已编译，完整闭环待实板验证） |
 | 编译状态 | **compile-tested**（`tools/build-all.sh` 回归包含本工程；API 经编译器验证） |
-| 硬件状态 | **NOT RUN**（未烧录、未上板；所有行为结论待 EVT 实测） |
+| 硬件状态 | **部分验证**（通用 deep-sleep 唤醒已有记录；本工程完整状态机、触摸唤醒和 S2 关机仍 NOT RUN） |
 
-> 本原型的所有电流数字均为**估算**，尚无 EVT 实测。每一项都标注了估算依据，见 [电流预算](#电流预算)。
+> 本原型尚无完整低功耗闭环实测；预算表区分数据手册估算、组件标称值和历史整机输入测量，不能把任一项直接当作产品指标。
 
 ## 状态定义
 
@@ -18,12 +18,11 @@ Candis-S31 低功耗状态机原型。四档功耗状态 + LP core 管家，演�
 |---|---|---|---|---|---|---|
 | **S0** | `RUN` | 亮 | dynamic | 开 | light sleep 切片轮询 | 运行（值守共享 IRQ 线） |
 | **S1** | `SCREEN_OFF` | CO5300 sleep | monitor（~10µA，可被触摸唤醒） | 保持 | light sleep | **停止**（交还 GPIO2） |
-| **DEEP_SLEEP** | `DEEP_SLEEP` | 关协议后断显示轨（VCI/IOVCC 关断，面板 VBAT 亦可经 U18 TPS22917 由 GPIO5 关断） | 断电 | 外设/控制轨全关 | deep sleep（唤醒即重启） | 停止 |
+| **DEEP_SLEEP** | `DEEP_SLEEP` | 关协议并关闭显示 VBAT/VCI | CST820 重新开启 ALDO2，进入 monitor，GPIO3 作为 EXT1 | 除 TOUCH 外的可控外设/控制轨全关 | deep sleep（唤醒即重启） | 停止 |
 | **S2** | `SHUTDOWN` | 断电 | 断电 | 全关 | 断电（主轨切断后） | 断电 |
 
 S0 的关键点是**委派**：HP 不自己轮询 RTC/PMIC，而是进 light sleep，由 LP core 通过 mailbox 中断把事件推上来。
-
-DEEP_SLEEP 是 S1 与 S2 之间的深睡档：S1 超时后不直接深关机，先关闭面板/触摸协议所有者，再执行 `bsp_power_safe_state()`，把全部可控外设/控制轨和防倒灌 GPIO 收到安全态后进入深睡。面板 VBAT 由 U18 TPS22917 供电，ON 脚为 `LCD_VBAT_EN_H`=GPIO5（`hardware/facts.md` U4 pad 10、TG28_VSYS→U18 行；BSP `src/bsp_power.c` 的 `BSP_POWER_DISPLAY_VBAT` 域即控制该脚），因此软件可以关断面板 VBAT，而不是只能关 VCI/IOVCC；深睡前应显式关闭该域，否则面板供电会抬高静态电流；唤醒会重跑 `app_main`，`bsp_board_init()` 再次执行安全态，随后 S0 重新上电初始化面板/触摸，因此当前实现**不具备跨唤醒免初始化能力**。唤醒源是 SoC RTC 定时（20s）+ EXT1 任意低电平；EXT1 mask 同时武装 GPIO2（共享 IRQ：RX8130CE 闹钟 /IRQ、TG28 IRQ 都能经它唤醒）与 GPIO3（CST820 触摸 INT）。共享线上的 RX8130CE/TG28 由常供电源轨供电，不依赖外设轨。**深睡触摸唤醒已武装、待实板验证**：GPIO3 是 RTCIO（`soc_caps.h` 的 8 路 RTCIO、`rtc_io_channel.h` 的 GPIO3↔channel 3），"本档触摸不可唤醒"是早期软件配置而非硬件限制，现已更正。但**前置条件未闭环**：当前入睡流程经 `bsp_power_safe_state()` 断开 CST820 供电轨（ALDO2）并删除触摸所有者，断电的 CST820 无法拉低 INT；触摸真正唤醒还需深睡流程保留触摸供电并让 CST820 处于 monitor 档（S1 的 `display_and_touch_sleep()` 已有现成 monitor 进入路径）。本次只武装唤醒源、未改供电流程，见「未完成项」。GPIO3 由内部上拉保持确定高电平，断电的触摸控制器不会引起 ANY_LOW 误唤醒。深睡唤醒靠 RTC 慢速内存里 `RTC_NOINIT_ATTR` 的跨深睡计数器决定回 S0 还是升级 S2。
+DEEP_SLEEP 是 S1 与 S2 之间的深睡档：S1 超时后停止面板和触摸协议所有者，再执行 `bsp_power_safe_state()`，把可控外设/控制轨和防倒灌 GPIO 收到安全态后进入深睡。为保留 GPIO3 触摸唤醒，当前实现随后仅重新开启 CST820 的 ALDO2 触摸供电，并让控制器进入 monitor 模式；显示 VBAT/VCI、相机、音频、SD 和其他可控轨保持关闭。唤醒会重跑 `app_main`，`bsp_board_init()` 再次执行安全态，随后 S0 重新初始化面板/触摸，因此当前实现**不具备跨唤醒免初始化能力**。唤醒源是 SoC RTC 定时（20s）+ EXT1 任意低电平；EXT1 mask 同时武装 GPIO2（共享 IRQ：RX8130CE 闹钟 /IRQ、TG28 IRQ 都能经它唤醒）与 GPIO3（CST820 触摸 INT）。完整触摸唤醒和 S2 关机仍需实板验证。
 
 ## 迁移表
 
@@ -33,7 +32,7 @@ DEEP_SLEEP 是 S1 与 S2 之间的深睡档：S1 超时后不直接深关机，�
 | S0 | S1 | 停留满 `S0_DWELL_SECONDS`(15s) | 屏 sleep → 触摸 monitor → 停 LP core → 交还 GPIO2 → 武装 light sleep 唤醒源 |
 | S1 | S0 | **触摸** INT 拉低 | 撤唤醒源 → 触摸退 monitor → 屏 sleep-out → 重启 LP core |
 | S1 | S1 | 共享 IRQ 拉低（PMIC/RTC 事件） | 服务共享线（清标志至线释放），**不离开 S1** |
-| S1 | DEEP_SLEEP | 连续 `S1_SLICES_BEFORE_S2`(3) 个 10s 切片无触摸 | 撤 light sleep 唤醒源 → 关闭面板/触摸所有者 → `bsp_power_safe_state()` 断全部可控外设/控制轨并置高阻 → GPIO2/GPIO3 配 RTC 输入 + 内部上拉 → 武装深睡唤醒源（RTC 定时 + EXT1）→ 计数 +1 → `esp_deep_sleep_start()` |
+| S1 | DEEP_SLEEP | 连续 `S1_SLICES_BEFORE_S2`(3) 个 10s 切片无触摸 | 撤 light sleep 唤醒源 → 关闭面板/触摸协议所有者 → `bsp_power_safe_state()` 关闭可控轨并置高阻 → 重新开启 TOUCH ALDO2、重建 CST820 并进入 monitor → GPIO2/GPIO3 配 RTC 输入 + 内部上拉 → 武装深睡唤醒源（RTC 定时 + EXT1）→ 计数 +1 → `esp_deep_sleep_start()` |
 | DEEP_SLEEP | S0 | 定时/EXT1(GPIO2/GPIO3) 唤醒且计数 < `DEEP_SLEEP_MAX_CYCLES`(2) | 重启式唤醒：cause≠UNDEFINED → 回 S0，再走 S0→S1→深睡循环 |
 | DEEP_SLEEP | S2 | 定时/EXT1(GPIO2/GPIO3) 唤醒且计数 ≥ `DEEP_SLEEP_MAX_CYCLES`(2) | 重启式唤醒 → 直接走下方 S2 顺序 |
 | S2 | 冷启动 | TG28 重新上电（RTC 闹钟到点 / 插 USB / 按电源键） | 走"冷启动"行（cause=UNDEFINED，计数归零） |
@@ -69,8 +68,9 @@ DEEP_SLEEP 是 S1 与 S2 之间的深睡档：S1 超时后不直接深关机，�
 | S1 | RTC 定时 | LP timer | 10s | `esp_sleep_enable_timer_wakeup()` |
 | DEEP_SLEEP | SoC RTC 定时 | LP timer | `DEEP_SLEEP_WAKE_US`(20s) | `esp_sleep_enable_timer_wakeup()` |
 | DEEP_SLEEP | 共享 IRQ | `BSP_PMIC_RTC_INT`(GPIO2) | **EXT1 任意低电平**（RTCIO 输入 + 内部上拉保险；仅 RX8130CE /IRQ、TG28 IRQ 可拉低） | `esp_sleep_enable_ext1_wakeup_io()` + `ESP_EXT1_WAKEUP_ANY_LOW` |
-| DEEP_SLEEP | 触摸 | `BSP_TOUCH_INT`(GPIO3) | **EXT1 任意低电平**（与 GPIO2 同一 mask、同一 `ANY_LOW` 语义 + 内部上拉保险。**前置条件未闭环**：入睡前 `bsp_power_safe_state()` 断开 CST820 供电轨 ALDO2，触摸能否真正拉低 INT **需实板验证**，见「未完成项」） | 同上 |
+| DEEP_SLEEP | 触摸 | `BSP_TOUCH_INT`(GPIO3) | **EXT1 任意低电平**；安全态后重新开启 ALDO2、重建 CST820 并进入 monitor，再将 GPIO3 切到 RTCIO 输入 + 内部上拉；完整触摸唤醒结果仍待实板确认 | 同上 |
 | S2 | RTC 闹钟 | RX8130CE /IRQ → GPIO2 | 让 TG28 重新上电 | 冷启动，无 sleep API |
+
 
 **为什么共享 IRQ 必须电平触发**：TG28 IRQ 与 RX8130CE /IRQ 是开漏线与。源 B 在源 A 仍拉低时动作**不产生新边沿**，边沿触发必然丢中断。BSP 的 `bsp_shared_irq_register_callback()` 用 `GPIO_INTR_LOW_LEVEL` 正是这个原因。
 
@@ -113,22 +113,22 @@ GPIO2 同一时刻只能属于一方：LP core（RTC 功能，LP IO matrix）或
 - LP 侧 `lp_core_mailbox_send()` 的 timeout 单位是 **CPU 周期**（HP 侧是 tick）。本原型给有界值而非 `-1`，避免 HP 停止接收时把管家卡死。
 
 ## 电流预算
+**估算与实测并列，均标明依据。** 本工程尚无完整低功耗闭环验收；不要把估算合计当作产品指标。
 
-**全部为估算，无一经 EVT 实测。** 列出依据供交叉验证，实测后应回填本表。
-
-| 状态 | 分项 | 估算值 | 依据 |
+| 状态 | 分项 | 估算/实测 | 依据 |
 |---|---|---|---|
-| **S1** | ESP32-S31 light sleep | ~50µA 级 | S31 datasheet light-sleep 量级（任务给定基线）；实际随 RTC 时钟源、保持的外设域变化 |
-| | CST820 monitor 模式 | ~10µA | `esp_lcd_touch_cst820.h` 中 monitor 档标称值 |
-| | CO5300 sleep（SLPIN） | **未知** | 面板 sleep 档电流未查证，**不敢给数**。CO5300 另有 deep-standby 档（更低，但需硬复位唤醒），本原型 S1 用的是 sleep 档 |
+| **S1** | ESP32-S31 light sleep | ~50µA 级（估算） | S31 datasheet light-sleep 量级；实际随 RTC 时钟源、保持的外设域变化 |
+| | CST820 monitor 模式 | ~10µA（组件标称） | `esp_lcd_touch_cst820.h` 中 monitor 档说明 |
+| | CO5300 sleep（SLPIN） | **未知** | 面板 sleep 档电流未查证；本原型 S1 用的是 sleep 档 |
 | | 外设轨静态 | **未知** | S1 不关外设轨，ALDO/BLDO 静态功耗未计 |
-| | **S1 合计** | **无法给出** | 缺面板与轨静态两项，凑不出可信总数 |
-| **DEEP_SLEEP** | ESP32-S31 deep sleep | ~10µA 级 | S31 datasheet deep-sleep 量级（估算，未实测） |
-| | 可控外设/控制轨 | 关断；残余**未知** | 进入 deep sleep 前执行 `bsp_power_safe_state()`；需实测各断电节点残压/漏电 |
-| | 面板 VBAT（U18 可软关断）+ TG28/RX8130CE 常供域 | **未知** | 面板 VBAT 经 U18 TPS22917 由 GPIO5 控制，深睡前应关断；TG28/RX8130CE 必须留供电，均需实测 |
-| | **DEEP_SLEEP 合计** | **无法给出** | 缺面板 VBAT 关断后残余、PMIC/RTC 常供域与各断电节点漏电实测 |
+| | **S1 合计** | **无法给出** | 缺面板与轨静态两项，不能凑出可信总数 |
+| **DEEP_SLEEP** | ESP32-S31 deep sleep | ~10µA 级（估算） | S31 datasheet deep-sleep 量级，未做本工程闭环验收 |
+| | 触摸保持供电时的整机输入基线 | 约 9.4-9.7 mA @ 5.1 V（历史实测） | `DEEP_SLEEP_KEEP_TOUCH_RAIL=1`；数据含 CH343P/TG28/FUSB303 等常供负载，不能视为触摸轨单独电流 |
+| | 显示 VBAT/VCI 与其他可控轨 | 关闭；残余**未知** | `bsp_power_safe_state()` 后不重开显示域 |
+| | TG28/RX8130CE 常供域 | **未知** | 深睡期间必须保持，用于共享 IRQ/RTC 唤醒 |
+| | **DEEP_SLEEP 合计** | **无法给出** | 触摸轨保持开启，且常供域/CH343P 贡献未拆分 |
 | **S2** | ESP32-S31 | 0 | 主轨已断，芯片无供电 |
-| | RX8130CE（备份域） | 亚 µA 级 | 备份电池供电，`INIEN=1` 自动切换；具体值查 ETM50E-05 |
+| | RX8130CE（备份域） | 亚 µA 级（估算） | 备份电池供电，`INIEN=1` 自动切换；具体值查 ETM50E-05 |
 | | TG28 待机 | **未知** | 取决于 TG28 Soft PWROFF 后进入哪一档（未实测） |
 | | **S2 合计** | **无法给出** | TG28 关断档未定 |
 | **S0** | — | 不做预算 | 屏亮 + 外设开，由业务负载决定 |
@@ -145,7 +145,7 @@ ESP32-S31 的深睡**是正常的**：纯定时唤醒、以及"EXT1 接有上拉
 
 其他注意点：
 
-- 深睡 RTCIO 仅 GPIO0~7 —— GPIO2（共享 IRQ）和 GPIO3（触摸 INT）都在范围内；本原型深睡的 EXT1 mask 已同时武装两脚（ANY_LOW + 内部上拉保险）。触摸唤醒能否在实板成立另有一个供电前置条件：当前入睡流程会断开 CST820 的 ALDO2 供电轨，见「状态定义」DEEP_SLEEP 段与「未完成项」；
+- 深睡 RTCIO 仅 GPIO0~7 —— GPIO2（共享 IRQ）和 GPIO3（触摸 INT）都在范围内；本原型的 EXT1 mask 同时武装两脚（ANY_LOW + 内部上拉保险）。进入深睡前会在安全态后重新开启 CST820 的 ALDO2 供电、重建控制器并进入 monitor，再把 GPIO3 切到 RTCIO 输入；触摸唤醒的最终实板结果仍待验证；
 - **无 EXT0，只有 EXT1**，须用 `esp_sleep_enable_ext1_wakeup_io()` + `ESP_EXT1_WAKEUP_ANY_LOW`；
 - 深睡唤醒是重启（app_main 重跑），跨深睡状态靠 RTC 慢速内存的 `RTC_NOINIT_ATTR` 计数器 + magic 校验（掉电后内容失效→magic 不匹配→归零）。**RTC 内存在 S31 深睡后是否可靠保留尚需 EVT 实测确认**：若每次都丢，计数永远读回 0，行为退化为"S0→S1→深睡"无限循环、永不升级 S2——不会把机器卡死在深睡里（定时唤醒兜底），但深关机不会发生。
 
@@ -164,10 +164,10 @@ S2 的最后一步现在调用 `bsp_pmic_power_off()`：它封装 TG28 的软件
 
 ### 4. 其他
 
-- **本原型不依赖音频链路**：ES8389 数据通路在 Korvo 上尚未裁决完成，S2 只是把 AUDIO 轨关掉，不做任何 codec 操作；
-- **不启动 LVGL**：用 `bsp_display_new()` 直接拿面板句柄，省掉 draw buffer。但 BSP 头在默认 `BSP_CONFIG_NO_GRAPHIC_LIB == 0` 下仍会引入 LVGL 依赖，且 `bsp_display_enter_sleep()` / `exit_sleep()` 本身就在该宏的条件编译块内；
-- **触摸 monitor 档的进入方式**：`bsp_display_enter_sleep()` 会顺带把触摸打进**深休眠**档（~2µA，**触摸唤不醒**，只有复位能出来）。本原型随后用 `esp_lcd_touch_cst820_wakeup()` 复位回 dynamic，再 `enter_monitor_mode()` 让它落入可被触摸唤醒的 standby。CST820 datasheet 说无触摸 2s 后自动进 standby，所以 monitor 档需**最多 2s** 才真正生效；
-- **CST820 sleep 命令是推测值**：驱动头明确标注 `0xA5 <- 0x03` 取自 CST816 家族公开资料，CST820 datasheet 未公布该寄存器地址，待 EVT 验证。
+- **本原型不依赖音频链路**：S2 只是把 AUDIO 轨关掉，不做 codec 操作；
+- **不启动 LVGL**：用 `bsp_display_new()` 直接拿面板句柄，省掉 draw buffer；BSP 的 raw panel API 会自动应用 EVT1 的 180° 物理镜像。
+- **触摸 monitor 档的进入方式**：`bsp_display_enter_sleep()` 通过公共 `esp_lcd_touch` 睡眠钩子进入 CST820 monitor 处理，本原型随后用 `esp_lcd_touch_cst820_exit_monitor_mode()` 复位回 dynamic，再调用 `enter_monitor_mode()` 让它落入可被触摸唤醒的 standby。CST820 无触摸约 2 s 后自动进入 standby，因此 monitor 档需最多约 2 s 才真正生效；
+- **不发送未公开的 CST820 睡眠寄存器命令**：`0xA5` 等 CST816 家族命令不属于本原型的自动流程。
 
 ## 文件结构
 
@@ -187,7 +187,7 @@ low-power/
 
 ## 构建
 
-BSP 不在本仓库内，位置经环境变量注入（与 `firmware/factory` 同一套约定）：
+BSP 默认使用仓内 `vendor/esp-bsp/` 快照，无需环境变量。BSP 开发时可设 `CANDIS_S31_BSP_PATH` 指向活的 esp-bsp 工作区覆盖快照：
 
 ```bash
 idf.py --preview set-target esp32s31
@@ -199,9 +199,7 @@ idf.py --preview build
 
 ## 未完成项
 
-- **未烧录、未上板**（compile-tested only）。所有 API 调用已对照本地头文件核对并通过 `tools/build-all.sh` 编译回归（BSP 三个头、`tg28_sw.h`、`rx8130ce.h`、`esp_lcd_touch_cst820.h`、`lp_core_mailbox.h`、`ulp_lp_core_mailbox.h`、`esp_sleep.h`、`rtc_io.h`），但**硬件行为从未在 EVT 板验证**；
-- **DEEP_SLEEP 档 NOT RUN**：深睡本身已实测可唤醒，但本档的完整闭环（20s 定时唤醒回 S0 → 第二轮升级 S2 → `bsp_pmic_power_off()` 掉电）尚未上板。重点实测项：`RTC_NOINIT_ATTR` 计数器在 S31 深睡后是否可靠保留（见"已知约束 §1"）；GPIO3 触摸 EXT1 唤醒（前置条件见下条）；
-- **DEEP_SLEEP 触摸唤醒前置条件未闭环**：EXT1 mask 已武装 GPIO3（CST820 INT，ANY_LOW + 内部上拉保险），但 `enter_deep_sleep()` 前的 `bsp_power_safe_state()` 会断开 CST820 供电轨（ALDO2，BSP `src/bsp_power.c`）且触摸协议所有者已删除，断电的 CST820 无法拉低 INT。要真正闭环需在深睡流程中保留触摸供电、并确认 CST820 处于 monitor 档（S1 的 `display_and_touch_sleep()` 有现成进入路径），再做实板验证；本次只做唤醒源武装，未改供电流程。GPIO3 仅靠内部上拉保持确定高电平，断电的触摸控制器不会引起 ANY_LOW 误唤醒；
+- **完整状态机仍需实板回归**：通用 deep-sleep 定时唤醒已有记录，但本工程的 S0→S1→DEEP_SLEEP→S2 闭环、RTC 计数器保留、GPIO3 触摸 EXT1 唤醒和 `bsp_pmic_power_off()` 掉电尚未完成 EVT 验证；
 - **LP I2C 直读未启用**：`I2C_SAMPLE` / `I2C_ERROR` 两个事件码已定义但 LP 固件不产生。原理图 v0.5（2026-07-28 与 2026-08-10 两版导出）已裁决本板映射为 `LP_I2C_SCL=GPIO6`、`LP_I2C_SDA=GPIO7`，BSP、Pin Map 与 Board Manager 一致；IDF `lp_core_i2c.h` 对 esp32s31 的默认宏恰好相反（SCL=GPIO7、SDA=GPIO6）。启用时必须显式传入本板引脚，**不得使用 `LP_I2C_DEFAULT_GPIO_CONFIG()`**，否则总线不通；
 - **LP core 与主 I2C 总线的互斥未设计**：TG28/RX8130 挂在 LP I2C 上，HP 侧 `bsp_pmic_*`/`bsp_rtc_*` 与 LP 侧直读会争总线。当前 LP 固件只读 GPIO 电平、不碰 I2C，所以无冲突；一旦启用 LP I2C 就必须加互斥（LP 共享内存自旋锁已在 Korvo 验证可用，16/16 PASS）；
 - **S2 之后不回 S0**：PMIC 关机被拒绝（意外返回）时，S2 只空转等复位。外设轨已断，回 S0 需要完整重新初始化，原型没做；

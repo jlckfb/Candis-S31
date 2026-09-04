@@ -28,7 +28,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="447" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="447" bodyend="450"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="495" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="495" bodyend="498"/>
       </memberdef>
       <memberdef kind="enum" id="group__g06__led_1gacd8e580895e94bc1e219a78bad3143b9" prot="public" static="no" strong="no">
         <type></type>
@@ -89,7 +89,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="452" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="452" bodyend="460"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="500" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="500" bodyend="508"/>
       </memberdef>
     </sectiondef>
     <sectiondef kind="func">
@@ -118,7 +118,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="752" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="752" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="811" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="811" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g06__led_1ga8174cd1f8a14cc1a6ac2a7b397a635e4" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -139,7 +139,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="753" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="753" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="812" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="812" declcolumn="11"/>
       </memberdef>
     </sectiondef>
     <sectiondef kind="define">

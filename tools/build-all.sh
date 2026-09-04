@@ -20,9 +20,9 @@
 #                    fusb303b, cst820), built from the vendored snapshot at
 #                    the same paths the CI drivers job uses, build dir
 #                    `build_esp32s31/`.
-# Firmware projects resolve their remaining dependencies (lvgl,
-# esp_tinyusb, gmf, ...) from the ESP Component Registry on first build; no
-# lock files are required.
+# Firmware projects resolve their remaining dependencies from the ESP
+# Component Registry on first build; committed dependencies.lock files pin
+# the selected versions and hashes so later clones do not drift silently.
 #
 # Maintainer-only targets (built only when named explicitly on the command
 # line; never part of the default set):

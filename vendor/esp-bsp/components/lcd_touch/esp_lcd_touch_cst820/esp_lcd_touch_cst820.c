@@ -10,7 +10,7 @@
 #include "driver/gpio.h"
 #include "esp_check.h"
 #include "esp_lcd_panel_io.h"
-#include "esp_lcd_touch.h"
+#include "esp_lcd_touch_cst820.h"
 #include "esp_log.h"
 #include "esp_rom_sys.h"
 #include "freertos/FreeRTOS.h"
@@ -59,6 +59,8 @@ esp_err_t esp_lcd_touch_new_i2c_cst820(const esp_lcd_panel_io_handle_t io,
     ESP_GOTO_ON_FALSE(cst820 != NULL, ESP_ERR_NO_MEM, err, TAG, "Touch handle allocation failed");
 
     cst820->io = io;
+    cst820->enter_sleep = esp_lcd_touch_cst820_enter_monitor_mode;
+    cst820->exit_sleep = esp_lcd_touch_cst820_exit_monitor_mode;
     cst820->read_data = esp_lcd_touch_cst820_read_data;
     cst820->get_xy = esp_lcd_touch_cst820_get_xy;
     cst820->get_track_id = esp_lcd_touch_cst820_get_track_id;

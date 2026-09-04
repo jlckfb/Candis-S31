@@ -41,6 +41,7 @@ static const char *type_c_role_name(bsp_type_c_role_t role)
 static const char *type_c_current_name(bsp_type_c_current_t current)
 {
     switch (current) {
+    case BSP_TYPE_C_CURRENT_NONE: return "none";
     case BSP_TYPE_C_CURRENT_1_5_A: return "1.5A";
     case BSP_TYPE_C_CURRENT_3_0_A: return "3.0A";
     case BSP_TYPE_C_CURRENT_DEFAULT:

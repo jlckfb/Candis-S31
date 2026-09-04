@@ -15,7 +15,6 @@
 #include "tg28_sw.h"
 
 #include "bsp/candis_s31.h"
-#include "bsp_pmic_reference_model.h"
 
 static const char *TAG = "candis_pmic";
 static tg28_sw_handle_t s_pmic;
@@ -247,30 +246,22 @@ esp_err_t bsp_pmic_init(void)
                  precharge_ma, term_ma, charge_voltage_mv);
     }
     if (error == ESP_OK) {
-        /* Default fuel-gauge model, best-effort: the vendor generic
-         * 4.2 V-class reference table (see bsp_pmic_reference_model.c for
-         * provenance and license review status). Programmed after the
-         * charge baseline and the input-limit clamp so the gauge has a
-         * model before any charge stepping begins. The driver-level
-         * create-time battery_model hook is deliberately unused: it fails
-         * the whole create on a download error (tg28_sw.c:605-610), while
-         * here a failure must only leave the fuel gauge invalid -
-         * charging and the PMIC stay alive. A caller-supplied/custom
-         * model can still be programmed via bsp_pmic_program_battery_model(),
-         * which re-verifies and replaces this reference. SOC accuracy
-         * with this generic model is reference-grade; a different battery
-         * SKU/chemistry needs a new model, not per-unit calibration. */
-        const esp_err_t model_err = tg28_sw_program_battery_model(
-                                        s_pmic, bsp_pmic_reference_battery_model,
-                                        BSP_PMIC_REFERENCE_BATTERY_MODEL_SIZE);
+        /* Use the model already stored in the TG28 silicon. Reading the ROM
+         * verifies that the gauge model is accessible without redistributing
+         * vendor-owned model bytes in this Apache-2.0 BSP. Applications with
+         * a licensed battery-specific model can still call the runtime
+         * override API. */
+        uint8_t rom_model[TG28_SW_BATTERY_MODEL_SIZE] = {0};
+        const esp_err_t model_err = tg28_sw_read_battery_model(
+                s_pmic, TG28_SW_BATTERY_MODEL_ROM, rom_model,
+                sizeof(rom_model));
         if (model_err == ESP_OK) {
             s_fuel_gauge_valid = true;
             s_fuel_gauge_reference_model = true;
-            ESP_LOGI(TAG,
-                     "reference battery model verified (%d bytes, gauge on)",
-                     BSP_PMIC_REFERENCE_BATTERY_MODEL_SIZE);
+            ESP_LOGI(TAG, "TG28 factory ROM battery model verified (%u bytes)",
+                     (unsigned)sizeof(rom_model));
         } else {
-            ESP_LOGW(TAG, "reference battery model download failed: %s "
+            ESP_LOGW(TAG, "TG28 factory ROM battery model read failed: %s "
                      "(fuel gauge stays invalid; charging continues)",
                      esp_err_to_name(model_err));
         }

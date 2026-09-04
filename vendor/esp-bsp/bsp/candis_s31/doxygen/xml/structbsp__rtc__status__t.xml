@@ -16,7 +16,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="374" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="374" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="421" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="421" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__rtc__status__t_1ab1e19a4be402ab7fe195043b836676f9" prot="public" static="no" mutable="no">
         <type>bool</type>
@@ -30,7 +30,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="375" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="375" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="422" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="422" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__rtc__status__t_1a7a94b21e1248b7d844787db67cff7ab6" prot="public" static="no" mutable="no">
         <type>bool</type>
@@ -44,7 +44,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="376" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="376" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="423" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="423" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__rtc__status__t_1aca09c8ade2f0496dde1c9b25652d0644" prot="public" static="no" mutable="no">
         <type>bool</type>
@@ -58,7 +58,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="377" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="377" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="424" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="424" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__rtc__status__t_1a34da84e6fb0d2775cfa823fc294814b5" prot="public" static="no" mutable="no">
         <type>bool</type>
@@ -72,7 +72,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="378" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="378" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="425" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="425" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__rtc__status__t_1a19c7f0e8e1704da662d63c5fb3bb0d45" prot="public" static="no" mutable="no">
         <type>bool</type>
@@ -86,7 +86,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="379" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="379" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="426" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="426" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__rtc__status__t_1a957aab1bcdb35fe127f291f085785a00" prot="public" static="no" mutable="no">
         <type>bool</type>
@@ -100,7 +100,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="380" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="380" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="427" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="427" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__rtc__status__t_1afe0dd1d9a56fb9cdc6d4c344c695c588" prot="public" static="no" mutable="no">
         <type>bool</type>
@@ -114,7 +114,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="381" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="381" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="428" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="428" bodyend="-1"/>
       </memberdef>
     </sectiondef>
     <briefdescription>
@@ -122,7 +122,7 @@
     <detaileddescription>
 <para>RX8130CE retained status flags. </para>
     </detaileddescription>
-    <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="373" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="373" bodyend="382"/>
+    <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="420" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="420" bodyend="429"/>
     <listofallmembers>
       <member refid="structbsp__rtc__status__t_1a7a94b21e1248b7d844787db67cff7ab6" prot="public" virt="non-virtual"><scope>bsp_rtc_status_t</scope><name>alarm</name></member>
       <member refid="structbsp__rtc__status__t_1afe0dd1d9a56fb9cdc6d4c344c695c588" prot="public" virt="non-virtual"><scope>bsp_rtc_status_t</scope><name>backup_battery_full</name></member>

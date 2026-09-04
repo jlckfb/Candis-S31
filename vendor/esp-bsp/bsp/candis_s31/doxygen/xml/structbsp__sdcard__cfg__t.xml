@@ -15,7 +15,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="467" column="44" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="467" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="515" column="44" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="515" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__sdcard__cfg__t_1ac2e6bb0d560eb424943fbd677d373f1b" prot="public" static="no" mutable="no">
         <type>sdmmc_host_t *</type>
@@ -29,7 +29,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="468" column="18" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="468" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="516" column="18" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="516" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__sdcard__cfg__t_1a3cc48abd64670e77d1168f3915166e18" prot="public" static="no" mutable="no">
         <type>const sdmmc_slot_config_t *</type>
@@ -43,7 +43,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="470" column="35" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="470" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="518" column="35" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="518" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__sdcard__cfg__t_1aeb144a6bba58ef346eb6fab7d56e3455" prot="public" static="no" mutable="no">
         <type>const sdspi_device_config_t *</type>
@@ -57,7 +57,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="471" column="37" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="471" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="519" column="37" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="519" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__sdcard__cfg__t_1a04365becdec1c66061506f760724ff11" prot="public" static="no" mutable="no">
         <type>union <ref refid="structbsp__sdcard__cfg__t" kindref="compound">bsp_sdcard_cfg_t</ref></type>
@@ -71,14 +71,14 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="472" column="10"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="520" column="10"/>
       </memberdef>
     </sectiondef>
     <briefdescription>
     </briefdescription>
     <detaileddescription>
     </detaileddescription>
-    <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="466" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="466" bodyend="473"/>
+    <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="514" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="514" bodyend="521"/>
     <listofallmembers>
       <member refid="structbsp__sdcard__cfg__t_1ac2e6bb0d560eb424943fbd677d373f1b" prot="public" virt="non-virtual"><scope>bsp_sdcard_cfg_t</scope><name>host</name></member>
       <member refid="structbsp__sdcard__cfg__t_1a12957d900b5745d7fda3147d60f234c7" prot="public" virt="non-virtual"><scope>bsp_sdcard_cfg_t</scope><name>mount</name></member>

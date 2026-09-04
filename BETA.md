@@ -6,7 +6,7 @@
 
 Candis-S31 是围绕 ESP32-S31 与 2.0 英寸 460×460 方形 AMOLED 设计的低功耗核心板。板上资源：CO5300 AMOLED（QSPI）+ CST820 触摸、TG28 电源管理/充电/电量计、RX8130CE RTC、双 USB Type-C（C1 供电+调试、C2 OTG）、ES8389 音频（扬声器 + 双麦克风）、DVP 摄像头接口、microSD、按键、单颗 WS2812 RGB 灯。
 
-**当前硬件状态（EVT1）**：显示、触摸、音频（扬声器与双麦）、microSD、USB Host/Device、Wi-Fi、BLE、RTC、PMIC/充电域均已在实物上验证；相机已可用——FPC 转接板已到位，DVP 取流、内建彩条与带屏实时预览已在 EVT1 实板验证通过（2026-09-01/02）；长时老化与低功耗功耗数据尚未表征。
+**当前硬件状态（EVT1）**：显示、触摸、microSD、USB Host/Device、Wi-Fi、BLE、RTC、PMIC/充电域均已在实物上验证；ES8389 编解码器初始化和数字音频链路检查通过，扬声器听感与麦克风录音验收仍待复核。相机 FPC 转接板已到位，传感器识别、DVP 取流和内建彩条已在 EVT1 实板验证，真实场景成像与 JPEG 拍照落卡仍待确认；长时老化与低功耗功耗数据尚未表征。
 
 ## 2. 环境准备（唯一前置条件）
 
@@ -30,7 +30,8 @@ git clone https://github.com/jlckfb/Candis-S31.git
 cd Candis-S31
 
 # 手表综合演示（表盘 + 16 个应用：录音/播放/WiFi/BLE/文件/USB/游戏/设置/电源等）
-# 已在 EVT1 实板验证
+# 核心外设已在 EVT1 实板验证；相机真实成像与 JPEG 落卡仍待确认
+
 cd firmware/demo
 idf.py --preview set-target esp32s31
 idf.py --preview build
@@ -45,10 +46,12 @@ cd ../usb_cdc_device
 idf.py --preview set-target esp32s31
 idf.py --preview build
 
-# 相机 DVP 自动诊断（内建彩条 + 带屏实时预览，操作员确认 PASS/FAIL）
+# 相机 DVP 自动诊断（内建彩条 + 取流，真实成像/JPEG 待确认）
 cd ../camera_test
 idf.py --preview set-target esp32s31
 idf.py --preview build
+
+
 
 # 功耗测量辅助固件
 cd ../powercycle
@@ -56,13 +59,12 @@ idf.py --preview set-target esp32s31
 idf.py --preview build
 ```
 
-`examples/esp-idf/getting-started`（最小示例）与 `examples/esp-idf/low-power`（低功耗状态机）同样开箱即编。
+**首次编译会从 ESP Component Registry 联网下载公开依赖**（LVGL、esp_lvgl_adapter、esp_video、esp_codec_dev 等官方组件）；已提交的 `dependencies.lock` 会固定解析到的版本与哈希。板级相关代码全部来自仓内 `vendor/esp-bsp/` 快照。
 
-**首次编译会从 ESP Component Registry 联网下载公开依赖**（LVGL、esp_lvgl_adapter、esp_video、esp_codec_dev 等官方组件），属正常现象；板级相关代码全部来自仓内 `vendor/esp-bsp/` 快照。
 
 ## 4. 烧录与串口
 
-- **只用 C1 口**（CH343P USB 转串口）：`idf.py --preview -p /dev/ttyACM0 flash monitor`（4M 波特已验证，约 22 秒/次）。
+- **只用 C1 口**（CH343P USB 转串口）：先用 `idf.py --preview -p /dev/ttyACM0 -b 4000000 flash` 烧录，再用 `idf.py --preview -p /dev/ttyACM0 monitor` 以 115200 监控；4,000,000 baud 为当前实测最高可靠下载速率，若线材/主机不稳定再降速。
 - **C2 口不能烧录**：ESP32-S31 ROM 无 USB-OTG 下载模式；C2 是 USB Host/Device 数据口。
 - Windows 下串口名为对应 COM 口；Linux 通常为 `/dev/ttyACM0`。
 
@@ -75,10 +77,10 @@ idf.py --preview build
 
 ## 6. 已知限制（内测期）
 
-- 相机：拍照落卡当前为 RGB565 裸帧，PC 端需工具查看（JPEG 落卡开发中）。
-- 电池电量计 SOC 为参考精度（内置 4.2V 通用模型；针对具体电芯的标定进行中）。
+- 相机：传感器识别、DVP 取流和内建彩条诊断已验证；真实场景颜色/图像质量以及硬件 JPEG 落卡尚未完成实板确认。拍照 UI 与 `/photos/IMG_nnnn.jpg` 是待验证路径，不能当作已发布功能。
+- 电池电量计：默认使用 TG28 芯片内置 ROM 模型；SOC 仅参考精度，具体电芯未做标定。
 - RTC 存在快慢交替现象（约 ±1-2 秒/30 秒量级，VRTC 域，待定位）。
-- 低功耗各模式功耗数据尚未表征；深睡唤醒可用，数值请以内测群共享数据为准。
+- 低功耗各模式功耗数据尚未表征；深睡唤醒闭环仍需完整实板回归。
 - 音量映射曲线未校准（出厂默认音量偏大）。
 
 ## 7. 开发者向（可跳过）

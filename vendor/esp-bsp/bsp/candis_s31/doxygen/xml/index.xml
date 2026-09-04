@@ -4,6 +4,7 @@
     <member refid="structbsp__camera__cfg__t_1a3ad8463e53e0dab57111cb11317e92b7" kind="variable"><name>dummy</name></member>
   </compound>
   <compound refid="structbsp__display__cfg__t" kind="struct"><name>bsp_display_cfg_t</name>
+    <member refid="structbsp__display__cfg__t_1aec4bda7bc3f599bfd98e0e68c0b68926" kind="variable"><name>lvgl_port_cfg</name></member>
     <member refid="structbsp__display__cfg__t_1a5ca8835d65e0fc958726cbfb17861afb" kind="variable"><name>buffer_size</name></member>
     <member refid="structbsp__display__cfg__t_1a9865134f79a455deb42ed07e52dc7d33" kind="variable"><name>double_buffer</name></member>
     <member refid="structbsp__display__cfg__t_1a3c212f07d5d4337a5cadf642b2790e51" kind="variable"><name>buff_dma</name></member>
@@ -19,6 +20,26 @@
     <member refid="structbsp__lcd__handles__t_1adbdb94dd358f816f931e4b4a4a2fd298" kind="variable"><name>io</name></member>
     <member refid="structbsp__lcd__handles__t_1aa72daaaf4952867a0a78db38e959a8a1" kind="variable"><name>panel</name></member>
     <member refid="structbsp__lcd__handles__t_1afb72bab61b124bc127bce75ea08ee37c" kind="variable"><name>control</name></member>
+  </compound>
+  <compound refid="structbsp__pmic__adc__diagnostic__sample__t" kind="struct"><name>bsp_pmic_adc_diagnostic_sample_t</name>
+    <member refid="structbsp__pmic__adc__diagnostic__sample__t_1a9a91b993ee732e1e7e7cec4ff72214f3" kind="variable"><name>elapsed_ms</name></member>
+    <member refid="structbsp__pmic__adc__diagnostic__sample__t_1a5300952e846acf08b9c0da95b9a2a4e9" kind="variable"><name>raw</name></member>
+  </compound>
+  <compound refid="structbsp__pmic__adc__diagnostic__t" kind="struct"><name>bsp_pmic_adc_diagnostic_t</name>
+    <member refid="structbsp__pmic__adc__diagnostic__t_1ac07fab0c928ffdb10ab746fedf9f35d8" kind="variable"><name>reg30_original</name></member>
+    <member refid="structbsp__pmic__adc__diagnostic__t_1a5bd7076305add9f69094cbac9094e27c" kind="variable"><name>reg30_enabled</name></member>
+    <member refid="structbsp__pmic__adc__diagnostic__t_1a9cf667c58f9328412acf5b47d851010d" kind="variable"><name>reg30_restored</name></member>
+    <member refid="structbsp__pmic__adc__diagnostic__t_1a84a77817c731cfa915fd7fd27309112c" kind="variable"><name>enable_verified</name></member>
+    <member refid="structbsp__pmic__adc__diagnostic__t_1a2b45d38f653e58aa691f832468469604" kind="variable"><name>restore_verified</name></member>
+    <member refid="structbsp__pmic__adc__diagnostic__t_1a2fb742703228e94d1829115df722ea38" kind="variable"><name>sample_count</name></member>
+    <member refid="structbsp__pmic__adc__diagnostic__t_1aa8fcf82096a18e818c44f42971e5fa5a" kind="variable"><name>samples</name></member>
+  </compound>
+  <compound refid="structbsp__pmic__early__snapshot__t" kind="struct"><name>bsp_pmic_early_snapshot_t</name>
+    <member refid="structbsp__pmic__early__snapshot__t_1acbdd48ffe22479df0b32570361fd327e" kind="variable"><name>status</name></member>
+    <member refid="structbsp__pmic__early__snapshot__t_1a3c109debd7cb3743a737866162072014" kind="variable"><name>power_source</name></member>
+    <member refid="structbsp__pmic__early__snapshot__t_1aeb0120cacb3fd1278b127b7d126b77af" kind="variable"><name>adc_control</name></member>
+    <member refid="structbsp__pmic__early__snapshot__t_1ab53dbda92206fe6a9c90e7417f088946" kind="variable"><name>irq_status</name></member>
+    <member refid="structbsp__pmic__early__snapshot__t_1ae4c88f8a02d1b6b64f9ff13fdcd36314" kind="variable"><name>valid_mask</name></member>
   </compound>
   <compound refid="structbsp__pmic__status__t" kind="struct"><name>bsp_pmic_status_t</name>
     <member refid="structbsp__pmic__status__t_1a0fcb1d71ecc478956c8bbb214a84b31e" kind="variable"><name>chip_id</name></member>
@@ -197,6 +218,7 @@
     <member refid="group__g99__others_1ga4cb9e31254e82778bc5eb5c2e5062337" kind="define"><name>BSP_RX8130CE_I2C_ADDRESS</name></member>
     <member refid="group__g99__others_1ga943829a70cfa634c1f2916e171e4b1c0" kind="define"><name>BSP_FUSB303B_I2C_ADDRESS_LOW</name></member>
     <member refid="group__g99__others_1ga64352bebcc37b005cc153862fa68f559" kind="define"><name>BSP_FUSB303B_I2C_ADDRESS_HIGH</name></member>
+    <member refid="group__g09__battery_1gaadd3b5e61fbcc9638b59c07d566b6847" kind="define"><name>BSP_PMIC_ADC_DIAGNOSTIC_SAMPLE_COUNT</name></member>
     <member refid="group__g09__battery_1ga473c8b8ab4b9775468e305f849136224" kind="define"><name>BSP_PMIC_SAFE_CHARGE_CURRENT_MA</name></member>
     <member refid="group__g09__battery_1ga1086e9aea588b000af5cb00e4e7102dc" kind="define"><name>BSP_PMIC_SAFE_CHARGE_VOLTAGE_MV</name></member>
     <member refid="group__g09__battery_1ga31745caedc1b93d5f1db332af4c2b74e" kind="define"><name>BSP_PMIC_SAFE_PRECHARGE_CURRENT_MA</name></member>
@@ -207,6 +229,7 @@
     <member refid="group__g09__battery_1gaa353fa146bc1485b690ef9016bb1be41" kind="enum"><name>bsp_pmic_regulator_t</name></member>
     <member refid="group__g09__battery_1gacf064b98544101023591b83a0071769e" kind="enum"><name>bsp_pmic_switch_t</name></member>
     <member refid="group__g09__battery_1gac085a9cd0c93def85a85dad2282712d8" kind="enum"><name>bsp_pmic_adc_channel_t</name></member>
+    <member refid="group__g09__battery_1gab13d9119d820e189faaf92ec3e0a5a74" kind="enum"><name>bsp_pmic_early_snapshot_valid_t</name></member>
     <member refid="group__g07__usb_1ga4154f72fdbdc86f5cc48db8541c2267b" kind="enum"><name>bsp_type_c_role_t</name></member>
     <member refid="group__g07__usb_1ga3ade17ee740539518d6a3f572ac1fd6d" kind="enum"><name>bsp_type_c_current_t</name></member>
     <member refid="group__g06__led_1ga48cf6095568094794d9adc1e95649ccc" kind="enum"><name>bsp_led_t</name></member>
@@ -259,8 +282,10 @@
     <member refid="group__g09__battery_1ga56a2fb03598dc4a732478c2c3c381c61" kind="function"><name>bsp_pmic_switch_name</name></member>
     <member refid="group__g09__battery_1gaff505337d71d51f74aa5ae6eede3c5c9" kind="function"><name>bsp_pmic_get_and_clear_interrupts</name></member>
     <member refid="group__g09__battery_1ga1490945aa7172ca14c858343e5eb7c1d" kind="function"><name>bsp_pmic_get_boot_irq_snapshot</name></member>
+    <member refid="group__g09__battery_1gaab609a59b232d77293486c512e261ec1" kind="function"><name>bsp_pmic_get_early_snapshot</name></member>
     <member refid="group__g09__battery_1gaa44b7d74a92cd2310fbbc2fd65706376" kind="function"><name>bsp_pmic_regulator_name</name></member>
     <member refid="group__g09__battery_1ga85117edc3eb1227d64acbff80e325a70" kind="function"><name>bsp_pmic_read_adc_mv</name></member>
+    <member refid="group__g09__battery_1ga3f92ddf7f40afc153f2ac3d1b1597afa" kind="function"><name>bsp_pmic_run_adc_diagnostic</name></member>
     <member refid="group__g99__others_1ga01defd4b39434d4ae657964612fb979f" kind="function"><name>bsp_rtc_init</name></member>
     <member refid="group__g99__others_1ga224266ba335da179049a37c6161d07ad" kind="function"><name>bsp_rtc_deinit</name></member>
     <member refid="group__g99__others_1ga3f3bfcaeb97cf7120f96158aecda325a" kind="function"><name>bsp_rtc_get_time</name></member>
@@ -298,6 +323,7 @@
     <member refid="group__g03__audio_1gad7ce449cdaa2fbac88496acc1770bb35" kind="function"><name>bsp_audio_codec_microphone_init</name></member>
     <member refid="group__g03__audio_1ga7c8a335f27475238a2df0dae613b79c8" kind="function"><name>bsp_audio_codec_deinit</name></member>
     <member refid="group__g12__camera_1ga31ceaa7779690293394b5e271f2c20d3" kind="function"><name>bsp_camera_start</name></member>
+    <member refid="group__g12__camera_1gafe03973a12d37b25a1ae41612af5d67b" kind="function"><name>bsp_camera_apply_workaround</name></member>
     <member refid="group__g12__camera_1ga563084d63808df72dc933b05a4a1ee65" kind="function"><name>bsp_camera_stop</name></member>
     <member refid="group__g06__led_1gade044685f5abc078703642e7e9a94e6b" kind="function"><name>bsp_led_indicator_create</name></member>
     <member refid="group__g06__led_1ga8174cd1f8a14cc1a6ac2a7b397a635e4" kind="function"><name>bsp_led_set</name></member>
@@ -500,6 +526,7 @@
     <member refid="group__g07__usb_1gga3ade17ee740539518d6a3f572ac1fd6da47b7740fef184e7ff58a401efc74523f" kind="enumvalue"><name>BSP_TYPE_C_CURRENT_DEFAULT</name></member>
     <member refid="group__g07__usb_1gga3ade17ee740539518d6a3f572ac1fd6da92063cbcbfb840080fa792f1251d42fe" kind="enumvalue"><name>BSP_TYPE_C_CURRENT_1_5_A</name></member>
     <member refid="group__g07__usb_1gga3ade17ee740539518d6a3f572ac1fd6daec0ceef08bba164a8f8fab3133e22b71" kind="enumvalue"><name>BSP_TYPE_C_CURRENT_3_0_A</name></member>
+    <member refid="group__g07__usb_1gga3ade17ee740539518d6a3f572ac1fd6da29b30b81dce552a21a4bf465e7203099" kind="enumvalue"><name>BSP_TYPE_C_CURRENT_NONE</name></member>
     <member refid="group__g07__usb_1ga580c2455e8b1da85776fdd8a1460a92e" kind="enum"><name>bsp_usb_host_power_mode_t</name></member>
     <member refid="group__g07__usb_1gga580c2455e8b1da85776fdd8a1460a92ea35cdd0577613e8a199ced0d97b434579" kind="enumvalue"><name>BSP_USB_HOST_POWER_MODE_USB_DEV</name></member>
     <member refid="group__g07__usb_1gac9e57b339c3aa510e4d63e41077b9243" kind="function"><name>bsp_type_c_init</name></member>
@@ -553,6 +580,11 @@
     <member refid="group__g09__battery_1ggac085a9cd0c93def85a85dad2282712d8a6d0f5d1205e57be3c6f3f8d6338f01b3" kind="enumvalue"><name>BSP_PMIC_ADC_VSYS</name></member>
     <member refid="group__g09__battery_1ggac085a9cd0c93def85a85dad2282712d8ae0759089380a63d87440e6206ba6e48b" kind="enumvalue"><name>BSP_PMIC_ADC_TDIE</name></member>
     <member refid="group__g09__battery_1ggac085a9cd0c93def85a85dad2282712d8a6c4e95b37e54ddb3b1950bafca12e395" kind="enumvalue"><name>BSP_PMIC_ADC_COUNT</name></member>
+    <member refid="group__g09__battery_1gab13d9119d820e189faaf92ec3e0a5a74" kind="enum"><name>bsp_pmic_early_snapshot_valid_t</name></member>
+    <member refid="group__g09__battery_1ggab13d9119d820e189faaf92ec3e0a5a74a86cb49f9c82762870ab4bcff1f56e9c9" kind="enumvalue"><name>BSP_PMIC_EARLY_STATUS_VALID</name></member>
+    <member refid="group__g09__battery_1ggab13d9119d820e189faaf92ec3e0a5a74aa270fb8315c3ce326b78de70652e6a76" kind="enumvalue"><name>BSP_PMIC_EARLY_POWER_SOURCE_VALID</name></member>
+    <member refid="group__g09__battery_1ggab13d9119d820e189faaf92ec3e0a5a74ac1b29109980b20351ce0124ff5192208" kind="enumvalue"><name>BSP_PMIC_EARLY_ADC_CONTROL_VALID</name></member>
+    <member refid="group__g09__battery_1ggab13d9119d820e189faaf92ec3e0a5a74a7d970c79775810f7c4a215d051bb6a17" kind="enumvalue"><name>BSP_PMIC_EARLY_IRQ_STATUS_VALID</name></member>
     <member refid="group__g09__battery_1gafc552cad10578b7be6e6bcf6b9f9df5c" kind="typedef"><name>bsp_power_safe_shutdown_cb_t</name></member>
     <member refid="group__g09__battery_1ga306c58405c1071b25b65328676812a43" kind="function"><name>bsp_power_set_safe_shutdown_callback</name></member>
     <member refid="group__g09__battery_1ga6b469c2a77aa6b0c0bfc0a583d0cdd7c" kind="function"><name>bsp_power_safe_state</name></member>
@@ -591,8 +623,10 @@
     <member refid="group__g09__battery_1ga56a2fb03598dc4a732478c2c3c381c61" kind="function"><name>bsp_pmic_switch_name</name></member>
     <member refid="group__g09__battery_1gaff505337d71d51f74aa5ae6eede3c5c9" kind="function"><name>bsp_pmic_get_and_clear_interrupts</name></member>
     <member refid="group__g09__battery_1ga1490945aa7172ca14c858343e5eb7c1d" kind="function"><name>bsp_pmic_get_boot_irq_snapshot</name></member>
+    <member refid="group__g09__battery_1gaab609a59b232d77293486c512e261ec1" kind="function"><name>bsp_pmic_get_early_snapshot</name></member>
     <member refid="group__g09__battery_1gaa44b7d74a92cd2310fbbc2fd65706376" kind="function"><name>bsp_pmic_regulator_name</name></member>
     <member refid="group__g09__battery_1ga85117edc3eb1227d64acbff80e325a70" kind="function"><name>bsp_pmic_read_adc_mv</name></member>
+    <member refid="group__g09__battery_1ga3f92ddf7f40afc153f2ac3d1b1597afa" kind="function"><name>bsp_pmic_run_adc_diagnostic</name></member>
     <member refid="group__g09__battery_1ga5cb9164521a5b736382a6735bf31c1e3" kind="define"><name>BSP_TYPE_C_CTRL_EN</name></member>
     <member refid="group__g09__battery_1gae5c55fbf60d3de397a98cddaa5db08a4" kind="define"><name>BSP_TYPE_C_CTRL_EN_ACTIVE_LEVEL</name></member>
     <member refid="group__g09__battery_1ga7ec40f88a88b8281b9afed76edf5b756" kind="define"><name>BSP_PMIC_RTC_INT</name></member>
@@ -601,6 +635,7 @@
     <member refid="group__g09__battery_1gaf564eb55b21649ebce2864b912372a85" kind="define"><name>BSP_TYPE_C_INT_ACTIVE_LEVEL</name></member>
     <member refid="group__g09__battery_1gaded0793ed03c28a2c3ce78c7530a4e8f" kind="define"><name>BSP_USB_OTG_EN</name></member>
     <member refid="group__g09__battery_1ga80e48d261694bf597b60a5ede1165912" kind="define"><name>BSP_USB_OTG_EN_ACTIVE_LEVEL</name></member>
+    <member refid="group__g09__battery_1gaadd3b5e61fbcc9638b59c07d566b6847" kind="define"><name>BSP_PMIC_ADC_DIAGNOSTIC_SAMPLE_COUNT</name></member>
     <member refid="group__g09__battery_1ga473c8b8ab4b9775468e305f849136224" kind="define"><name>BSP_PMIC_SAFE_CHARGE_CURRENT_MA</name></member>
     <member refid="group__g09__battery_1ga1086e9aea588b000af5cb00e4e7102dc" kind="define"><name>BSP_PMIC_SAFE_CHARGE_VOLTAGE_MV</name></member>
     <member refid="group__g09__battery_1ga31745caedc1b93d5f1db332af4c2b74e" kind="define"><name>BSP_PMIC_SAFE_PRECHARGE_CURRENT_MA</name></member>
@@ -609,6 +644,7 @@
   </compound>
   <compound refid="group__g12__camera" kind="group"><name>g12_camera</name>
     <member refid="group__g12__camera_1ga31ceaa7779690293394b5e271f2c20d3" kind="function"><name>bsp_camera_start</name></member>
+    <member refid="group__g12__camera_1gafe03973a12d37b25a1ae41612af5d67b" kind="function"><name>bsp_camera_apply_workaround</name></member>
     <member refid="group__g12__camera_1ga563084d63808df72dc933b05a4a1ee65" kind="function"><name>bsp_camera_stop</name></member>
     <member refid="group__g12__camera_1gadbc8cc580edb18330bde5707751160b7" kind="define"><name>BSP_CAMERA_RST</name></member>
     <member refid="group__g12__camera_1gab06efd74353759d9266e8368e9f087e3" kind="define"><name>BSP_CAMERA_PWDN</name></member>

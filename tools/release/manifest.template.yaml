@@ -41,11 +41,11 @@ toolchain:
 
 # (6) Flash command and expected ROM/application output.
 flashing:
-  command: "sha256sum -c candis_s31_factory_merged.bin.sha256 && esptool --chip esp32s31 --port PORT --baud 115200 --before default-reset --after hard-reset write-flash --flash-mode dio --flash-freq 40m --flash-size 16MB 0x0 candis_s31_factory_merged.bin"
+  command: "sha256sum -c candis_s31_factory_merged.bin.sha256 && esptool --chip esp32s31 --port PORT --baud 4000000 --before default-reset --after hard-reset write-flash --flash-mode dio --flash-freq 40m --flash-size 16MB 0x0 candis_s31_factory_merged.bin"
   rom_log_required: true
   expected_application_output: |
     Candis-S31 Factory Bring-up
-    EVT1 hardware has not been tested; use commands one stage at a time
+    EVT1 ROM/download path is known-good; complete recovery validation remains release-specific
     safe_state       PASS     direct power domains disabled
     candis-factory>
 

@@ -7,15 +7,9 @@
 #include "unity.h"
 #include "unity_test_runner.h"
 
-#include "driver/i2c_master.h"
 
 #include "rx8130ce.h"
 
-/* The pins only have to exist on the target: no case below starts an I2C
- * transfer with a configured device, so the tests run on a board without
- * a RX8130CE. */
-#define TEST_I2C_SCL_IO  (GPIO_NUM_18)
-#define TEST_I2C_SDA_IO  (GPIO_NUM_8)
 
 TEST_CASE("default configuration keeps the primary-cell policy", "[rx8130ce]")
 {
@@ -31,46 +25,39 @@ TEST_CASE("default configuration keeps the primary-cell policy", "[rx8130ce]")
 TEST_CASE("create rejects invalid configuration before any I2C transfer",
           "[rx8130ce]")
 {
-    i2c_master_bus_handle_t bus = NULL;
-    const i2c_master_bus_config_t bus_config = {
-        .i2c_port = I2C_NUM_0,
-        .sda_io_num = TEST_I2C_SDA_IO,
-        .scl_io_num = TEST_I2C_SCL_IO,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-    };
-    TEST_ASSERT_EQUAL(ESP_OK, i2c_new_master_bus(&bus_config, &bus));
-
+    /* All invalid cases return before i2c_master_bus_add_device(). A sentinel
+     * handle keeps this test linkable on Linux/no-I2C targets. */
+    i2c_master_bus_handle_t fake_bus =
+        (i2c_master_bus_handle_t)(uintptr_t)1;
     rx8130ce_handle_t device = NULL;
     rx8130ce_config_t config = RX8130CE_CONFIG_DEFAULT();
 
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
                       rx8130ce_create(NULL, &config, &device));
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
-                      rx8130ce_create(bus, &config, NULL));
+                      rx8130ce_create(fake_bus, &config, NULL));
     TEST_ASSERT_NULL(device);
 
     config.device_address = 0x80;
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
-                      rx8130ce_create(bus, &config, &device));
+                      rx8130ce_create(fake_bus, &config, &device));
     TEST_ASSERT_NULL(device);
 
     config.device_address = RX8130CE_I2C_ADDRESS_DEFAULT;
     config.scl_speed_hz = 0;
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
-                      rx8130ce_create(bus, &config, &device));
+                      rx8130ce_create(fake_bus, &config, &device));
     config.scl_speed_hz = RX8130CE_I2C_CLOCK_HZ + 1;
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
-                      rx8130ce_create(bus, &config, &device));
+                      rx8130ce_create(fake_bus, &config, &device));
     TEST_ASSERT_NULL(device);
 
     /* The cutoff-less BFVSEL encoding (11b) must stay unreachable. */
     config.scl_speed_hz = RX8130CE_I2C_CLOCK_HZ;
     config.backup_charge_cutoff = (rx8130ce_charge_cutoff_t)3;
     TEST_ASSERT_EQUAL(ESP_ERR_INVALID_ARG,
-                      rx8130ce_create(bus, &config, &device));
+                      rx8130ce_create(fake_bus, &config, &device));
     TEST_ASSERT_NULL(device);
-
-    TEST_ASSERT_EQUAL(ESP_OK, i2c_del_master_bus(bus));
 }
 
 TEST_CASE("time validation accepts leap days and rejects bad fields",

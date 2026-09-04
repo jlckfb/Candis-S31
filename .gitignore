@@ -7,7 +7,7 @@ sdkconfig
 sdkconfig.old
 **/managed_components/
 .manifest_sha
-dependencies.lock
+vendor/esp-bsp/**/test_apps/dependencies.lock
 
 # Firmware images belong in release assets, not the source tree
 *.bin

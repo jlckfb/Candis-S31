@@ -16,7 +16,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="363" column="14" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="363" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="410" column="14" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="410" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__rtc__time__t_1aa32291d279d5d66984cdecb1ecbbc966" prot="public" static="no" mutable="no">
         <type>uint8_t</type>
@@ -30,7 +30,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="364" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="364" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="411" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="411" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__rtc__time__t_1a3d5004526f26b8b8da0a555883cc3cbb" prot="public" static="no" mutable="no">
         <type>uint8_t</type>
@@ -44,7 +44,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="365" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="365" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="412" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="412" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__rtc__time__t_1ae62c6d8326484739a51f0cc2956ceb87" prot="public" static="no" mutable="no">
         <type>uint8_t</type>
@@ -58,7 +58,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="366" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="366" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="413" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="413" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__rtc__time__t_1a21b4b943d479a41139eb14c864ae79a3" prot="public" static="no" mutable="no">
         <type>uint8_t</type>
@@ -72,7 +72,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="367" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="367" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="414" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="414" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__rtc__time__t_1a0fbf7a5de63fb5e196f08ff8a08c2e74" prot="public" static="no" mutable="no">
         <type>uint8_t</type>
@@ -86,7 +86,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="368" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="368" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="415" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="415" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__rtc__time__t_1a89a66301b26709e4deb930f1ddcab85f" prot="public" static="no" mutable="no">
         <type>uint8_t</type>
@@ -100,7 +100,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="369" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="369" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="416" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="416" bodyend="-1"/>
       </memberdef>
     </sectiondef>
     <briefdescription>
@@ -108,7 +108,7 @@
     <detaileddescription>
 <para>Calendar time stored in the RX8130CE. </para>
     </detaileddescription>
-    <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="362" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="362" bodyend="370"/>
+    <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="409" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="409" bodyend="417"/>
     <listofallmembers>
       <member refid="structbsp__rtc__time__t_1a3d5004526f26b8b8da0a555883cc3cbb" prot="public" virt="non-virtual"><scope>bsp_rtc_time_t</scope><name>day</name></member>
       <member refid="structbsp__rtc__time__t_1a21b4b943d479a41139eb14c864ae79a3" prot="public" virt="non-virtual"><scope>bsp_rtc_time_t</scope><name>hour</name></member>

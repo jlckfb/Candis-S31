@@ -199,6 +199,8 @@ esp_err_t bsp_type_c_get_status(bsp_type_c_status_t *status, bool clear_interrup
             .orientation = driver_status.orientation,
             .role = role_from_driver(driver_role),
             .advertised_current =
+                driver_status.advertised_current == FUSB303B_CURRENT_NONE ?
+                BSP_TYPE_C_CURRENT_NONE :
                 driver_status.advertised_current == FUSB303B_CURRENT_3_0_A ?
                 BSP_TYPE_C_CURRENT_3_0_A :
                 driver_status.advertised_current == FUSB303B_CURRENT_1_5_A ?

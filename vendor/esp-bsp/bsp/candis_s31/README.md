@@ -11,11 +11,12 @@ management, an RTC, two USB Type-C connectors, an ES8389 audio codec, a DVP
 camera connector, a microSD slot, and one addressable RGB LED.
 
 This BSP follows schematic revision 0.5. The implementation and examples are
-compile-tested with ESP-IDF 6.1, and the EVT1 hardware has completed bring-up
-for the display, touch, audio, storage, USB, camera, RTC, and PMIC domains.
-The corrected camera FPC adapter board is fitted: DVP streaming, color-bar
-capture, and on-display preview are verified on EVT1 hardware; treat
-remaining electrical-behavior notes as EVT1-validated unless marked otherwise.
+compile-tested with ESP-IDF 6.1. EVT1 hardware has recorded validation for the
+display, touch, storage, USB, RTC, and PMIC domains; ES8389 initialization and
+digital-path checks pass, while speaker/microphone listening acceptance remains
+open. The corrected camera FPC adapter is fitted and DVP streaming plus the
+color-bar path are verified; real-scene image quality and JPEG capture remain
+EVT-specific validation items.
 
 ## Capabilities and dependencies
 
@@ -86,31 +87,29 @@ init and deletes the handle): REG62 charge current to
 reset, so a ceiling raised by an earlier session is collapsed before a weak
 source can be plugged in), REG64 charge voltage to
 `BSP_PMIC_SAFE_CHARGE_VOLTAGE_MV` (4200 mV; POR is unspecified and the
-vendor FAQ requires the register to match the fuel-gauge model CV or the
-SOC jumps), REG61 precharge to 50 mA and REG63 termination to 25 mA with
+vendor FAQ requires the register to match the fuel-gauge model CV or the SOC
+jumps), REG61 precharge to 50 mA and REG63 termination to 25 mA with
 termination enabled (vendor EVB recipe, manual section 4.5 step 5). The
 matching public setters/getters are `bsp_pmic_set/get_charge_current`,
 `bsp_pmic_set/get_charge_voltage`,
 `bsp_pmic_set/get_precharge_current` and
-`bsp_pmic_set/get_termination_current`. Init then programs the built-in
-reference fuel-gauge model best-effort
-(`src/bsp_pmic_reference_model.c`): the vendor generic 4.2 V-class
-fallback, GPL-origin data that is NOT Apache-2.0 - redistribution requires
-a license review, and replacing it with a properly licensed cell-specific
-model is an upstream/external-release blocker. SOC accuracy with the
-reference model is provisional; a materially different battery SKU or
-chemistry needs a new model, not per-unit calibration. A download failure
-only logs a warning; charging and the PMIC stay alive. A later
-cell-specific model can replace the reference at runtime through
-`bsp_pmic_program_battery_model()` (re-verifies; the driver-level
-create-time `battery_model` hook is unused because it fails the whole
-create on a download error). `bsp_pmic_status_t.fuel_gauge_valid` reports
-whether the SOC estimate is currently backed by a model and
-`fuel_gauge_reference_model` whether that model is the reference default
-(reference accuracy) or a custom override; when invalid, treat
-`battery_percent` as meaningless and never convert `battery_mv`
-into a percentage instead. Validity is dropped before a runtime override
-attempt and on init failure, so a partial download is never reported.
+`bsp_pmic_set/get_termination_current`.
+
+Init then verifies the TG28 factory ROM model without embedding its bytes: it
+reads the model once through `tg28_sw_read_battery_model()` and uses a
+successful read as the default model-availability check. The model bytes
+remain in the PMIC and are never copied into this Apache-2.0 BSP. A read
+failure only logs a warning; charging and the PMIC stay alive. A
+battery-specific model obtained under a compatible license can replace the
+factory model at runtime through `bsp_pmic_program_battery_model()` (the
+driver-level create-time `battery_model` hook is unused because it fails the
+whole create on a download error). `bsp_pmic_status_t.fuel_gauge_valid`
+reports whether the current model was successfully verified or programmed,
+and `fuel_gauge_reference_model` identifies the factory ROM model; when
+invalid, treat `battery_percent` as meaningless and never convert
+`battery_mv` into a percentage instead. Validity is dropped before a runtime
+override attempt and on init failure, so a partial download is never reported.
+
 
 `bsp_power_safe_state()` is a low-level best-effort rail/GPIO sweep. Stop
 active display, audio, camera, and USB owners first so they can release handles
@@ -122,14 +121,10 @@ and issue their protocol-level shutdown commands.
   AM200Q460460LK module supplier's reference material. Its license status is
   being confirmed with the supplier; treat the sequence as supplier-provided
   reference data until that confirmation is complete.
-- Touch support resolves `espressif/esp_lcd_touch_cst820` to the in-tree copy
-  under `components/lcd_touch/esp_lcd_touch_cst820` (Apache-2.0) through
-  `override_path` instead of pulling a registry package. The in-tree component
-  is a self-maintained implementation, independent of the same-named
-  `kodediy/esp_lcd_touch_cst820` registry package that earlier revisions of
-  this BSP referenced; it keeps the module-specific CST820 report handling
-  maintainable. It remains the Espressif `esp_lcd_touch` driver and is
-  functionally equivalent.
+- Touch support uses the published `espressif/esp_lcd_touch_cst820`
+  component (Apache-2.0), which follows the module-specific CST820 report
+  format and exposes the common `esp_lcd_touch` API. Its framework sleep hooks
+  map to the documented monitor-mode entry/exit helpers.
 
 ## Compatible BSP examples
 
@@ -210,10 +205,28 @@ pin with interrupts disabled.
 
 The on-board 2.0-inch CO5300 AMOLED (QSPI, 460x460 active area inside a 470x460 GRAM window; the supplier init code sets the column window 10..469) and the CST820 capacitive touch panel (I2C, `BSP_I2C_NUM`) are both initialized by `bsp_display_start()`.
 
-- **Sleep:** `bsp_display_enter_sleep()` / `bsp_display_exit_sleep()` put the panel into/out of sleep-in mode and put the CST820 into deep sleep. The touch controller has no wake pin, so `bsp_display_exit_sleep()` resets it over its RST GPIO and re-checks its chip ID.
-- **Deep standby:** `bsp_display_enter_deep_standby()` additionally sends the CO5300 deep-standby command (RAM content lost). After `bsp_display_exit_deep_standby()` the full display pipeline is rebuilt, but LVGL widgets/screens are not recreated automatically; the application must show its screen again (e.g. `lv_screen_load()`).
-- **Rotation:** `bsp_display_rotate()` rotates in software (LVGL rendering). On LVGL 9.5 the touch coordinates follow the display rotation automatically. 90/180-degree rotation may show a small offset on this panel; verify on hardware before relying on it.
-- **TE synchronization:** with `CONFIG_BSP_LCD_TE_SYNC` (default y) the LVGL refresh is gated on the panel's tearing-effect output (GPIO16) through the esp_lvgl_adapter TE_SYNC profile: each TE-gated flush transfers the whole frame. At the 48 MHz QSPI limit a full frame takes ~17.6 ms, so full-screen motion tops out at ~30 fps while local animations track the 60 Hz TE beat; sparse, local invalidations keep the UI tear-free. Disable the option only for diagnostics - the adapter then flushes without TE alignment.
+- **Sleep:** `bsp_display_enter_sleep()` / `bsp_display_exit_sleep()` put the
+  panel into/out of sleep-in mode and use the CST820 framework sleep hooks to
+  enter/exit its documented monitor-mode path. Exiting resets the controller
+  over its RST GPIO and re-checks its chip ID.
+- **Deep standby:** `bsp_display_enter_deep_standby()` additionally sends the
+  CO5300 deep-standby command (GRAM content lost). After
+  `bsp_display_exit_deep_standby()` the full display pipeline is rebuilt; the
+  CO5300 v2.1 driver replays its cached MADCTL rotation, but LVGL widgets/screens
+  are not recreated automatically and the application must show its screen again.
+- **Rotation:** `BSP_DISPLAY_ROTATE_180` defaults to enabled for the upside-down
+  EVT1 panel and applies a hardware MX|MY mirror during the common panel init;
+  it also mirrors default CST820 coordinates. `bsp_display_rotate()` uses the
+  panel hardware callbacks when software rotation is disabled, or LVGL software
+  rotation when `sw_rotate` is enabled. Disable the Kconfig option for an upright
+  board spin and keep the touch transform matched.
+- **TE synchronization:** with `CONFIG_BSP_LCD_TE_SYNC` (default y) the LVGL
+  refresh is gated on the panel's tearing-effect output (GPIO16) through the
+  esp_lvgl_adapter TE_SYNC profile: each TE-gated flush transfers the whole frame.
+  At the 48 MHz QSPI limit a full frame takes ~17.6 ms, so full-screen motion tops
+  out at ~30 fps while local animations track the 60 Hz TE beat; sparse, local
+  invalidations keep the UI tear-free. Disable the option only for diagnostics.
+
 - **Touch is optional:** if the CST820 is missing or fails to initialize, `bsp_display_start()` still succeeds and logs a warning; the display keeps working without touch input.
 
 See [API.md](API.md) for the full function reference.
@@ -225,23 +238,22 @@ OV5640, and the checked-in camera example selects its
 800 x 600 RGB565 DVP mode. Select the corresponding `esp_cam_sensor` option if
 a different module is fitted.
 
-The sensor is clocked with a 24 MHz XCLK (`BSP_CAMERA_XCLK_CLOCK_MHZ`); all
-OV5640 register tables in `esp_cam_sensor` assume 24 MHz, and `bsp_camera.c`
-enforces this with a compile-time check. Only the DVP video device is
+The sensor tables use a nominal 24 MHz XCLK identifier
+(`BSP_CAMERA_XCLK_CLOCK_MHZ`) and are authored around that input. On EVT1 the
+validated board workaround drives the LEDC timer at 20 MHz (measured about
+20.1 MHz); do not describe the runtime clock as an exact 24 MHz signal. The
+constant remains 24 MHz to document the selected table and protect against
+accidentally mixing a different sensor table. Only the DVP video device is
 initialized (`ESP_VIDEO_INIT_FLAGS_DVP`).
 
-XCLK comes from LEDC, not from the CAM controller. The esp_video DVP clock
-path (`esp_cam_ctlr_dvp_output_clock()`, called by `init_dvp_clk_func()` in
-`esp_video_init.c` whenever `xclk_io >= 0` and `xclk_freq > 0`) only supports
-integer clock dividers, and no ESP32-S31 CAM controller clock source
-(PLL_F160M, XTAL, APLL) is an integer multiple of the required 24 MHz
-(160 % 24 = 16, 40 % 24 = 16), so that path hard-fails with
-"calculated frequency divider is not integer" before sensor detection. With
-`CONFIG_BSP_CAMERA_XCLK_USE_LEDC=y` (the default) the BSP drives the 24 MHz
-XCLK from a fractional LEDC channel (`CONFIG_BSP_CAMERA_XCLK_LEDC_CH`) and
-passes `xclk_io=GPIO_NUM_NC` / `xclk_freq=0` to esp_video, which then skips
-the failing controller clock path; the DVP video device creates its
-controller with `pin_dont_init=true`, so the capture path is unaffected.
+XCLK comes from LEDC, not from the CAM controller. The esp_video DVP clock path
+only supports integer clock dividers, and no ESP32-S31 default CAM source gives
+an exact 24 MHz divider. With `CONFIG_BSP_CAMERA_XCLK_USE_LEDC=y` (the default)
+the BSP starts the board-local LEDC clock, passes `xclk_io=GPIO_NUM_NC` /
+`xclk_freq=0` to esp_video, and skips the failing controller clock path; the DVP
+video device creates its controller with `pin_dont_init=true`, so capture is
+still possible. The actual sensor/module image quality remains an EVT-specific
+validation item.
 
 This board has no autofocus hardware: the schematic carries no VCM driver and
 the camera FPC's AF_VCC pin is tied to the 2.8 V camera rail through a 0 ohm

@@ -7,17 +7,18 @@ set -euo pipefail
 # PORT [MERGED_IMAGE] [BAUD] GPIO61_DOWNLOAD_LEVEL GPIO61_RUN_LEVEL.
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 port=${1:-PORT}
-image=${2:-"${script_dir}/../factory/release/candis_s31_factory_merged.bin"}
-# Default to the conservative baud: the UART0 series resistors (998 ohm TX /
-# 499 ohm RX) are unverified on EVT1. Raise to 460800 only after the download
-# path passes at the intended high baud.
-baud=${3:-115200}
+image=${2:-"${script_dir}/candis_s31_factory_merged.bin"}
+# ESP32-S31 ROM/stub downloads have been validated at 4,000,000 baud. Callers
+# may lower this explicitly for a marginal host or cable.
+baud=${3:-4000000}
+
+
 download_level=${4:-}
 run_level=${5:-}
 
 if [[ "${port}" == "PORT" ]]; then
     echo "usage: $0 PORT [MERGED_IMAGE] [BAUD] GPIO61_DOWNLOAD_LEVEL GPIO61_RUN_LEVEL" >&2
-    echo "example: $0 /dev/ttyACM0 ./candis_s31_factory_merged.bin 115200 0 1" >&2
+    echo "example: $0 /dev/ttyACM0 ./candis_s31_factory_merged.bin 4000000 0 1" >&2
     exit 2
 fi
 if [[ "${download_level}" != "0" || "${run_level}" != "1" ]]; then

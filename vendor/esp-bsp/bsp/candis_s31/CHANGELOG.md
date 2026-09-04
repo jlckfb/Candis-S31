@@ -6,6 +6,7 @@
 
 * USB Host: quiesce the root port with `usb_host_lib_set_root_port_power(false)` and a 50 ms drain before stopping the event task and uninstalling the host library. The upstream USB 1.5.0 teardown can leave a deferred HCD port callback; powering the root port down while the library object is still alive lets the event task drain it before `usb_host_uninstall()` clears the global object
 * Camera: drive the OV5640 XCLK from LEDC instead of the CAM controller. The esp_video DVP clock path (`esp_cam_ctlr_dvp_output_clock()`) only supports integer dividers and no ESP32-S31 CAM controller clock source is an integer multiple of the required 24 MHz (PLL_F160M 160 % 24 = 16, XTAL 40 % 24 = 16), so `esp_video_init_with_flags()` hard-failed with "calculated frequency divider is not integer" before any sensor detection; `CONFIG_BSP_CAMERA_XCLK_USE_LEDC` is now enabled by default and the BSP passes `xclk_io=GPIO_NUM_NC` / `xclk_freq=0` to esp_video so the controller clock path is skipped entirely. This supersedes the v1.2.0 "XCLK is no longer driven twice" entry, which was written against a fractional-divider assumption that does not hold on the S31 silicon/driver
+* Display: apply the EVT1 upside-down 180-degree MX|MY orientation in the shared panel initialization path, keep runtime LVGL rotations intact across deep-standby reset, and require `esp_lcd_co5300` `^2.1.0` for the mirror callback
 
 ## v1.2.0 - 2026-08-22
 
@@ -15,10 +16,12 @@
 * PMIC: add the load-switch API `bsp_pmic_switch_enable()`/`bsp_pmic_switch_is_enabled()`/`bsp_pmic_switch_name()` with the `bsp_pmic_switch_t` list (`BSP_PMIC_SWITCH_DC1SW`/`BSP_PMIC_SWITCH_DC4SW`), wrapping the tg28_sw switch channels
 * Power: add `bsp_power_set_safe_shutdown_callback()` so an application can release active protocol owners before `bsp_power_safe_state()` parks pins and removes rails
 * PMIC: force a deterministic charge-profile baseline with exact readback verification at init (any mismatch aborts): REG62 charge current 50 mA (`BSP_PMIC_SAFE_CHARGE_CURRENT_MA`), REG64 charge voltage 4200 mV (`BSP_PMIC_SAFE_CHARGE_VOLTAGE_MV`; POR unspecified, must match the fuel-gauge model CV per vendor FAQ), REG61 precharge 50 mA and REG63 termination 25 mA with termination enabled (vendor EVB recipe section 4.5 step 5); adds the thin `bsp_pmic_set/get_precharge_current` and `bsp_pmic_set/get_termination_current` wrappers over the existing tg28_sw APIs
-* PMIC: program the vendor generic 4.2 V-class reference fuel-gauge model at init, best-effort (failure logs a warning and leaves the gauge invalid without touching charging). The 128-byte table in `src/bsp_pmic_reference_model.c` is verbatim GPL-origin data - not Apache-2.0 - and replacing it with a properly licensed cell-specific model is an upstream/external-release blocker; `bsp_pmic_program_battery_model()` remains the runtime override
-* PMIC: `bsp_pmic_status_t` gains `fuel_gauge_valid` (true only while the TG28 SOC estimate is backed by a programmed model; no voltage-to-percent substitution when false) and `fuel_gauge_reference_model` (true = the active valid model is the BSP reference default, SOC is reference accuracy, never per-battery calibrated); model validity is dropped before a runtime override attempt and on init failure/deinit so a partial or failed download can never be reported valid
+* PMIC: verify the TG28 factory ROM battery model at init without embedding or redistributing vendor model bytes; `bsp_pmic_program_battery_model()` remains the runtime override for a compatible licensed model
+
+* PMIC: `bsp_pmic_status_t` gains `fuel_gauge_valid` (true after the TG28 ROM model is verified or a custom model is programmed; no voltage-to-percent substitution when false) and `fuel_gauge_reference_model` (true while the active valid model is the factory ROM model); validity is dropped before a runtime override attempt and on init failure/deinit
 * PMIC: add the `BSP_PMIC_CPUSLDO` rail enum, following the tg28_sw 0.3.0 rail table (unconnected on this board, kept off); rail count is now thirteen
-* RTC: pass `backup_charge_enable = false` explicitly at driver creation (rx8130ce 0.3.0 config field); Candis-S31 uses a primary backup cell
+* RTC: pass the complete primary-cell policy at driver creation (`backup_charge_enable = false`, 3.02 V cutoff, and low-voltage detection enabled); Candis-S31 uses a primary backup cell
+
 * Power: select the board's TS input through the generalized `tg28_sw_set_ts_config` API (external fixed TS, current source off)
 
 ### Fixed
@@ -37,7 +40,7 @@
 
 ### Notes
 
-* Driver dependencies raised to tg28_sw `^0.4.0`, rx8130ce `^0.4.0`, fusb303b `^0.2.0`
+* Driver dependencies raised to tg28_sw `^0.4.0`, rx8130ce `^0.4.0`, fusb303b `^0.3.0`
 
 …
 

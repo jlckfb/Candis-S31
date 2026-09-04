@@ -22,7 +22,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="775" column="14" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="775" declcolumn="14"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="831" column="14" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="831" declcolumn="14"/>
       </memberdef>
       <memberdef kind="function" id="group__g04__display_1gaff98dc9c5df3ce94267754f35face5d2" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>lv_display_t *</type>
@@ -39,7 +39,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="776" column="14" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="776" declcolumn="14"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="832" column="14" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="832" declcolumn="14"/>
       </memberdef>
       <memberdef kind="function" id="group__g04__display_1gab8fd25dcfa6e359bc8be86607f3b2f47" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -56,7 +56,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="780" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="780" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="836" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="836" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g04__display_1gaa358520a1c77dbf054e73757e48dea9a" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>lv_indev_t *</type>
@@ -72,7 +72,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="781" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="781" declcolumn="12"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="837" column="12" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="837" declcolumn="12"/>
       </memberdef>
       <memberdef kind="function" id="group__g04__display_1ga8f9276ddd28d9427995f513d36aed139" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>bool</type>
@@ -89,7 +89,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="782" column="6" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="782" declcolumn="6"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="838" column="6" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="838" declcolumn="6"/>
       </memberdef>
       <memberdef kind="function" id="group__g04__display_1gac08779b1b61a813af6d9c96a4b54740d" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>void</type>
@@ -105,7 +105,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="783" column="6" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="783" declcolumn="6"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="839" column="6" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="839" declcolumn="6"/>
       </memberdef>
       <memberdef kind="function" id="group__g04__display_1ga6dfbbc4674136c9d37bc28fc6eee2662" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>void</type>
@@ -126,7 +126,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="784" column="6" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="784" declcolumn="6"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="840" column="6" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="840" declcolumn="6"/>
       </memberdef>
       <memberdef kind="function" id="group__g04__display_1ga4bb816859abde4dcf196ca41b380a94a" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -142,7 +142,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="785" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="785" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="841" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="841" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g04__display_1ga4528c90bb660dfe358849b9c379d7ca9" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -158,7 +158,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="786" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="786" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="842" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="842" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g04__display_1ga09de1a5b49f1651ce50467cffdd25590" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -175,7 +175,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="792" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="792" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="848" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="848" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g04__display_1ga6f84800bb405d51d01f7a7be2ba68092" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -191,7 +191,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="793" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="793" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="849" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="849" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g04__display_1ga6a5dff2d5fa31f65d083e173ae5a73f9" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -207,7 +207,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="794" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="794" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="850" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="850" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g04__display_1ga22b7af91da70df12626c81fb6297b418" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -223,7 +223,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="795" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="795" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="851" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="851" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g04__display_1ga351d7157db337483dafe16ea3cf67969" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>

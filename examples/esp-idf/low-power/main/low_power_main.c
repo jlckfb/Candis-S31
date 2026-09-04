@@ -505,11 +505,9 @@ static esp_err_t display_and_touch_start(void)
 /**
  * Put panel and touch into their S1 low-power modes.
  *
- * bsp_display_enter_sleep() also drives the touch controller into its deep
- * sleep (~2 uA) through esp_lcd_touch_enter_sleep(), and that mode cannot be
- * woken by a touch. Monitor mode is therefore restored afterwards with a reset
- * cycle: esp_lcd_touch_cst820_exit_monitor_mode() brings the controller back to dynamic
- * mode, and enter_monitor_mode() lets it fall into touch-wakeable standby.
+ * The CST820 framework sleep hook arms its documented monitor-mode path.
+ * The explicit reset/enter cycle below makes the transition deterministic
+ * without relying on an undocumented sleep register.
  */
 static esp_err_t display_and_touch_sleep(void)
 {

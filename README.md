@@ -6,16 +6,17 @@ Candis-S31 is a compact ESP32-S31 development board built around a square 2.0-in
 
 > **Hardware status:** EVT1 (schematic v0.5, fabricated 2026-08-03 as
 > `v0.5_260803_1544`) is in hand and bring-up is well advanced. Validated on
-> physical boards: AMOLED display (460 × 460 QSPI with TE-synchronized LVGL
-> pipeline), capacitive touch, audio output (speaker) and input (dual
-> microphones), microSD, USB Type-C2 host and device roles, Wi-Fi, BLE, RTC,
-> and the PMIC/battery-charging domain (including a watch-style LVGL demo
-> with 16 applications). The camera works: the FPC adapter board has arrived,
-> and DVP streaming, built-in color bars, and on-screen live preview were
-> validated on EVT1 hardware (2026-09-01/02); captured photos are currently
-> stored as raw RGB565 frames (JPEG capture in development). Long-run soak
-> and the low-power budget characterization are pending.
->
+> physical boards: AMOLED display (460 x 460 QSPI with TE-synchronized LVGL
+> pipeline), capacitive touch, microSD, USB Type-C2 host and device roles,
+> Wi-Fi, BLE, RTC, and the PMIC/battery-charging domain (including a
+> watch-style LVGL demo with 16 applications). The ES8389 codec initializes and
+> digital audio paths have passed their available checks; speaker/microphone
+> listening and recording acceptance on the current EVT1 board remain open.
+> The camera link, sensor detection, and built-in color-bar path have been
+> exercised on EVT1 with the FPC adapter; real-scene image quality and the
+> JPEG capture path still require hardware confirmation. Long-run soak and the
+> low-power budget characterization are pending.
+
 > **Beta testers:** see [BETA.md](BETA.md)（中文内测指南）— every firmware
 > project builds after a plain clone with only an ESP-IDF environment.
 
@@ -43,7 +44,7 @@ The current baseline is ESP-IDF `v6.1-rc1`. Installation Manager (EIM), the offi
 
 | Environment | Status |
 |---|---|
-| ESP-IDF | Starter, Factory, the complete local BSP, and the local Board Manager definition compile with `v6.1-rc1`; hardware validation and upstream release are pending |
+| ESP-IDF | Starter, Factory, the complete local BSP, and the local Board Manager definition compile with `v6.1-rc1`; the Board Manager definition currently needs local component overrides until the four driver releases are published |
 | Arduino | Waiting for the ESP32-S31 core, followed by the Candis-S31 board and variant |
 | PlatformIO | Waiting for ESP32-S31 platform, tool, and framework support before adding a board manifest |
 
@@ -51,7 +52,7 @@ Arduino and PlatformIO projects will be added only after they build with their n
 
 ### Build verification — 2026-09-02
 
-Baseline: ESP-IDF `v6.1-rc1`, target `esp32s31` (preview). `tools/build-all.sh` compiles the thirteen default targets below serially; the complete 2026-09-02 regression passed 13/13 (logs under `build-logs/p0-fix/` and `build-logs/review-20260902/`). The `example:*` targets are maintainer-only: they build esp-bsp examples from an external checkout (`ESP_BSP_ROOT`) and are reported as SKIP when that checkout is absent — see the header of `tools/build-all.sh`. The `display_usb_hid` example is not part of the matrix: it drives HID inputs through `esp_lvgl_port` helpers that this `esp_lvgl_adapter`-based BSP does not use.
+Baseline: ESP-IDF `v6.1-rc1`, target `esp32s31` (preview). `tools/build-all.sh` compiles the thirteen default targets serially; the maintainer's complete 2026-09-02 regression passed 13/13. Build logs are local artifacts and are intentionally not shipped; reproduce the matrix with `tools/build-all.sh` and inspect its printed summary. The `example:*` targets are maintainer-only: they build esp-bsp examples from an external checkout (`ESP_BSP_ROOT`) and are reported as SKIP when that checkout is absent — see the header of `tools/build-all.sh`. The `display_usb_hid` example is not part of the matrix: it drives HID inputs through `esp_lvgl_port` helpers that this `esp_lvgl_adapter`-based BSP does not use.
 
 | Target (`tools/build-all.sh --list`) | Source | Status (2026-09-02) |
 |---|---|---|
@@ -115,15 +116,9 @@ Do not enable display bias, USB OTG, or other switched rails before the EVT1 pow
 
 Candis-S31 support is split by ownership:
 
-- the Candis-S31 BSP lives in the public [`LeenixP/esp-bsp`](https://github.com/LeenixP/esp-bsp) fork (branch `feat/candis-s31`), while the reusable TG28_SW / RX8130CE / FUSB303B / CST820 drivers are submitted to [`espressif/idf-extra-components`](https://github.com/espressif/idf-extra-components) per the official guidance — this repository vendors a build-ready snapshot at [`vendor/esp-bsp/`](vendor/esp-bsp/README.md) so every firmware project compiles from a plain clone;
-- the complete ESP-IDF board definition belongs in ESP Board Manager's [`espressif/esp_friends_boards`](https://components.espressif.com/components/espressif/esp_friends_boards) collection;
+- Candis-S31 BSP lives in the public [`LeenixP/esp-bsp`](https://github.com/LeenixP/esp-bsp) fork (branch `feat/candis-s31`); the reusable TG28_SW / RX8130CE / FUSB303B / CST820 drivers are prepared for [`espressif/idf-extra-components`](https://github.com/espressif/idf-extra-components) per the official guidance. This repository vendors a build-ready BSP snapshot at [`vendor/esp-bsp/`](vendor/esp-bsp/README.md), so every firmware project compiles from a plain clone;
+- the complete ESP-IDF board definition belongs in ESP Board Manager's [`espressif/esp_friends_boards`](https://components.espressif.com/components/espressif/esp_friends_boards) collection; local validation uses temporary component overrides until those registry versions exist;
 - reusable device drivers belong in their component source repositories and the [ESP Component Registry](https://components.espressif.com/);
-- the Arduino board entry and variant belong in [Arduino-ESP32](https://github.com/espressif/arduino-esp32), after its ESP32-S31 core is available;
-- the board manifest belongs in [PlatformIO Espressif32](https://github.com/platformio/platform-espressif32), after that platform supports ESP32-S31.
-
-Generic ESP32-S31 fixes belong in ESP-IDF itself. Board pin assignments and device choices do not normally require changes to the ESP-IDF core repository. The BSP follows ESP-BSP APIs so Factory firmware and upstream examples exercise the same implementation. Per the official esp-bsp maintainers' answer (espressif/esp-bsp#823), ESP-BSP accepts only Espressif and M5Stack boards, so the reusable drivers go to idf-extra-components instead and the Board Manager definition remains a separate integration.
-
-For BSP development, point `CANDIS_S31_BSP_PATH` at a live esp-bsp checkout and the build uses it instead of the vendored snapshot; maintainers refresh the snapshot with `tools/sync_bsp.sh`. See [Upstream ownership](UPSTREAM.md) for the repository-by-repository contribution map.
 
 The BSP covers display and touch, TG28_SW power management, RX8130CE RTC, FUSB303B and USB Host, SDMMC, ES8389 audio, the DVP camera pipeline, and the RGB LED. The Board Manager definition generates and compiles against the development components but intentionally omits the Type-C controller and OTG GPIO: its current model cannot atomically enforce Source-before-boost and this board's 500 mA-only policy, so Type-C2 USB Host must use the BSP API.
 

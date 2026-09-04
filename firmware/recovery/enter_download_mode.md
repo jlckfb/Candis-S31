@@ -11,21 +11,18 @@ OTG connector and is not the programming port.
 3. Run `esptool` with `--before default-reset`. The CH343P DTR/RTS download
    circuit should assert reset and the GPIO61 boot strap automatically.
 4. Confirm `esptool --chip esp32s31 --port PORT chip-id` identifies the ROM
-   loader. A successful `chip-id` is the evidence that download mode was
-   entered; do **not** record which strap levels produced it, because the
-   exact strap bit order is not yet settled. ESP-IDF `v6.1-beta1` labels
-   GPIO60/GPIO61 as "Boot Mode select 3/4" in
-   `soc/esp32s31/register/soc/io_mux_reg.h`, while `soc/boot_mode.h` `IS_00XX`
-   tests bits 2-3 for download and the `GPIO_STRAP_REG` field comment in
-   `soc/esp32s31/register/soc/gpio_reg.h` still carries another chip's pin
-   names plus a "need update the description" note. Capture the levels with a
-   scope if the mapping matters for a report.
+   loader. On EVT1 this path has been validated at 115200, 460800, 2,000,000,
+   and 4,000,000 baud; 4,000,000 is the current highest reliable board rate.
+   Retain the complete ROM output as recovery evidence.
 5. Pass explicit `0 1` GPIO61 assertions to `flash_factory.sh`: `0` is the
    observed download-reset level, while `1` is the required post-write run
    level. The script refuses to write without both assertions.
 
-Record whether automatic entry worked. DTR/RTS polarity and reset timing must
-still be confirmed on EVT1.
+The exact strap bit labels remain IDF-version-specific; the recovery contract
+uses the observed GPIO61 levels rather than relying on an ambiguous header
+description. Record whether automatic entry worked and retain the ROM output.
+DTR/RTS polarity and reset timing are board-revision-specific even though the
+current EVT1 path is known-good.
 
 ## Boot-mode straps shared with board functions
 

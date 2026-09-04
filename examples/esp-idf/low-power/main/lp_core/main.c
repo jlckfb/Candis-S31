@@ -19,7 +19,7 @@
  * function). The HP application must not arm its own digital GPIO2 interrupt
  * during that window; see the ownership table in the project README.
  *
- * Mailbox discipline (IDF v6.1-beta1 and master defect):
+ * Mailbox discipline (ESP-IDF v6.1-rc1 and current IDF master):
  * sending asynchronously and then synchronously makes the tx slot index land
  * on the parity the HP core never scans, which live-locks HP receive and hangs
  * the LP core. This file therefore uses lp_core_mailbox_send() exclusively -

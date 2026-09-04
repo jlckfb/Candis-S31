@@ -20,8 +20,9 @@ fuel-gauge, regulator, load-switch, ADC, and interrupt control:
   interrupt sources (`tg28_sw_irq_t`);
 - 14-bit ADC channel reads for VBAT, TS, VBUS, VSYS, and TDIE with
   REG30 channel-enable management;
-- verified per-boot download of a battery-specific REGA1 fuel-gauge model
-  (exactly `TG28_SW_BATTERY_MODEL_SIZE` bytes);
+- read and restore the factory ROM or SRAM fuel-gauge model for diagnostics;
+  model bytes are not supplied by this component and must come from the
+  battery supplier when programming SRAM;
 - DCDC1-DCDC4, ALDO1-ALDO4, BLDO1-BLDO2, CPUSLDO, and DLDO1-DLDO2 voltage
   and enable control (the switch-charger variant has no DCDC5 rail);
 - DC1SW/DC4SW load-switch control for boards whose OTP straps the DLDO
@@ -74,8 +75,9 @@ ESP_ERROR_CHECK(tg28_sw_delete(pmic));
 Set `config.battery_model` and `config.battery_model_size` to download the
 supplier-generated model on every device creation (normally once per boot).
 The model is battery-specific and is deliberately not guessed by this
-component. It may also be downloaded explicitly with
-`tg28_sw_program_battery_model()`.
+component. Use `tg28_sw_read_battery_model()` to inspect the factory ROM or
+SRAM area without changing the selected source; program a licensed model
+explicitly with `tg28_sw_program_battery_model()` when needed.
 
 The driver follows the supplier register description and Linux reference
 driver. Electrical behavior must still be verified on the target board.

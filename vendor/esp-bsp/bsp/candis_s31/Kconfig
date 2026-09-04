@@ -78,6 +78,17 @@ menu "Board Support Package (Candis-S31)"
                 require a persistent framebuffer. The validated default is
                 PARTIAL double buffering, which has lower local-update latency;
                 leave this disabled unless the DIRECT path is tested separately.
+        config BSP_DISPLAY_ROTATE_180
+            bool "Rotate panel scan and touch by 180 degrees"
+            default y
+            help
+                EVT1 mounts the AMOLED module upside down. When enabled the
+                CO5300 MADCTL (0x36) MX|MY bits flip the panel scan direction
+                with no rendering cost; LVGL PARTIAL, TE sync and the QSPI
+                DMA pipeline are unchanged. CST820 raw coordinates are
+                mirrored in software so touches match the rotated view.
+                Disable only for a board spin that mounts the panel upright.
+
     endmenu
 
     menu "Storage"
@@ -133,11 +144,13 @@ menu "Board Support Package (Candis-S31)"
                 esp_video hardcodes CAM_CLK_SRC_DEFAULT (PLL_F160M), so the
                 controller path cannot be fixed without patching official
                 components. With this option enabled the BSP drives the
-                24 MHz XCLK from a fractional LEDC channel and passes
-                xclk_io=GPIO_NUM_NC / xclk_freq=0 to esp_video, which skips
-                the failing controller clock path entirely. Disable only for
-                a diagnostic experiment with a controller-driven XCLK at a
-                frequency that evenly divides PLL_F160M (e.g. 20 MHz).
+                LEDC timer at 20 MHz nominal (about 20.1 MHz measured on
+                EVT1) and passes xclk_io=GPIO_NUM_NC / xclk_freq=0 to esp_video,
+                which skips the failing controller clock path. The 24 MHz
+                value is the selected OV5640 table identifier, not an exact
+                runtime clock measurement. Disable only for a diagnostic
+                experiment with a controller-driven XCLK at a frequency that
+                evenly divides PLL_F160M (e.g. 20 MHz).
 
         config BSP_CAMERA_XCLK_LEDC_CH
             int "LEDC channel used for camera XCLK"

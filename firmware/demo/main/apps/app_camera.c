@@ -1,32 +1,26 @@
 /*
  * Candis-S31 watch demo - camera app: live viewfinder + capture.
  *
- * Real viewfinder replacing the EVT1 placeholder (spec E.3-5):
- *  1. bsp_camera_start(NULL) -> open(/dev/video2) inside a dedicated
- *     fetch task (sensor probing stays off the LVGL thread);
+ * Real viewfinder path for the EVT1 camera diagnostic:
+ *  1. bsp_camera_start(NULL) -> open(/dev/video2) inside a dedicated fetch
+ *     task (sensor probing stays off the LVGL thread);
  *  2. REQBUFS MMAP buffers (driver-allocated, PSRAM);
  *  3. fetch task at priority 4 with a 3 s DQBUF timeout;
- *  4. zero-copy display: lv_image + static lv_image_dsc_t,
- *     header.stride=1600 (800*2), w/h=460, data=frame base + central
- *     460x460 crop offset, LV_COLOR_FORMAT_RGB565_SWAPPED. Byte-order
- *     proof (serial frame dumps, 2026-08-31): after the FD6540 module
- *     workaround selects 0x4300=0x61, each pixel arrives as RGB565
- *     bits [15:8] followed by [7:0]. The S31 DVP preserves that order,
- *     so the mmap buffer is big-endian RGB565. Declaring native RGB565
- *     swaps those bytes and exactly reproduces the moving "paint"
- *     artifact; RGB565_SWAPPED consumes the captured bytes correctly;
+ *  4. zero-copy display: lv_image + static lv_image_dsc_t, central 460x460
+ *     crop, and LV_COLOR_FORMAT_RGB565_SWAPPED. The negotiated V4L2
+ *     bytesperline is used when present; zero means tightly packed.
  *  5. 10 fps source posted at <=15 fps through a 66 ms LVGL timer
  *     (drop-when-behind frame handoff);
- *  6. capture button saves the current frame as
- *     /sdcard/IMG_<rtc>.rgb565 (raw 800x600 RGB565 BE, 960000 bytes);
- *  7. screen DELETE -> stop request -> fetch task runs the full
- *     STREAMOFF -> munmap -> close -> bsp_camera_stop chain (the page
- *     does not block on the 3 s DQBUF; a reopen retries until the
- *     previous stream has drained);
+ *  6. capture button attempts S31 hardware JPEG encoding to
+ *     /sdcard/photos/IMG_nnnn.jpg; long-pressing keeps a packed RGB565 debug
+ *     frame. The capture path is compile-tested; real-scene color and JPEG
+ *     file validation remain hardware test items;
+ *  7. screen DELETE -> stop request -> fetch task runs the full STREAMOFF ->
+ *     munmap -> close -> bsp_camera_stop chain (the page does not block on
+ *     the 3 s DQBUF; a reopen retries until the previous stream has drained);
  *  8. app_camera_stream_active() exported for C.5 arbitration;
- *  9. in-page "Frame test" button: stops the preview, then queues
- *     camera.frames via svc_test_run() and shows the verdict when it
- *     lands in the result library.
+ *  9. in-page "Frame test" button stops the preview, queues camera.frames,
+ *     and shows the verdict when it lands in the result library.
  *
  * All V4L2 ioctls run on the fetch task only; the LVGL side consumes
  * frame buffers through a pending/release slot pair guarded by a
@@ -35,14 +29,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "bsp/esp-bsp.h"
+#include "driver/jpeg_encode.h"
+#include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -60,9 +60,16 @@ static const char *TAG = "app_camera";
 #define CAM_BUF_COUNT        3
 #define CAM_DQBUF_TIMEOUT_MS 3000   /* spec: 3 s DQBUF timeout */
 #define CAM_POST_MS          66     /* <=15 fps on-screen posting */
-#define CAM_TASK_STACK       6144
+#define CAM_TASK_STACK       8192   /* JPEG encoder path needs the depth
+                                     * proven by the svc_test runner */
 #define CAM_TASK_PRIO        4
 #define CAM_TIMEOUT_GIVEUP   5      /* consecutive DQBUF timeouts */
+#define CAM_JPEG_QUALITY     80     /* factory jpeg_encode_test default */
+
+/* Pending capture kind (s_cam.save_request). Single byte on purpose. */
+#define CAM_SAVE_NONE        0
+#define CAM_SAVE_JPEG        1
+#define CAM_SAVE_RAW         2
 
 /* Central 460x460 window inside the 800x600 RGB565 frame. */
 #define CAM_FRAME_W          800
@@ -72,7 +79,6 @@ static const char *TAG = "app_camera";
 #define CAM_STRIDE           (CAM_FRAME_W * 2)
 #define CAM_CROP_X           ((CAM_FRAME_W - CAM_VIEW_W) / 2)   /* 170 px */
 #define CAM_CROP_Y           ((CAM_FRAME_H - CAM_VIEW_H) / 2)   /* 70 px */
-#define CAM_CROP_OFFSET      (CAM_CROP_Y * CAM_STRIDE + CAM_CROP_X * 2)
 
 typedef enum {
     CAM_STATE_IDLE = 0,   /* page open, no stream (stopped or not started) */
@@ -96,9 +102,12 @@ static struct {
     volatile bool task_running;
     volatile bool stream_active;
     volatile bool stop_requested;
-    volatile bool save_requested;
+    volatile uint8_t save_request;  /* 0 none, 1 jpeg, 2 raw debug; single
+                                     * byte so the dual-core handshake needs
+                                     * no ordering between separate flags */
     volatile bool saving;
     bool img_src_set;
+    bool suppress_click;      /* long-press already acted; skip the click */
     bool test_pending;        /* "Frame test" waits for the stream to drain */
     uint32_t last_test_seq;
     /* frame handoff (fetch task -> LVGL post timer) */
@@ -114,6 +123,8 @@ static struct {
     uint8_t *buffers[CAM_BUF_COUNT];
     uint32_t buffer_lengths[CAM_BUF_COUNT];
     struct v4l2_format format;
+    uint32_t stride_bytes;       /* negotiated bytes per line; 0 means tight */
+
     esp_err_t last_error;
 } s_cam;
 
@@ -165,54 +176,258 @@ static void cam_ui_save_done(void *arg)
 }
 
 /* ------------------------------------------------------------------ */
-/* Frame save (fetch task context; holds the buffer while writing)     */
+/* Photo storage (fetch task context; holds the buffer while writing)  */
 /* ------------------------------------------------------------------ */
 
-static void cam_save_frame(uint32_t index, uint32_t bytesused)
+/* Sequential photo naming under <mount>/photos: take the first free
+ * IMG_0001..IMG_9999 slot after the highest existing index. Scanning on
+ * every capture (instead of caching the result at boot) also survives
+ * card swaps between captures. Must run with the storage lease held. */
+static esp_err_t cam_photo_path_next(const char *extension, char *path,
+                                     size_t path_size, char *name,
+                                     size_t name_size)
 {
-    s_cam.save_requested = false;
-    s_cam.saving = true;
+    char dir[80];
+    snprintf(dir, sizeof(dir), "%s/photos", svc_storage_mount_point());
+    if (mkdir(dir, 0775) != 0 && errno != EEXIST) {
+        ESP_LOGE(TAG, "mkdir %s failed: errno=%d", dir, errno);
+        return ESP_FAIL;
+    }
+
+    uint32_t max_index = 0;
+    DIR *stream = opendir(dir);
+    if (stream == NULL) {
+        ESP_LOGE(TAG, "opendir %s failed: errno=%d", dir, errno);
+        return ESP_FAIL;
+    }
+    const struct dirent *entry;
+    while ((entry = readdir(stream)) != NULL) {
+        unsigned long value = 0;
+        if (sscanf(entry->d_name, "IMG_%lu", &value) == 1 &&
+                value >= 1 && value <= 9999 && value > max_index) {
+            max_index = (uint32_t)value;
+        }
+    }
+    closedir(stream);
+
+    uint32_t next = max_index >= 9999 ? 1 : max_index + 1;
+    for (uint32_t guard = 0; guard < 10000; ++guard) {
+        snprintf(name, name_size, "IMG_%04" PRIu32 ".%s", next, extension);
+        snprintf(path, path_size, "%s/%s", dir, name);
+        struct stat info;
+        if (stat(path, &info) != 0) {
+            return ESP_OK;
+        }
+        next = next >= 9999 ? 1 : next + 1;
+    }
+    ESP_LOGE(TAG, "no free IMG_nnnn slot under %s", dir);
+    return ESP_FAIL;
+}
+
+static esp_err_t cam_file_write(const char *path, const uint8_t *data,
+                                uint32_t length)
+{
+    FILE *file = fopen(path, "wb");
+    if (file == NULL) {
+        ESP_LOGE(TAG, "fopen %s failed: errno=%d", path, errno);
+        return ESP_FAIL;
+    }
+    esp_err_t error = ESP_OK;
+    if (fwrite(data, 1, length, file) != length || fflush(file) != 0 ||
+            fsync(fileno(file)) != 0) {
+        ESP_LOGE(TAG, "write %s failed: errno=%d", path, errno);
+        error = ESP_FAIL;
+    }
+    if (fclose(file) != 0 && error == ESP_OK) {
+        error = ESP_FAIL;
+    }
+    if (error != ESP_OK) {
+        unlink(path);
+    }
+    return error;
+}
+
+/* Encode one captured frame through the S31 hardware JPEG encoder (the
+ * same API set as the proven factory jpeg_encode_test). The camera delivers
+ * RGB565 big-endian as V4L2_PIX_FMT_RGB565X; byte swapping is disabled in
+ * esp_video for that format. The app performs the explicit BE-to-LE copy
+ * required by JPEG_ENCODE_IN_FORMAT_RGB565 while LVGL keeps consuming the
+ * original RGB565_SWAPPED buffer. The red/blue order itself still needs the
+ * on-board check listed in the README. On success the caller owns
+ * *jpeg_data (PSRAM) and must heap_caps_free() it. */
+
+static esp_err_t cam_encode_jpeg(uint32_t index, uint32_t bytesused,
+                                 uint8_t **jpeg_data, uint32_t *jpeg_size)
+{
+    const struct v4l2_pix_format *pix = &s_cam.format.fmt.pix;
+    const uint32_t width = pix->width;
+    const uint32_t height = pix->height;
+    const uint32_t row_bytes = width * sizeof(uint16_t);
+    /* V4L2 permits bytesperline == 0 when the format is tightly packed. */
+    const uint32_t stride = pix->bytesperline != 0 ?
+                            pix->bytesperline : row_bytes;
+    const size_t frame_bytes = (size_t)width * height * sizeof(uint16_t);
+    const size_t required_bytes = height > 0 ?
+                                  (size_t)(height - 1) * stride + row_bytes : 0;
+    if (width == 0 || height == 0 || stride < row_bytes ||
+            bytesused < frame_bytes || index >= CAM_BUF_COUNT ||
+            s_cam.buffers[index] == NULL ||
+            s_cam.buffer_lengths[index] < required_bytes) {
+        /* Reject incomplete or padded layouts that do not fit the MMAP
+         * buffer; a zero bytesperline is valid and means tight packing. */
+        ESP_LOGE(TAG, "frame layout mismatch: reported_stride=%u stride=%u "
+                 "bytesused=%u required=%u buffer=%u",
+                 (unsigned)pix->bytesperline, (unsigned)stride,
+                 (unsigned)bytesused, (unsigned)required_bytes,
+                 index < CAM_BUF_COUNT ? (unsigned)s_cam.buffer_lengths[index] : 0U);
+        return ESP_ERR_INVALID_ARG;
+    }
+    const size_t buffer_bytes = (frame_bytes + 63U) / 64U * 64U;
+
+    uint8_t *input = heap_caps_aligned_calloc(64, 1, buffer_bytes,
+                                              MALLOC_CAP_SPIRAM);
+    uint8_t *output = heap_caps_aligned_calloc(64, 1, buffer_bytes,
+                                               MALLOC_CAP_SPIRAM);
+    if (input == NULL || output == NULL) {
+        heap_caps_free(input);
+        heap_caps_free(output);
+        return ESP_ERR_NO_MEM;
+    }
+
+    /* Copy row by row so any V4L2 padding is skipped and the encoder receives
+     * native little-endian RGB565 values. */
+    const uint8_t *src = s_cam.buffers[index];
+    uint16_t *dst = (uint16_t *)input;
+    for (uint32_t y = 0; y < height; ++y) {
+        const uint8_t *row = src + (size_t)y * stride;
+        for (uint32_t x = 0; x < width; ++x) {
+            const uint8_t *pixel = row + (size_t)x * sizeof(uint16_t);
+            dst[(size_t)y * width + x] =
+                ((uint16_t)pixel[0] << 8) | pixel[1];
+        }
+    }
+
+    jpeg_encoder_handle_t encoder = NULL;
+    const jpeg_encode_engine_cfg_t engine_config = {
+        .timeout_ms = 500,
+    };
+    esp_err_t error = jpeg_new_encoder_engine(&engine_config, &encoder);
+    if (error == ESP_OK) {
+        const jpeg_encode_cfg_t encode_config = {
+            .width = width,
+            .height = height,
+            .src_type = JPEG_ENCODE_IN_FORMAT_RGB565,
+            .sub_sample = JPEG_DOWN_SAMPLING_YUV422,
+            .image_quality = CAM_JPEG_QUALITY,
+            .pixel_reverse = false,
+        };
+        const int64_t start_us = esp_timer_get_time();
+        error = jpeg_encoder_process(encoder, &encode_config, input,
+                                     buffer_bytes, output, buffer_bytes,
+                                     jpeg_size);
+        const uint32_t elapsed_ms =
+            (uint32_t)((esp_timer_get_time() - start_us) / 1000);
+        if (error == ESP_OK) {
+            ESP_LOGI(TAG, "jpeg %ux%u -> %" PRIu32 " bytes in %" PRIu32
+                     " ms", (unsigned)width, (unsigned)height, *jpeg_size,
+                     elapsed_ms);
+        }
+        /* Verify the bitstream envelope before it lands on the card so
+         * a corrupt file can never be reported as a success. */
+        if (error == ESP_OK &&
+                (*jpeg_size < 4 || *jpeg_size > buffer_bytes ||
+                 output[0] != 0xff || output[1] != 0xd8 ||
+                 output[*jpeg_size - 2] != 0xff ||
+                 output[*jpeg_size - 1] != 0xd9)) {
+            ESP_LOGE(TAG, "jpeg bitstream markers invalid");
+            error = ESP_FAIL;
+        }
+        const esp_err_t delete_result = jpeg_del_encoder_engine(encoder);
+        if (error == ESP_OK && delete_result != ESP_OK) {
+            error = delete_result;
+        }
+    }
+    heap_caps_free(input);
+    if (error == ESP_OK) {
+        *jpeg_data = output;
+        return ESP_OK;
+    }
+    heap_caps_free(output);
+    return error;
+}
+
+static void cam_save_frame(uint8_t request, uint32_t index,
+                           uint32_t bytesused)
+{
+    const bool raw_mode = request == CAM_SAVE_RAW;
+    /* s_cam.saving was already claimed under s_cam.mux by camera_task. */
 
     esp_err_t error = ESP_OK;
     svc_storage_lease_t lease = {0};
-    char path[96];
+    char path[128];
+    char name[24];
+    uint32_t saved_bytes = 0;
+
     error = svc_storage_lease_acquire(&lease);
     if (error == ESP_OK) {
-        bsp_rtc_time_t rtc;
-        bsp_rtc_status_t rtc_status;
-        if (bsp_rtc_get_time(&rtc, &rtc_status) == ESP_OK &&
-                rtc_status.time_valid) {
-            snprintf(path, sizeof(path),
-                     "%s/IMG_%04u%02u%02u_%02u%02u%02u.rgb565",
-                     svc_storage_mount_point(),
-                     (unsigned)rtc.year, (unsigned)rtc.month,
-                     (unsigned)rtc.day, (unsigned)rtc.hour,
-                     (unsigned)rtc.minute, (unsigned)rtc.second);
-        } else {
-            snprintf(path, sizeof(path), "%s/IMG_%llu.rgb565",
-                     svc_storage_mount_point(),
-                     (unsigned long long)(esp_timer_get_time() / 1000000));
-        }
-        FILE *file = fopen(path, "wb");
-        if (file == NULL) {
-            error = ESP_FAIL;
-        } else {
-            const uint32_t expect =
-                s_cam.format.fmt.pix.width * s_cam.format.fmt.pix.height * 2;
-            const uint32_t length = bytesused < expect ? bytesused : expect;
-            if (fwrite(s_cam.buffers[index], 1, length, file) != length) {
-                error = ESP_FAIL;
+        error = cam_photo_path_next(raw_mode ? "rgb565" : "jpg",
+                                    path, sizeof(path), name,
+                                    sizeof(name));
+        if (error == ESP_OK && raw_mode) {
+            /* Debug path (long-press): raw 800x600 RGB565 BE frame. Repack
+             * padded V4L2 rows so the saved file is always tightly packed. */
+            const uint32_t width = s_cam.format.fmt.pix.width;
+            const uint32_t height = s_cam.format.fmt.pix.height;
+            const uint32_t row_bytes = width * sizeof(uint16_t);
+            const uint32_t stride = s_cam.stride_bytes != 0 ?
+                                    s_cam.stride_bytes : row_bytes;
+            const size_t expect = (size_t)width * height * sizeof(uint16_t);
+            const size_t required = height > 0 ?
+                                    (size_t)(height - 1) * stride + row_bytes : 0;
+            if (index >= CAM_BUF_COUNT || s_cam.buffers[index] == NULL ||
+                    stride < row_bytes || bytesused < expect ||
+                    s_cam.buffer_lengths[index] < required) {
+                error = ESP_ERR_INVALID_ARG;
+            } else if (stride == row_bytes) {
+                error = cam_file_write(path, s_cam.buffers[index],
+                                       (uint32_t)expect);
+            } else {
+                uint8_t *packed = heap_caps_malloc(expect, MALLOC_CAP_SPIRAM);
+                if (packed == NULL) {
+                    error = ESP_ERR_NO_MEM;
+                } else {
+                    for (uint32_t y = 0; y < height; ++y) {
+                        memcpy(packed + (size_t)y * row_bytes,
+                               s_cam.buffers[index] + (size_t)y * stride,
+                               row_bytes);
+                    }
+                    error = cam_file_write(path, packed, (uint32_t)expect);
+                    heap_caps_free(packed);
+                }
             }
-            if (fclose(file) != 0) {
-                error = ESP_FAIL;
+            if (error == ESP_OK) {
+                saved_bytes = (uint32_t)expect;
+            }
+        } else if (error == ESP_OK) {
+            uint8_t *jpeg_data = NULL;
+            uint32_t jpeg_size = 0;
+            error = cam_encode_jpeg(index, bytesused, &jpeg_data,
+                                    &jpeg_size);
+            if (error == ESP_OK) {
+                error = cam_file_write(path, jpeg_data, jpeg_size);
+                saved_bytes = jpeg_size;
+                heap_caps_free(jpeg_data);
             }
         }
         svc_storage_lease_release(&lease);
     }
 
     if (error == ESP_OK) {
-        snprintf(s_save_message, sizeof(s_save_message), "Saved %.70s",
-                 path);
+        const uint32_t whole_kb = saved_bytes / 1024;
+        const uint32_t frac_kb = (saved_bytes % 1024) * 10U / 1024U;
+        snprintf(s_save_message, sizeof(s_save_message),
+                 "Saved %s (%" PRIu32 ".%" PRIu32 " kB)", name, whole_kb,
+                 frac_kb);
     } else {
         snprintf(s_save_message, sizeof(s_save_message),
                  "Save failed: %.60s", esp_err_to_name(error));
@@ -303,9 +518,18 @@ static esp_err_t cam_open_pipeline(void)
                  (unsigned)pix->width, (unsigned)pix->height,
                  (unsigned)pix->bytesperline);
         if (pix->pixelformat != V4L2_PIX_FMT_RGB565X ||
-                pix->width != CAM_FRAME_W || pix->height != CAM_FRAME_H) {
+                pix->width != CAM_FRAME_W || pix->height != CAM_FRAME_H ||
+                (pix->bytesperline != 0 && pix->bytesperline < CAM_STRIDE)) {
+            ESP_LOGE(TAG, "format mismatch: stride=%u effective=%u expected=%u",
+                     (unsigned)pix->bytesperline,
+                     (unsigned)(pix->bytesperline != 0 ? pix->bytesperline : CAM_STRIDE),
+                     (unsigned)CAM_STRIDE);
             error = ESP_FAIL;
+        } else {
+            s_cam.stride_bytes = pix->bytesperline != 0 ?
+                                 pix->bytesperline : CAM_STRIDE;
         }
+
     }
     if (error == ESP_OK) {
         struct v4l2_requestbuffers request = {0};
@@ -422,8 +646,17 @@ static void camera_task(void *arg)
             continue;
         }
 
-        if (s_cam.save_requested && !s_cam.saving) {
-            cam_save_frame(done.index, done.bytesused);
+        portENTER_CRITICAL(&s_cam.mux);
+        const uint8_t request = s_cam.save_request;
+        s_cam.save_request = CAM_SAVE_NONE;
+        if (request != CAM_SAVE_NONE) {
+            /* Claim busy in the same critical section: the UI can never
+             * observe saving=false with a request in flight. */
+            s_cam.saving = true;
+        }
+        portEXIT_CRITICAL(&s_cam.mux);
+        if (request != CAM_SAVE_NONE) {
+            cam_save_frame(request, done.index, done.bytesused);
         }
 
         /* Publish as the newest pending frame; an unconsumed previous
@@ -460,15 +693,15 @@ static void camera_task(void *arg)
 
 static void cam_start_stream(void)
 {
-    if (s_cam.task_running) {
-        return;
-    }
-    s_cam.stop_requested = false;
-    s_cam.save_requested = false;
+    s_cam.save_request = CAM_SAVE_NONE;
     s_cam.saving = false;
+    s_cam.stop_requested = false;
+    s_cam.suppress_click = false;
     s_cam.img_src_set = false;
     s_cam.file = -1;
     s_cam.last_error = ESP_OK;
+    s_cam.stride_bytes = 0;
+
     portENTER_CRITICAL(&s_cam.mux);
     s_cam.pending_idx = -1;
     s_cam.display_idx = -1;
@@ -567,7 +800,12 @@ static void cam_post_timer_cb(lv_timer_t *timer)
     portEXIT_CRITICAL(&s_cam.mux);
 
     if (new_idx >= 0 && s_cam.buffers[new_idx] != NULL) {
-        s_img_dsc.data = s_cam.buffers[new_idx] + CAM_CROP_OFFSET;
+        const uint32_t stride = s_cam.stride_bytes != 0 ?
+                                s_cam.stride_bytes : CAM_STRIDE;
+        s_img_dsc.header.stride = stride;
+        s_img_dsc.data_size = CAM_VIEW_H * stride;
+        s_img_dsc.data = s_cam.buffers[new_idx] +
+                         (size_t)CAM_CROP_Y * stride + CAM_CROP_X * 2;
         if (!s_cam.img_src_set) {
             s_cam.img_src_set = true;
             lv_image_set_src(s_cam.img, &s_img_dsc);
@@ -604,10 +842,18 @@ static void cam_back_cb(lv_event_t *event)
 static void cam_capture_cb(lv_event_t *event)
 {
     (void)event;
+    if (s_cam.suppress_click) {
+        /* The long-press handler already acted on this press. */
+        s_cam.suppress_click = false;
+        return;
+    }
     if (s_cam.state != CAM_STATE_STREAMING) {
         return;
     }
-    if (s_cam.saving || s_cam.save_requested) {
+    portENTER_CRITICAL(&s_cam.mux);
+    const bool busy = s_cam.saving || s_cam.save_request != 0;
+    portEXIT_CRITICAL(&s_cam.mux);
+    if (busy) {
         ui_toast("Saving photo...");
         return;
     }
@@ -615,8 +861,42 @@ static void cam_capture_cb(lv_event_t *event)
         ui_toast("No SD card");
         return;
     }
-    s_cam.save_requested = true;
+    portENTER_CRITICAL(&s_cam.mux);
+    s_cam.save_request = CAM_SAVE_JPEG;
+    portEXIT_CRITICAL(&s_cam.mux);
     ui_toast("Saving photo...");
+}
+
+/* Long-press keeps the raw RGB565 store reachable as a debug aid (the
+ * default capture is JPEG; raw frames need special tools on a PC). */
+static void cam_capture_long_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_cam.state != CAM_STATE_STREAMING) {
+        return;
+    }
+    portENTER_CRITICAL(&s_cam.mux);
+    const bool busy = s_cam.saving || s_cam.save_request != 0;
+    portEXIT_CRITICAL(&s_cam.mux);
+    if (busy) {
+        return;
+    }
+    if (!svc_storage_mounted()) {
+        ui_toast("No SD card");
+        return;
+    }
+    s_cam.suppress_click = true;
+    portENTER_CRITICAL(&s_cam.mux);
+    s_cam.save_request = CAM_SAVE_RAW;
+    portEXIT_CRITICAL(&s_cam.mux);
+    ui_toast("Saving RAW frame...");
+}
+
+/* A fresh press must never be swallowed by a stale long-press flag. */
+static void cam_capture_press_cb(lv_event_t *event)
+{
+    (void)event;
+    s_cam.suppress_click = false;
 }
 
 static void cam_test_cb(lv_event_t *event)
@@ -758,6 +1038,10 @@ lv_obj_t *app_camera_create(void)
      * plus a restart button shown when the preview is stopped. */
     s_cam.btn_capture = cam_overlay_button(root, "Capture",
                                            cam_capture_cb, 46, 388, 170);
+    lv_obj_add_event_cb(s_cam.btn_capture, cam_capture_press_cb,
+                        LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(s_cam.btn_capture, cam_capture_long_cb,
+                        LV_EVENT_LONG_PRESSED, NULL);
     s_cam.btn_test = cam_overlay_button(root, "Frame test",
                                         cam_test_cb, 244, 388, 170);
     s_cam.btn_start = cam_overlay_button(root, "Start preview",

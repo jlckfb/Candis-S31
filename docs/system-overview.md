@@ -54,9 +54,9 @@ definition, a separate integration from the BSP
   intentionally omits the Type-C controller and OTG GPIO because its current
   model cannot atomically enforce Source-before-boost and the 500 mA-only
   policy; Type-C2 USB Host must go through the BSP API.
-- Toolchain: ESP-IDF `v6.1-beta1-dirty` (`.tools/esp-idf` includes the local
-  `esp_phy` link patch), target `esp32s31` is a **preview** target — every
+- Toolchain: ESP-IDF `v6.1-rc1`; target `esp32s31` is a **preview** target — every
   `idf.py` invocation needs `--preview`.
+
 
 ## Firmware model
 
@@ -131,18 +131,19 @@ Usage boundaries:
 - Do not enable display bias, OTG boost, or other switched rails before the
   EVT1 power checks in `hardware/bring-up.md` are complete.
 
-## Current status (2026-08-20)
+## Current status (2026-09-04)
 
-- EVT1 (`v0.5_260803_1544`) boards are on the bench. S1-S4 are closed and
-  substantial S5-S7 evidence exists; camera, audio, RF functional closure,
-  and S8-S10 remain open. Only recorded board observations count as PASS.
-- The Factory image builds successfully on 2026-08-20 with ESP-IDF
-  `v6.1-beta1-dirty`.
-  The new `temp_read`, `rail dump`, `sleep_test`, `wake_info`, hardened
-  `rf_stop`, and richer microphone statistics are compile-verified only and
-  still require a deliberately authorized flash and real-board regression.
+- EVT1 (`v0.5_260803_1544`) is on the bench. Display, touch, microSD, USB
+  host/device, Wi-Fi, BLE, RTC, and PMIC domains have recorded hardware
+  validation; ES8389 initialization and digital-path checks pass, while
+  speaker/microphone listening acceptance on the current board remains open.
+  The camera adapter, DVP stream, and built-in color-bar path are validated,
+  while real-scene image quality and JPEG capture remain open.
+- The Factory image and all repository firmware targets build with ESP-IDF
+  `v6.1-rc1`; the current evidence boundary is compile/build unless a section
+  explicitly cites a saved EVT log.
 - Korvo-1 pre-validation verdicts carried into this design: standard I2S
   audio path works; internal USB PHY works; the camera can run from the
   SoC-generated XCLK; deep sleep is usable; the LP core is usable. Known
-  caveat N1: for the LP-core mailbox, never mix asynchronous then
-  synchronous waits on the same channel.
+  caveat N1: for the LP-core mailbox, never mix asynchronous then synchronous
+  waits on the same channel.

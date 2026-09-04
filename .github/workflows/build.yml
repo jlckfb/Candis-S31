@@ -143,9 +143,11 @@ jobs:
 
       - name: Validate Factory host and Recovery tooling
         run: |
+          python3 -m pip install -r firmware/factory/host_tools/requirements.txt
           python3 firmware/factory/host_tools/run_evt.py --self-test
           bash -n firmware/recovery/flash_factory.sh
           bash -n tools/release/pack_factory_release.sh
+
       - name: Build factory firmware
         run: |
           . ~/esp-idf/export.sh
@@ -171,10 +173,9 @@ jobs:
           path: ${{ runner.temp }}/factory-release.*
           if-no-files-found: error
 
-  # Firmware fleet jobs. Like factory/low-power these build against the
-  # vendored BSP snapshot; the remaining dependencies (lvgl, esp_tinyusb,
-  # gmf, ...) resolve from the ESP Component Registry on the runner, so no
-  # lock files are committed for them.
+  # Firmware fleet jobs build against the vendored BSP snapshot. Registry
+  # dependencies are pinned by the committed per-project dependencies.lock
+  # files; the runner still downloads those exact packages when uncached.
   demo:
     runs-on: ubuntu-latest
     timeout-minutes: 45

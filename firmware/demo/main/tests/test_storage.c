@@ -436,6 +436,7 @@ static void test_typec_status(const test_ctx_t *ctx, test_result_t *out)
     out->st = verdict;
     snprintf(out->evidence, sizeof(out->evidence), "%s (role %s, %s)",
              text, type_c_role_name(status.role),
+             status.advertised_current == BSP_TYPE_C_CURRENT_NONE ? "none" :
              status.advertised_current == BSP_TYPE_C_CURRENT_1_5_A ? "1.5A" :
              status.advertised_current == BSP_TYPE_C_CURRENT_3_0_A ? "3.0A" :
              "default");

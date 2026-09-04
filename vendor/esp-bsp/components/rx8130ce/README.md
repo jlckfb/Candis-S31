@@ -75,6 +75,9 @@ The fixed 7-bit address is `0x32`. `RX8130CE_CONFIG_DEFAULT()` selects a
 400 kHz I2C clock, keeps backup charging off with the 3.02 V charge cutoff,
 and leaves backup low-voltage detection on. Passing `NULL` as the config
 selects the same defaults.
+When using a designated initializer instead of `RX8130CE_CONFIG_DEFAULT()`,
+set `backup_charge_cutoff` and `backup_voltage_low_detect` explicitly; a
+zero-initialized `backup_voltage_low_detect` disables the VBLF detector.
 
 ## Setting time
 

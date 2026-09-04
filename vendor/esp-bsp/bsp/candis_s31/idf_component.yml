@@ -40,7 +40,7 @@ dependencies:
     public: true
 
   espressif/esp_lcd_co5300:
-    version: "^2.0.3"
+    version: "^2.1.0"
     public: false
 
   espressif/esp_lcd_touch_cst820:

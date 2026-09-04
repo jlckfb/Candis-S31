@@ -19,6 +19,6 @@ fusb303b, lcd_touch/esp_lcd_touch_cst820, esp_lvgl_port}` from the checkout,
 excluding build artifacts, and records the source commit in
 `vendor/esp-bsp/SOURCE_COMMIT`.
 
-Note: `bsp/candis_s31/src/bsp_pmic_reference_model.c` carries the vendor
-fuel-gauge reference battery model; see the provenance header in that file
-before redistributing.
+The BSP does not redistribute a battery-model blob. It verifies the TG28
+factory ROM model at initialization; applications must provide a compatible
+licensed model explicitly if they replace it.

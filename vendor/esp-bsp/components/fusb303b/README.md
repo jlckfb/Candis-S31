@@ -62,6 +62,9 @@ unrelated role and timing fields.
 in one snapshot and reports the identity registers verified and cached at
 create time. Passing `clear_interrupts=true` writes the values back to the
 two write-one-to-clear registers after the snapshot has been decoded.
+When `BC_LVL` is `00` (Ra or no partner), `advertised_current` is
+`FUSB303B_CURRENT_NONE`; it is not the USB default advertisement. The board
+policy may still reject non-default values when requesting a source role.
 
 The global interrupt mask is controlled separately by
 `fusb303b_set_global_interrupt_mask()`, and the per-event Mask (0Eh) and

@@ -31,6 +31,7 @@ idf.py --preview -C examples/esp-idf/player -D IDF_TARGET=esp32s31 flash monitor
 ```
 
 The BSP resolves to the vendored snapshot (`vendor/esp-bsp`) by default; set
-`CANDIS_S31_BSP_PATH` to develop against a live esp-bsp checkout. First
-builds download the player-stack dependencies from the ESP Component
-Registry; no lock file is committed.
+`CANDIS_S31_BSP_PATH` to develop against a live esp-bsp checkout. The committed
+`dependencies.lock` pins the player-stack component versions and hashes; do not
+edit it by hand. A fresh build still needs network access to download the
+pinned Registry packages.

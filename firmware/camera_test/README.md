@@ -12,15 +12,18 @@ OV5640/Linux semantics define as RGB565 LE. The vendored BSP re-applies
 RGB565X byte stream without hiding it behind esp_video byte swapping
 (`sdkconfig.defaults` keeps `CONFIG_ESP_VIDEO_ENABLE_SWAP_BYTE=n`).
 
-Status: the camera link is verified on EVT1 hardware — the corrected FPC
-adapter board is fitted and DVP streaming, the sensor color-bar pattern, and
-live on-display preview all passed.
+Status: the camera link is partially verified on EVT1 hardware — the corrected
+FPC adapter, sensor detection, DVP streaming, and built-in color-bar path pass.
+The real-scene image remains anomalous and the Demo JPEG file path is not yet
+accepted; keep the visual operator verdict separate from serial PASS.
+
 
 ## Build and flash
 
 ```bash
 idf.py --preview -C firmware/camera_test -D IDF_TARGET=esp32s31 build
-idf.py --preview -C firmware/camera_test -D IDF_TARGET=esp32s31 flash monitor
+idf.py --preview -C firmware/camera_test -p /dev/ttyACM0 -b 4000000 flash
+idf.py --preview -C firmware/camera_test -p /dev/ttyACM0 monitor
 ```
 
 The BSP resolves to the vendored snapshot (`vendor/esp-bsp`) by default; set

@@ -84,29 +84,30 @@ development, `CANDIS_S31_BSP_PATH` points the build at a live esp-bsp
 checkout instead; maintainers refresh the snapshot with `tools/sync_bsp.sh`.
 No absolute local path is committed to the project.
 
-As of 2026-09-02 the verification environment is ESP-IDF `v6.1-rc1` and
-the vendored snapshot of esp-bsp `feat/candis-s31` (commit `e0d0e54`).
-All thirteen default `tools/build-all.sh` targets pass in this combination
-(2026-09-02), and the
-core peripheral domains (display, touch, audio, microSD, USB host/device,
-Wi-Fi, BLE, RTC, PMIC) are validated on EVT1 hardware; the camera is usable
-with the corrected FPC adapter board (DVP streaming and on-screen preview
-validated 2026-09-01/02).
+As of 2026-09-04 the verification environment is ESP-IDF `v6.1-rc1` and
+the vendored snapshot of esp-bsp `feat/candis-s31` (commit `dcec04c`). The
+13-target `tools/build-all.sh` matrix passes, and the Demo image has been
+flashed at the board's highest validated 4,000,000-baud rate; boot logs confirm
+the display, touch, storage, radio, PMIC, and 41-test framework startup. The
+camera link/DVP/color-bar path is validated, while real-scene image quality and
+Demo JPEG capture remain open; current-board audio listening acceptance also
+remains open.
 
 The current compatibility baseline is:
 
 | Item | Version | Validation |
 |---|---|---|
-| ESP-IDF | `v6.1-rc1` | All thirteen default build-all.sh targets pass; core domains hardware-validated |
-| Candis-S31 BSP | `1.2.0` | BSP integration and examples pass; hardware-validated domains as noted |
-| TG28_SW driver | `0.4.0` | Component test app passes; BSP integration hardware-validated |
-| RX8130CE driver | `0.4.0` | Component test app passes; BSP integration hardware-validated |
-| FUSB303B driver | `0.3.0` | Component test app passes; BSP integration hardware-validated |
-| CST820 touch driver | `1.2.0` | Component test app passes; BSP integration hardware-validated |
+| ESP-IDF | `v6.1-rc1` | All thirteen default build-all.sh targets pass; core domains have recorded EVT evidence |
+| Candis-S31 BSP | `1.2.0` | Vendored snapshot from esp-bsp `dcec04c`; raw/LVGL 180° path builds and Demo boots |
+| TG28_SW driver | `0.4.0` | Component test app passes; factory ROM model read is logged on Demo boot |
+| RX8130CE driver | `0.4.0` | Component test app passes; explicit primary-cell policy fields are set by BSP |
+| FUSB303B driver | `0.3.0` | Component test app passes; NONE advertisement is preserved through BSP status |
+| CST820 touch driver | `1.2.0` | Component test app passes; framework sleep hooks and inclusive 459 bounds are present |
 | esp_lvgl_port (vendored for Factory TE diagnostics) | `2.9.0` | Factory display/TE commands compile and link |
-| Factory Bring-up firmware | Development source | Full peripheral command set exercised on EVT1 hardware |
-| Candis-S31 hardware | EVT1 schematic revision 0.5 (fab `v0.5_260803_1544`) | Bring-up largely closed; camera validated via FPC adapter |
-| ESP Friends Boards definition | `candis_s31` development definition | Board generation and an isolated ESP-IDF application compile; not released |
+| Factory Bring-up firmware | Development source | Full peripheral command set remains the hardware evidence path |
+| Candis-S31 hardware | EVT1 schematic revision 0.5 (fab `v0.5_260803_1544`) | Bring-up largely closed; camera real-scene/JPEG and audio listening remain open |
+| ESP Friends Boards definition | `candis_s31` development definition | Generation and local-component-overrides build pass; pure Registry path waits for driver publication |
+| idf-extra driver preparation | commit `e13d304` on local branch | Four components, examples, rules, upload and issue registrations pass local checks; not pushed |
 | Arduino ESP32-S31 core and Candis board | Not released | Not available |
 | PlatformIO ESP32-S31 platform and Candis board | Not released | Not available |
 

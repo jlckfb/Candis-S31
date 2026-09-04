@@ -4,7 +4,7 @@
 
 Candis-S31 是一块围绕 ESP32-S31 和 2.0 英寸 460 × 460 方形 AMOLED 设计的开发板。板上还包含触摸、充电与电源管理、RTC、双 USB Type-C、音频、DVP 摄像头接口、TF 卡、按键和一颗 RGB LED。
 
-> **硬件状态：** EVT1（原理图 v0.5，2026-08-03 投板 `v0.5_260803_1544`）已回板，点亮工作已大部分完成。实物已验证：AMOLED 显示（460×460 QSPI，TE 同步 LVGL 管线）、电容触摸、音频输出（扬声器）与输入（双麦克风）、microSD、USB Type-C2 Host 与 Device 角色、Wi-Fi、BLE、RTC、PMIC/电池充电域（含 16 个应用的手表形态 LVGL 综合演示）。相机已可用：FPC 转接板已到位，DVP 取流、内建彩条与带屏实时预览已在 EVT1 实板验证通过（2026-09-01/02）；拍照落卡目前为 RGB565 裸帧（JPEG 落卡开发中）。长时老化与低功耗功耗表征未开始。
+> **硬件状态：** EVT1（原理图 v0.5，2026-08-03 投板 `v0.5_260803_1544`）已回板，点亮工作已大部分完成。实物已验证：AMOLED 显示（460×460 QSPI，TE 同步 LVGL 管线）、电容触摸、microSD、USB Type-C2 Host 与 Device 角色、Wi-Fi、BLE、RTC、PMIC/电池充电域（含 16 个应用的手表形态 LVGL 综合演示）。ES8389 编解码器可初始化，已有数字音频链路检查通过；当前 EVT1 的扬声器听感与麦克风录音验收仍待复核。相机 FPC 转接板已到位，传感器识别、DVP 取流和内建彩条路径已在 EVT1 实板验证；真实场景成像质量与 JPEG 拍照落卡仍需硬件确认。长时老化与低功耗功耗表征未开始。
 >
 > **内测用户：** 见 [BETA.md](BETA.md)——装好 ESP-IDF 环境后克隆本仓库即可直接编译全部固件工程。
 
@@ -27,7 +27,7 @@ idf.py --preview -p PORT flash monitor
 
 | 开发环境 | 当前状态 |
 |---|---|
-| ESP-IDF | 入门工程、Factory、低功耗示例以及 BSP 与 Board Manager 定义均使用 `v6.1-rc1` 编译通过；核心外设已在 EVT1 实物上验证（见上方硬件状态） |
+| ESP-IDF | 入门工程、Factory、低功耗示例以及仓内 BSP 快照均使用 `v6.1-rc1` 编译通过；Board Manager 定义可生成并在本地组件覆盖下编译，待四个驱动发布后再走纯 Registry 路径；核心外设已在 EVT1 实物上验证（见上方硬件状态） |
 | Arduino | 等待 ESP32-S31 Core，再提交 Candis-S31 board 与 variant |
 | PlatformIO | 等待 ESP32-S31 平台、工具和框架支持，再增加 board manifest |
 
@@ -35,7 +35,7 @@ Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会
 
 ### 构建验证 — 2026-09-02
 
-基线：ESP-IDF `v6.1-rc1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 13 个默认目标；2026-09-02 完整回归 13/13 通过（日志见 `build-logs/p0-fix/` 与 `build-logs/review-20260902/`）。`example:*` 目标为维护者专享：它们从外部 esp-bsp 检出（`ESP_BSP_ROOT`）编译 esp-bsp 示例，检出缺失时报 SKIP——详见 `tools/build-all.sh` 头注释。`display_usb_hid` 示例不在矩阵内：它通过 `esp_lvgl_port` 助手驱动 HID 输入，而本板 BSP 使用 `esp_lvgl_adapter`。
+基线：ESP-IDF `v6.1-rc1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 13 个默认目标；维护者 2026-09-02 完整回归 13/13 通过。构建日志属于本地产物，按设计不随仓库发布；可直接运行 `tools/build-all.sh` 重现并查看末尾汇总。`example:*` 目标为维护者专享：它们从外部 esp-bsp 检出（`ESP_BSP_ROOT`）编译 esp-bsp 示例，检出缺失时报 SKIP——详见 `tools/build-all.sh` 头注释。`display_usb_hid` 示例不在矩阵内：它通过 `esp_lvgl_port` 助手驱动 HID 输入，而本板 BSP 使用 `esp_lvgl_adapter`。
 
 | 目标（`tools/build-all.sh --list`） | 源码位置 | 状态（2026-09-02） |
 |---|---|---|

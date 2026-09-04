@@ -42,7 +42,7 @@ S9 low power and power budget → S10 soak, thermal, multi-board and DVT freeze.
 | S2 | PMIC rails with the SoC held off | **closed** | VBUS 5.02 V, TG28_VBUS 5.02 V, VSYS ≈ 4.92 V, VTPS switching verified |
 | S3 | ROM download, UART, flash | **closed** | CH343P enumerates; TX/RX series resistors verified at 115200 / 460800 / 2 M; ROM version string read |
 | S4 | Minimum firmware core domains | **closed 8/8** | `.work/evt1/s4_evt_summary.md` |
-| S5 | BSP peripheral domains one at a time | **in progress** | Wi-Fi ✅ BLE ✅ AMOLED ✅ CST820 ✅ USB host ✅ USB device ✅ · camera ❌ blocked · audio `NOT_RUN` |
+| S5 | BSP peripheral domains one at a time | **in progress** | Wi-Fi ✅ BLE ✅ AMOLED ✅ CST820 ✅ USB host ✅ USB device ✅ · camera **partial** (link/color-bar pass, real scene blocked) · audio `NOT_RUN` on current EVT1 |
 | S6 | Subsystem performance and physical limits | **display closed** | TE 16.529 ms (60.5 Hz); `display_motion ball` 60.5 fps; `full` 29.7 fps |
 | S7 | Anomaly forensics (triggered) | **1 closed, 1 open** | RF/TG28 collapse closed; camera/DCDC1 collapse root-caused to `R95`, 20/20 after removal |
 | S8 | Hardware accelerators and compute | `NOT_RUN` | image builds, not yet flashed |
@@ -228,27 +228,24 @@ domains continue. **A whole-board power-off escalates to S7 immediately.**
 | Touch (CST820) | PASS — ordered four-corner orientation check |
 | USB host / Type-C2 | PASS — source/sink, enumeration, 600 s MSC read/write stress |
 | USB device (CDC) | PASS — host COM port enumerated, two rounds of command loopback |
-| Camera (DVP) | **BLOCKED** — see the note below |
+| Camera (DVP) | **PARTIAL** — sensor detection, DVP streaming, and built-in color-bar path pass; real-scene image quality remains blocked by the module path |
 | Audio (speaker + microphones) | `NOT_RUN` |
 
-**Camera blocker (root-caused 2026-08-19, fix staged, not yet verified on hardware).**
-Two separate problems were tangled together:
+**Camera status (updated 2026-09-02).**
+The FPC adapter board is installed and the OV5640-compatible module responds at
+SCCB address `0x3c` with PID `0x5640`. The headless `camera_test` firmware has
+completed repeated 800x600, 960000-byte DVP capture cycles, including stream
+teardown and restart; the on-screen color-bar path is stable. The tested clock
+and receiver A/B matrix did not change the real-scene "paint stirring" image.
+During streaming, the board-side rails read approximately DVDD 1.5 V and
+AVDD/DOVDD 2.8 V, so the remaining isolation target is the module/adapter
+pixel or analog path (or a confirmed-good module for A/B), not a new display
+byte-order workaround. Keep the camera product path marked unverified until a
+real-scene image is accepted by an operator.
 
-1. *Whole-board power-off* — root-caused in S7 to the 24-pin FPC pin 23/24 family
-   mismatch and closed by removing `R95` (20/20 afterwards). See `facts.md`,
-   "Post-fabrication reworks".
-2. *`camera_test` reporting "not found"* — a **build configuration defect**, unrelated
-   to the module, wiring or supplies. `CONFIG_CAMERA_OV5640=y` only compiles the
-   driver; registering the sensor with `esp_video` additionally requires
-   `CONFIG_CAMERA_OV5640_AUTO_DETECT_DVP_INTERFACE_SENSOR`, which defaults to `n`
-   (the MIPI-CSI equivalent defaults to `y`, and ESP32-S31 has no MIPI CSI). Without
-   it the sensor detect table links empty, `esp_video_init()` iterates zero times,
-   never creates the video device, and still returns success — so the failure only
-   surfaces later when the application opens the device node. The giveaway is that
-   the log contains **no sensor detect line at all**, not even a failure.
-   Both auto-detect entries are now enabled in `sdkconfig.defaults`. Verify before
-   flashing that the detect table is non-empty in the ELF, then expect a
-   `Detected Camera sensor PID=…` line on the next run.
+The Demo camera page additionally contains an S31 hardware-JPEG capture path,
+but no JPEG file has yet been accepted on EVT1; do not count that path as a
+camera PASS until a captured file is checked on the host.
 
 ## S6 Subsystem performance
 

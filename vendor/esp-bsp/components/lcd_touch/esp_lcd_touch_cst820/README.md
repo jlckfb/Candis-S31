@@ -60,8 +60,9 @@ const esp_lcd_panel_io_i2c_config_t io_config =
 ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c(i2c_bus, &io_config, &touch_io));
 
 const esp_lcd_touch_config_t touch_config = {
-    .x_max = 460,
-    .y_max = 460,
+    /* Coordinate maxima are inclusive; 460x460 uses 0..459. */
+    .x_max = 459,
+    .y_max = 459,
     .rst_gpio_num = GPIO_NUM_7,
     .int_gpio_num = GPIO_NUM_3,
     .levels = {
@@ -75,6 +76,7 @@ const esp_lcd_touch_config_t touch_config = {
     },
 };
 ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_cst820(touch_io, &touch_config, &touch));
+
 ```
 
 GPIO numbers in the example are placeholders. Use the reset, interrupt, SDA,
@@ -83,6 +85,11 @@ and SCL pins from the target board schematic. Set either reset or interrupt to
 
 The reset and interrupt active levels are provided by the board through
 `touch_config.levels`; the driver does not assume a fixed module wiring.
+The common `esp_lcd_touch_enter_sleep()` and `esp_lcd_touch_exit_sleep()`
+wrappers are supported by this driver and map to the monitor-mode helpers.
+Monitor mode deliberately relies on the controller's documented automatic
+standby path; it keeps the interrupt wake signal active without an
+undocumented register write.
 
 ## Read touch points
 

@@ -16,7 +16,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="434" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="434" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="482" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="482" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__shared__irq__status__t_1a3740056779d496604a02c3d542769af0" prot="public" static="no" mutable="no">
         <type>uint8_t</type>
@@ -30,7 +30,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="435" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="435" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="483" column="13" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="483" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__shared__irq__status__t_1a1a270153b843a6b7f6ecc605c24e816c" prot="public" static="no" mutable="no">
         <type>unsigned</type>
@@ -44,7 +44,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="436" column="14" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="436" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="484" column="14" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="484" bodyend="-1"/>
       </memberdef>
       <memberdef kind="variable" id="structbsp__shared__irq__status__t_1a7fa6d078c1197a027a6db118f0552927" prot="public" static="no" mutable="no">
         <type>bool</type>
@@ -58,7 +58,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="437" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="437" bodyend="-1"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="485" column="10" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="485" bodyend="-1"/>
       </memberdef>
     </sectiondef>
     <briefdescription>
@@ -66,7 +66,7 @@
     <detaileddescription>
 <para>Combined interrupt snapshot for the shared active-low line on GPIO2. </para>
     </detaileddescription>
-    <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="433" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="433" bodyend="438"/>
+    <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="481" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="481" bodyend="486"/>
     <listofallmembers>
       <member refid="structbsp__shared__irq__status__t_1a7fa6d078c1197a027a6db118f0552927" prot="public" virt="non-virtual"><scope>bsp_shared_irq_status_t</scope><name>line_released</name></member>
       <member refid="structbsp__shared__irq__status__t_1a8690113108e0956c3513879fd70886b2" prot="public" virt="non-virtual"><scope>bsp_shared_irq_status_t</scope><name>pmic</name></member>

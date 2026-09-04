@@ -853,6 +853,8 @@ Variables:
 
 -  struct [**bsp\_display\_cfg\_t**](#struct-bsp_display_cfg_t) flags  
 
+-  lvgl\_port\_cfg\_t lvgl_port_cfg  
+
 -  unsigned int sw_rotate  
 
 ### struct `bsp_display_config_t`
@@ -1251,12 +1253,13 @@ For more USB-related APIs and configuration options, check the corresponding BSP
 enum bsp_type_c_current_t {
     BSP_TYPE_C_CURRENT_DEFAULT = 0,
     BSP_TYPE_C_CURRENT_1_5_A,
-    BSP_TYPE_C_CURRENT_3_0_A
+    BSP_TYPE_C_CURRENT_3_0_A,
+    BSP_TYPE_C_CURRENT_NONE
 };
 ```
 
 
-Board source policy accepts only USB Type-C default current (500 mA). The higher enum values report the attached partner's advertised capability through [**bsp\_type\_c\_status\_t.advertised\_current**](#variable-advertised_current); passing them to a board role or VBUS API fails with ESP\_ERR\_NOT\_SUPPORTED.
+Board source policy accepts only USB Type-C default current (500 mA). Status reports preserve the partner advertisement, including NONE for Ra or no attachment; passing any non-default value to a board role or VBUS API fails with ESP\_ERR\_NOT\_SUPPORTED.
 ### enum `bsp_type_c_role_t`
 
 ```c
@@ -1410,6 +1413,10 @@ int voltage = bsp_voltage_battery_get();
 | ---: | :--- |
 | enum  | [**bsp\_peripheral\_t**](#enum-bsp_peripheral_t)  <br> |
 | enum  | [**bsp\_pmic\_adc\_channel\_t**](#enum-bsp_pmic_adc_channel_t)  <br> |
+| struct | [**bsp\_pmic\_adc\_diagnostic\_sample\_t**](#struct-bsp_pmic_adc_diagnostic_sample_t) <br> |
+| struct | [**bsp\_pmic\_adc\_diagnostic\_t**](#struct-bsp_pmic_adc_diagnostic_t) <br> |
+| struct | [**bsp\_pmic\_early\_snapshot\_t**](#struct-bsp_pmic_early_snapshot_t) <br> |
+| enum  | [**bsp\_pmic\_early\_snapshot\_valid\_t**](#enum-bsp_pmic_early_snapshot_valid_t)  <br> |
 | enum  | [**bsp\_pmic\_regulator\_t**](#enum-bsp_pmic_regulator_t)  <br> |
 | struct | [**bsp\_pmic\_status\_t**](#struct-bsp_pmic_status_t) <br> |
 | enum  | [**bsp\_pmic\_switch\_t**](#enum-bsp_pmic_switch_t)  <br> |
@@ -1427,6 +1434,7 @@ int voltage = bsp_voltage_battery_get();
 |  esp\_err\_t | [**bsp\_pmic\_get\_boot\_irq\_snapshot**](#function-bsp_pmic_get_boot_irq_snapshot) (uint8\_t status, bool \*valid) <br> |
 |  esp\_err\_t | [**bsp\_pmic\_get\_charge\_current**](#function-bsp_pmic_get_charge_current) (uint16\_t \*milliamps) <br> |
 |  esp\_err\_t | [**bsp\_pmic\_get\_charge\_voltage**](#function-bsp_pmic_get_charge_voltage) (uint16\_t \*millivolts) <br> |
+|  esp\_err\_t | [**bsp\_pmic\_get\_early\_snapshot**](#function-bsp_pmic_get_early_snapshot) ([**bsp\_pmic\_early\_snapshot\_t**](#struct-bsp_pmic_early_snapshot_t) \*snapshot) <br> |
 |  esp\_err\_t | [**bsp\_pmic\_get\_input\_current\_limit**](#function-bsp_pmic_get_input_current_limit) (uint16\_t \*milliamps) <br> |
 |  esp\_err\_t | [**bsp\_pmic\_get\_power\_off\_source**](#function-bsp_pmic_get_power_off_source) (uint8\_t \*source) <br> |
 |  esp\_err\_t | [**bsp\_pmic\_get\_power\_on\_source**](#function-bsp_pmic_get_power_on_source) (uint8\_t \*source) <br> |
@@ -1445,6 +1453,7 @@ int voltage = bsp_voltage_battery_get();
 |  esp\_err\_t | [**bsp\_pmic\_regulator\_is\_enabled**](#function-bsp_pmic_regulator_is_enabled) ([**bsp\_pmic\_regulator\_t**](#enum-bsp_pmic_regulator_t) regulator, bool \*enabled) <br> |
 |  const char \* | [**bsp\_pmic\_regulator\_name**](#function-bsp_pmic_regulator_name) ([**bsp\_pmic\_regulator\_t**](#enum-bsp_pmic_regulator_t) regulator) <br> |
 |  esp\_err\_t | [**bsp\_pmic\_regulator\_set\_voltage**](#function-bsp_pmic_regulator_set_voltage) ([**bsp\_pmic\_regulator\_t**](#enum-bsp_pmic_regulator_t) regulator, uint16\_t millivolts) <br> |
+|  esp\_err\_t | [**bsp\_pmic\_run\_adc\_diagnostic**](#function-bsp_pmic_run_adc_diagnostic) ([**bsp\_pmic\_adc\_diagnostic\_t**](#struct-bsp_pmic_adc_diagnostic_t) \*diagnostic) <br> |
 |  esp\_err\_t | [**bsp\_pmic\_set\_charge\_current**](#function-bsp_pmic_set_charge_current) (uint16\_t milliamps) <br> |
 |  esp\_err\_t | [**bsp\_pmic\_set\_charge\_voltage**](#function-bsp_pmic_set_charge_voltage) (uint16\_t millivolts) <br> |
 |  esp\_err\_t | [**bsp\_pmic\_set\_input\_current\_limit**](#function-bsp_pmic_set_input_current_limit) (uint16\_t milliamps) <br> |
@@ -1464,6 +1473,7 @@ int voltage = bsp_voltage_battery_get();
 
 | Type | Name |
 | ---: | :--- |
+| define  | [**BSP\_PMIC\_ADC\_DIAGNOSTIC\_SAMPLE\_COUNT**](#define-bsp_pmic_adc_diagnostic_sample_count)  7<br> |
 | define  | [**BSP\_PMIC\_RTC\_INT**](#define-bsp_pmic_rtc_int)  GPIO\_NUM\_2<br> |
 | define  | [**BSP\_PMIC\_RTC\_INT\_ACTIVE\_LEVEL**](#define-bsp_pmic_rtc_int_active_level)  0<br> |
 | define  | [**BSP\_PMIC\_SAFE\_CHARGE\_CURRENT\_MA**](#define-bsp_pmic_safe_charge_current_ma)  50<br> |
@@ -1512,6 +1522,68 @@ enum bsp_pmic_adc_channel_t {
 
 
 Channels of the TG28\_SW SAR ADC, mirroring the driver channel list.
+### struct `bsp_pmic_adc_diagnostic_sample_t`
+
+
+One timestamped raw ADC acquisition. Raw values retain all 14 register bits so negative-offset/overflow signatures near 0x3fff are observable.
+
+Variables:
+
+-  uint32\_t elapsed_ms  
+
+-  uint16\_t raw  
+
+### struct `bsp_pmic_adc_diagnostic_t`
+
+
+Controlled multi-channel ADC diagnostic. The BSP enables VBAT, VBUS, VSYS, and TDIE together, samples them for two seconds, then restores the caller's exact REG30 value even if a sample fails.
+
+Variables:
+
+-  bool enable_verified  
+
+-  uint8\_t reg30_enabled  
+
+-  uint8\_t reg30_original  
+
+-  uint8\_t reg30_restored  
+
+-  bool restore_verified  
+
+-  size\_t sample_count  
+
+-  [**bsp\_pmic\_adc\_diagnostic\_sample\_t**](#struct-bsp_pmic_adc_diagnostic_sample_t) samples  
+
+### struct `bsp_pmic_early_snapshot_t`
+
+
+First TG28 register values captured immediately after tg28\_sw\_create(). This happens before the BSP writes the charge profile, programs or resets the fuel gauge, clears IRQs, or changes TS configuration. The snapshot is retained until the ESP resets; PMIC deinit/reinit never overwrites it.
+
+Variables:
+
+-  uint8\_t adc_control  <br>REG30: ADC channel enables
+
+-  uint8\_t irq_status  <br>REG48-4A: latched IRQ status
+
+-  uint8\_t power_source  <br>REG20-21: power-on/off sources
+
+-  uint8\_t status  <br>REG00-01: PMU status
+
+-  uint8\_t valid_mask  <br>OR of [**bsp\_pmic\_early\_snapshot\_valid\_t**](#enum-bsp_pmic_early_snapshot_valid_t)
+
+### enum `bsp_pmic_early_snapshot_valid_t`
+
+```c
+enum bsp_pmic_early_snapshot_valid_t {
+    BSP_PMIC_EARLY_STATUS_VALID = 1U << 0,
+    BSP_PMIC_EARLY_POWER_SOURCE_VALID = 1U << 1,
+    BSP_PMIC_EARLY_ADC_CONTROL_VALID = 1U << 2,
+    BSP_PMIC_EARLY_IRQ_STATUS_VALID = 1U << 3
+};
+```
+
+
+Valid fields in [**bsp\_pmic\_early\_snapshot\_t**](#struct-bsp_pmic_early_snapshot_t). Each register group is read independently so a transient I2C failure does not discard the other power-loss evidence.
 ### enum `bsp_pmic_regulator_t`
 
 ```c
@@ -1544,7 +1616,7 @@ Variables:
 
 -  uint16\_t battery_mv  
 
--  uint8\_t battery_percent  <br>TG28 SOC estimate; only meaningful when fuel\_gauge\_valid is true (a programmed battery model). Treat it as meaningless data otherwise - never convert battery\_mv into a percentage instead.
+-  uint8\_t battery_percent  <br>TG28 SOC estimate; only meaningful when fuel\_gauge\_valid is true (the factory ROM model was verified or a custom model was programmed). Treat it as meaningless otherwise; never derive a percentage from battery\_mv here.
 
 -  bool battery_present  
 
@@ -1558,9 +1630,9 @@ Variables:
 
 -  uint8\_t common_status1  
 
--  bool fuel_gauge_reference_model  <br>True while the active valid model is the BSP reference default (vendor generic 4.2 V-class): SOC is reference accuracy, not per-battery calibrated. False means a custom model (or none).
+-  bool fuel_gauge_reference_model  <br>True while the active valid model is the TG28 factory ROM model. False means a custom model is active or no model is valid.
 
--  bool fuel_gauge_valid  <br>True only after a battery model was successfully programmed in this boot (BSP reference default or a runtime override).
+-  bool fuel_gauge_valid  <br>True after the factory ROM model is verified or a custom battery model is successfully programmed in this boot.
 
 -  bool vbus_present  
 
@@ -1667,6 +1739,16 @@ esp_err_t bsp_pmic_get_charge_voltage (
 ) 
 ```
 
+### function `bsp_pmic_get_early_snapshot`
+
+```c
+esp_err_t bsp_pmic_get_early_snapshot (
+    bsp_pmic_early_snapshot_t *snapshot
+) 
+```
+
+
+Copy the first post-create/pre-configuration register snapshot.
 ### function `bsp_pmic_get_input_current_limit`
 
 ```c
@@ -1765,7 +1847,7 @@ esp_err_t bsp_pmic_read_adc_mv (
 ```
 
 
-Read one TG28\_SW ADC channel in millivolts. The TDIE channel reports the die-temperature sensor voltage, not a temperature; the TS channel reads the fixed external input fitted on this board (no battery NTC). A channel disabled at the OTP level is enabled for the measurement and restored afterwards.
+Read one TG28\_SW ADC channel in millivolts. The TDIE channel reports the die-temperature sensor voltage, not a temperature; EVT1 fixes TS to ground and has no battery NTC, so a TS value is never a valid battery temperature. A channel disabled at the OTP level is enabled for the measurement and restored afterwards. Prefer [**bsp\_pmic\_run\_adc\_diagnostic()**](#function-bsp_pmic_run_adc_diagnostic) when raw codes, conversion settling, or overflow validity matter.
 ### function `bsp_pmic_read_battery_model`
 
 ```c
@@ -1832,6 +1914,16 @@ esp_err_t bsp_pmic_regulator_set_voltage (
 ) 
 ```
 
+### function `bsp_pmic_run_adc_diagnostic`
+
+```c
+esp_err_t bsp_pmic_run_adc_diagnostic (
+    bsp_pmic_adc_diagnostic_t *diagnostic
+) 
+```
+
+
+Capture raw ADC data at 0/50/100/200/500/1000/2000 ms after enabling REG30 bits 0,2,3,4 in one write. The original control byte is restored and verified before return.
 ### function `bsp_pmic_set_charge_current`
 
 ```c
@@ -1992,6 +2084,7 @@ Camera usage can be quite complex. For a complete example, refer to the [`displa
 
 | Type | Name |
 | ---: | :--- |
+|  esp\_err\_t | [**bsp\_camera\_apply\_workaround**](#function-bsp_camera_apply_workaround) (void) <br> |
 |  esp\_err\_t | [**bsp\_camera\_start**](#function-bsp_camera_start) (const [**bsp\_camera\_cfg\_t**](#struct-bsp_camera_cfg_t) \*cfg) <br> |
 |  esp\_err\_t | [**bsp\_camera\_stop**](#function-bsp_camera_stop) (void) <br> |
 
@@ -2030,6 +2123,16 @@ Variables:
 
 ## Functions Documentation
 
+### function `bsp_camera_apply_workaround`
+
+```c
+esp_err_t bsp_camera_apply_workaround (
+    void
+) 
+```
+
+
+Reapply the board sensor override after esp\_video\_open() reloads its table.
 ### function `bsp_camera_start`
 
 ```c

@@ -43,7 +43,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="391" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="391" bodyend="396"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="438" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="438" bodyend="443"/>
       </memberdef>
       <memberdef kind="enum" id="group__g07__usb_1ga3ade17ee740539518d6a3f572ac1fd6d" prot="public" static="no" strong="no">
         <type></type>
@@ -70,14 +70,21 @@
           <detaileddescription>
           </detaileddescription>
         </enumvalue>
+        <enumvalue id="group__g07__usb_1gga3ade17ee740539518d6a3f572ac1fd6da29b30b81dce552a21a4bf465e7203099" prot="public">
+          <name>BSP_TYPE_C_CURRENT_NONE</name>
+          <briefdescription>
+          </briefdescription>
+          <detaileddescription>
+          </detaileddescription>
+        </enumvalue>
         <briefdescription>
         </briefdescription>
         <detaileddescription>
-<para>Board source policy accepts only USB Type-C default current (500 mA). The higher enum values report the attached partner&apos;s advertised capability through <ref refid="structbsp__type__c__status__t_1a14b9b5d980eca9c56ab27867b658cc38" kindref="member">bsp_type_c_status_t.advertised_current</ref>; passing them to a board role or VBUS API fails with ESP_ERR_NOT_SUPPORTED. </para>
+<para>Board source policy accepts only USB Type-C default current (500 mA). Status reports preserve the partner advertisement, including NONE for Ra or no attachment; passing any non-default value to a board role or VBUS API fails with ESP_ERR_NOT_SUPPORTED. </para>
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="402" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="402" bodyend="406"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="449" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="449" bodyend="454"/>
       </memberdef>
       <memberdef kind="enum" id="group__g07__usb_1ga580c2455e8b1da85776fdd8a1460a92e" prot="public" static="no" strong="no">
         <type></type>
@@ -97,7 +104,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="488" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="488" bodyend="490"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="536" column="1" bodyfile="bsp/candis_s31/include/bsp/candis_s31.h" bodystart="536" bodyend="538"/>
       </memberdef>
     </sectiondef>
     <sectiondef kind="func">
@@ -116,7 +123,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="696" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="696" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="753" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="753" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g07__usb_1ga33c87518a30105716fe1457a35d5afc7" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -132,7 +139,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="697" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="697" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="754" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="754" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g07__usb_1gaeb7fa973270192bef5f3f1eb3144ee1e" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -153,7 +160,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="698" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="698" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="755" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="755" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g07__usb_1ga157fe964ad0a62e9be0ab76c75f7b49e" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -174,7 +181,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="699" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="699" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="756" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="756" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g07__usb_1ga0a14efb0edc77bf5a759abac48625339" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -195,7 +202,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="700" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="700" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="757" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="757" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g07__usb_1gab8e10e9abff865257cb18e197a2aef7f" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -217,7 +224,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="705" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="705" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="762" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="762" declcolumn="11"/>
       </memberdef>
       <memberdef kind="function" id="group__g07__usb_1gadd721af3d1fd30bb2828bd82783bdde5" prot="public" static="no" const="no" explicit="no" inline="no" virt="non-virtual">
         <type>esp_err_t</type>
@@ -233,7 +240,7 @@
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>
-        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="706" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="706" declcolumn="11"/>
+        <location file="bsp/candis_s31/include/bsp/candis_s31.h" line="763" column="11" declfile="bsp/candis_s31/include/bsp/candis_s31.h" declline="763" declcolumn="11"/>
       </memberdef>
     </sectiondef>
     <briefdescription>
