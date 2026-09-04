@@ -23,14 +23,14 @@ artifacts:
     # candis_s31_factory_merged.bin.sha256.
     sha256: "@BIN_SHA256@"
 
-# (3) Application and BSP source commits.
+# (3) Application and first-party board component source commit.
 source:
   app_repo: "https://github.com/jlckfb/Candis-S31"
   app_commit: "@APP_COMMIT@"
   app_dirty: "@APP_DIRTY@"
-  bsp_repo: "https://github.com/LeenixP/esp-bsp"
-  bsp_commit: "@BSP_COMMIT@"
-  bsp_dirty: "@BSP_DIRTY@"
+  board_component: "components/candis_s31"
+  board_component_commit: "@APP_COMMIT@"
+  board_component_dirty: "@APP_DIRTY@"
 
 # (4) Exact ESP-IDF version and generated dependency lock.
 toolchain:

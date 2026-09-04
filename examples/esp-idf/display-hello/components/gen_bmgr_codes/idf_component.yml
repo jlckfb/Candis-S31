@@ -1,0 +1,5 @@
+dependencies:
+  espressif/tg28_sw: ^0.4.0
+  espressif/rx8130ce: ^0.4.0
+  espressif/esp_lcd_co5300: ^2.1.0
+  espressif/esp_lcd_touch_cst820: ^1.2.0

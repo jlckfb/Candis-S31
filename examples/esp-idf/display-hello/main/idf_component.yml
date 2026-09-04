@@ -1,0 +1,25 @@
+dependencies:
+  idf: ">=6.1"
+  espressif/esp_board_manager:
+    version: "*"
+    require: public
+    override_path: "../../../../vendor/esp-board-manager/esp_board_manager"
+  espressif/esp_friends_boards:
+    version: "*"
+    require: public
+    override_path: "../../../../vendor/esp-board-manager/esp_friends_boards"
+  espressif/esp_lvgl_adapter: "^0.6.4"
+  espressif/esp_lcd_co5300: "^2.1.0"
+  lvgl/lvgl: "9.5.0"
+  espressif/esp_lcd_touch_cst820:
+    version: "^1.2.0"
+    override_path: "../../../../vendor/idf-extra-components/esp_lcd_touch_cst820"
+  espressif/tg28_sw:
+    version: "^0.4.0"
+    override_path: "../../../../vendor/idf-extra-components/tg28_sw"
+  espressif/rx8130ce:
+    version: "^0.4.0"
+    override_path: "../../../../vendor/idf-extra-components/rx8130ce"
+  espressif/fusb303b:
+    version: "^0.3.0"
+    override_path: "../../../../vendor/idf-extra-components/fusb303b"

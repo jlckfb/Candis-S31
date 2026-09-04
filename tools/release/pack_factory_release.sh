@@ -19,7 +19,7 @@
 #                <OUT_DIR>.zip.
 #
 # Required env: RELEASE_NAME (the exact GitHub release tag, or a concrete CI
-# dry-run identifier). Optional: CANDIS_S31_BSP_PATH, BOARD_REV, IDF_PATH.
+# dry-run identifier). Optional: BOARD_REV, IDF_PATH.
 
 set -euo pipefail
 
@@ -74,13 +74,6 @@ git_dirty() { # git_dirty <dir> -> true|false
 
 APP_COMMIT=$(git_field "$REPO_ROOT" HEAD)
 APP_DIRTY=$(git_dirty "$REPO_ROOT")
-if [ -n "${CANDIS_S31_BSP_PATH:-}" ] && [ -d "${CANDIS_S31_BSP_PATH:-}" ]; then
-    BSP_COMMIT=$(git_field "$CANDIS_S31_BSP_PATH" HEAD)
-    BSP_DIRTY=$(git_dirty "$CANDIS_S31_BSP_PATH")
-else
-    BSP_COMMIT="<unknown: set CANDIS_S31_BSP_PATH>"
-    BSP_DIRTY="<unknown>"
-fi
 if [ -n "$IDF_PATH" ] && [ -d "$IDF_PATH" ]; then
     IDF_VERSION=$(git -C "$IDF_PATH" describe --tags --always 2>/dev/null || echo "<unknown>")
     IDF_COMMIT=$(git_field "$IDF_PATH" HEAD)
@@ -107,8 +100,6 @@ sed -e "s|@RELEASE_NAME@|$RELEASE_NAME|g" \
     -e "s|@BIN_SHA256@|$BIN_SHA256|g" \
     -e "s|@APP_COMMIT@|$APP_COMMIT|g" \
     -e "s|@APP_DIRTY@|$APP_DIRTY|g" \
-    -e "s|@BSP_COMMIT@|$BSP_COMMIT|g" \
-    -e "s|@BSP_DIRTY@|$BSP_DIRTY|g" \
     -e "s|@IDF_VERSION@|$IDF_VERSION|g" \
     -e "s|@IDF_COMMIT@|$IDF_COMMIT|g" \
     -e "s|@LOCK_SHA256@|$LOCK_SHA256|g" \

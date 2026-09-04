@@ -1,0 +1,405 @@
+# I2S Peripheral Default Configuration
+# This file shows the default values used by the I2S peripheral parser
+# Based on periph_i2s.py parsing script
+# Only one I2S peripheral is allowed for each (config.port, direction) pair.
+
+# =============================================================================
+# STANDARD I2S MODE CONFIGURATION (std-out, std-in)
+# =============================================================================
+
+- name: i2s_audio_out
+  type: i2s
+  # Valid role values: master, slave
+  role: master
+  # Valid format values: std-out, std-in, default direction is output
+  format: std-out
+  config:
+    port: 0  # [TO_BE_CONFIRMED] I2S port
+    # ===== CLOCK CONFIGURATION =====
+    # Sample rate in Hz (default: 48000)
+    sample_rate_hz: 48000           # [TO_BE_CONFIRMED] Sample rate in Hz
+
+    # Clock source (default: I2S_CLK_SRC_DEFAULT)
+    clk_src: "I2S_CLK_SRC_DEFAULT"
+    # Valid values:
+    # - I2S_CLK_SRC_DEFAULT
+    # - I2S_CLK_SRC_EXTERNAL
+    # - I2S_CLK_SRC_APB
+    # - I2S_CLK_SRC_PLL_F160M
+    # - I2S_CLK_SRC_PLL_F240M
+
+    # External clock source frequency in Hz. Only takes effect when clk_src is
+    # I2S_CLK_SRC_EXTERNAL; otherwise the ESP-IDF driver ignores it.
+    # STD mode emits this field only for SOC_I2S_HW_VERSION_2 layouts because
+    # SOC_I2S_HW_VERSION_1 std clock config does not provide ext_clk_freq_hz.
+    # Ensure the input clock is >= BCLK: sample_rate_hz * slot_bits * 2.
+    ext_clk_freq_hz: 0
+
+    # MCLK multiple (default: 256)
+    mclk_multiple: 256
+    # Valid values: 128, 192, 256, 384, 512, 576, 768, 1024, 1152
+
+    # BCLK divider (default: 8). STD mode emits this field only on ESP-IDF >= 5.5.
+    bclk_div: 8
+
+    # ===== SLOT CONFIGURATION =====
+    # Data bit width (default: 16)
+    data_bit_width: 16             # [TO_BE_CONFIRMED] Data bit width
+    # Valid values: 8, 16, 24, 32
+
+    # Slot bit width (default: I2S_SLOT_BIT_WIDTH_AUTO)
+    slot_bit_width: "I2S_SLOT_BIT_WIDTH_AUTO"
+    # Valid values:
+    # - I2S_SLOT_BIT_WIDTH_AUTO
+    # - I2S_SLOT_BIT_WIDTH_8BIT
+    # - I2S_SLOT_BIT_WIDTH_16BIT
+    # - I2S_SLOT_BIT_WIDTH_24BIT
+    # - I2S_SLOT_BIT_WIDTH_32BIT
+
+    # Slot mode (default: I2S_SLOT_MODE_STEREO)
+    slot_mode: "I2S_SLOT_MODE_STEREO"  # [TO_BE_CONFIRMED] Slot mode
+    # Valid values:
+    # - I2S_SLOT_MODE_MONO
+    # - I2S_SLOT_MODE_STEREO
+
+    # Standard mode slot mask (default: I2S_STD_SLOT_BOTH)
+    slot_mask: "I2S_STD_SLOT_BOTH"
+    # Valid values:
+    # - I2S_STD_SLOT_LEFT
+    # - I2S_STD_SLOT_RIGHT
+    # - I2S_STD_SLOT_BOTH
+
+    # WS width (default: 16)
+    ws_width: 16
+
+    # WS polarity (default: false)
+    ws_pol: false
+
+    # Bit shift (default: true)
+    bit_shift: true
+
+    # SOC_I2S_HW_VERSION_1 slot field (ESP32/ESP32-S2; default: true)
+    # SOC_I2S_HW_VERSION_2 layouts do not provide msb_right.
+    msb_right: true
+
+    # SOC_I2S_HW_VERSION_2 slot fields (default: true/false/false)
+    # SOC_I2S_HW_VERSION_1 layouts do not provide these fields.
+    left_align: true
+    big_endian: false
+    bit_order_lsb: false
+
+    # ===== GPIO CONFIGURATION =====
+    pins:
+      # Standard mode pins
+      mclk: -1                     # [IO] MCLK pin
+      bclk: -1                     # [IO] BCLK pin
+      ws: -1                       # [IO] WS pin
+      dout: -1                     # [IO] Data output pin
+      din: -1                      # [IO] Data input pin
+
+    # Invert flags
+    invert_flags:
+      mclk_inv: false
+      bclk_inv: false
+      ws_inv: false
+
+# =============================================================================
+# TDM I2S MODE CONFIGURATION (tdm-out, tdm-in)
+# =============================================================================
+
+- name: i2s_audio_out
+  type: i2s
+  # Valid role values: master, slave
+  role: master
+  # Valid format values: tdm-out, tdm-in, default direction is output
+  format: tdm-out
+  config:
+    port: 0  # [TO_BE_CONFIRMED] I2S port
+    # ===== CLOCK CONFIGURATION =====
+    # Sample rate in Hz (default: 48000)
+    sample_rate_hz: 48000           # [TO_BE_CONFIRMED] Sample rate in Hz
+
+    # Clock source (default: I2S_CLK_SRC_DEFAULT)
+    clk_src: "I2S_CLK_SRC_DEFAULT"
+
+    # External clock source frequency in Hz. Only takes effect when clk_src is
+    # I2S_CLK_SRC_EXTERNAL; otherwise the ESP-IDF driver ignores it.
+    # TDM clock config includes this field on supported ESP-IDF I2S layouts.
+    # Ensure the input clock is >= BCLK: sample_rate_hz * slot_bits * 2.
+    ext_clk_freq_hz: 0
+
+    # MCLK multiple (default: 256)
+    mclk_multiple: 256
+
+    # BCLK divider (default: 8)
+    bclk_div: 8
+
+    # ===== SLOT CONFIGURATION =====
+    # Data bit width (default: 16)
+    data_bit_width: 16             # [TO_BE_CONFIRMED] Data bit width
+
+    # Slot bit width (default: I2S_SLOT_BIT_WIDTH_AUTO)
+    slot_bit_width: "I2S_SLOT_BIT_WIDTH_AUTO"
+
+    # Slot mode (default: I2S_SLOT_MODE_STEREO)
+    slot_mode: "I2S_SLOT_MODE_STEREO"  # [TO_BE_CONFIRMED] Slot mode
+
+    # TDM slot mask (default is based on slot_mode)
+    # For STEREO: I2S_TDM_SLOT0 | I2S_TDM_SLOT1
+    # For MONO: I2S_TDM_SLOT0
+    # You may also use a C expression such as:
+    # I2S_TDM_SLOT0 | I2S_TDM_SLOT1 | I2S_TDM_SLOT2
+    slot_mask: "I2S_TDM_SLOT0 | I2S_TDM_SLOT1"
+
+    # WS width (default: 0, IDF I2S_TDM_AUTO_WS_WIDTH)
+    ws_width: 0
+
+    # WS polarity (default: false)
+    ws_pol: false
+
+    # Bit shift (default: true)
+    bit_shift: true
+
+    # Left align (default: false for TDM)
+    left_align: false
+
+    # Big endian (default: false)
+    big_endian: false
+
+    # Bit order LSB (default: false)
+    bit_order_lsb: false
+
+    # Skip mask (default: false)
+    skip_mask: false
+
+    # Total slots (default: 0, IDF I2S_TDM_AUTO_SLOT_NUM)
+    total_slot: 0
+
+    # ===== GPIO CONFIGURATION =====
+    pins:
+      # TDM mode pins (same as Standard mode)
+      mclk: -1                     # [IO] MCLK pin
+      bclk: -1                     # [IO] BCLK pin
+      ws: -1                       # [IO] WS pin
+      dout: -1                     # [IO] Data output pin
+      din: -1                      # [IO] Data input pin
+
+    # Invert flags
+    invert_flags:
+      mclk_inv: false
+      bclk_inv: false
+      ws_inv: false
+
+# =============================================================================
+# PDM TX MODE CONFIGURATION (pdm-out)
+# =============================================================================
+
+- name: i2s_audio_out
+  type: i2s
+  role: master
+  format: pdm-out
+  config:
+    port: 0  # [TO_BE_CONFIRMED] I2S port
+    # ===== CLOCK CONFIGURATION =====
+    # Sample rate in Hz (default: 48000)
+    sample_rate_hz: 48000           # [TO_BE_CONFIRMED] Sample rate in Hz
+
+    # Clock source (default: I2S_CLK_SRC_DEFAULT)
+    clk_src: "I2S_CLK_SRC_DEFAULT"
+
+    # MCLK multiple (default: 256)
+    mclk_multiple: 256
+
+    # Up-sampling parameters (default: 960, 480)
+    up_sample_fp: 960
+    up_sample_fs: 480
+
+    # BCLK divider (default: 8)
+    bclk_div: 8
+
+    # ===== SLOT CONFIGURATION =====
+    # Data bit width (default: 16, fixed for PDM)
+    data_bit_width: 16              # [TO_BE_CONFIRMED] Data bit width
+
+    # Slot bit width (default: I2S_SLOT_BIT_WIDTH_AUTO)
+    slot_bit_width: "I2S_SLOT_BIT_WIDTH_AUTO"
+
+    # Slot mode (default: I2S_SLOT_MODE_STEREO)
+    slot_mode: "I2S_SLOT_MODE_STEREO"  # [TO_BE_CONFIRMED] Slot mode
+
+    # PDM TX slot mask (default: I2S_PDM_SLOT_BOTH).
+    # Emitted only for SOC_I2S_HW_VERSION_1 layouts.
+    slot_mask: "I2S_PDM_SLOT_BOTH"
+    # Valid values:
+    # - I2S_PDM_SLOT_LEFT
+    # - I2S_PDM_SLOT_RIGHT
+    # - I2S_PDM_SLOT_BOTH
+
+    # Data format (default: I2S_PDM_DATA_FMT_PCM)
+    # This field is emitted only on ESP-IDF >= 5.5. On older IDF versions,
+    # explicit I2S_PDM_DATA_FMT_RAW is rejected; PCM is treated as the default.
+    data_fmt: "I2S_PDM_DATA_FMT_PCM"
+    # Valid values:
+    # - I2S_PDM_DATA_FMT_PCM
+    # - I2S_PDM_DATA_FMT_RAW
+
+    # Sigma-delta filter settings
+    sd_prescale: 0
+    sd_scale: "I2S_PDM_SIG_SCALING_MUL_1"
+    # Valid values:
+    # - I2S_PDM_SIG_SCALING_DIV_2
+    # - I2S_PDM_SIG_SCALING_MUL_1
+    # - I2S_PDM_SIG_SCALING_MUL_2
+    # - I2S_PDM_SIG_SCALING_MUL_4
+
+    # Filter scaling values
+    hp_scale: "I2S_PDM_SIG_SCALING_MUL_1"
+    lp_scale: "I2S_PDM_SIG_SCALING_MUL_1"
+    sinc_scale: "I2S_PDM_SIG_SCALING_MUL_1"
+
+    # Line mode (default: I2S_PDM_TX_ONE_LINE_CODEC).
+    # Emitted only for SOC_I2S_HW_VERSION_2 layouts.
+    line_mode: "I2S_PDM_TX_ONE_LINE_CODEC"
+    # Valid values:
+    # - I2S_PDM_TX_ONE_LINE_CODEC
+    # - I2S_PDM_TX_ONE_LINE_DAC
+    # - I2S_PDM_TX_TWO_LINE_DAC
+
+    # High pass filter settings.
+    # Emitted only for SOC_I2S_HW_VERSION_2 layouts.
+    hp_en: true
+    hp_cut_off_freq_hz: 35.5
+
+    # Sigma-delta dither settings.
+    # Emitted only for SOC_I2S_HW_VERSION_2 layouts.
+    sd_dither: 0
+    sd_dither2: 1
+
+    # ===== GPIO CONFIGURATION =====
+    pins:
+      # PDM TX mode pins
+      clk: -1                     # [IO] Clock pin
+      dout: -1                    # [IO] Data output pin
+      # Emitted only when the target exposes a second PDM TX data line.
+      # ESP32 defines SOC_I2S_PDM_MAX_TX_LINES (1), so no dout2 field is generated.
+      dout2: -1                   # [IO] Second data pin for dual-line DAC mode
+
+    # Invert flags
+    invert_flags:
+      clk_inv: false
+
+# =============================================================================
+# PDM RX MODE CONFIGURATION (pdm-in)
+# =============================================================================
+
+- name: i2s_audio_in
+  type: i2s
+  role: master
+  format: pdm-in
+  config:
+    port: 0  # [TO_BE_CONFIRMED] I2S port
+    # ===== CLOCK CONFIGURATION =====
+    # Sample rate in Hz (default: 48000)
+    sample_rate_hz: 48000           # [TO_BE_CONFIRMED] Sample rate in Hz
+
+    # Clock source (default: I2S_CLK_SRC_DEFAULT)
+    clk_src: "I2S_CLK_SRC_DEFAULT"
+
+    # MCLK multiple (default: 256)
+    mclk_multiple: 256
+
+    # Down-sampling mode (default: I2S_PDM_DSR_8S)
+    dn_sample_mode: "I2S_PDM_DSR_8S"
+    # Valid values:
+    # - I2S_PDM_DSR_8S
+    # - I2S_PDM_DSR_16S
+
+    # BCLK divider (default: 8)
+    bclk_div: 8
+
+    # ===== SLOT CONFIGURATION =====
+    # Data bit width (default: 16, fixed for PDM)
+    data_bit_width: 16              # [TO_BE_CONFIRMED] Data bit width
+
+    # Slot bit width (default: I2S_SLOT_BIT_WIDTH_AUTO)
+    slot_bit_width: "I2S_SLOT_BIT_WIDTH_AUTO"
+
+    # Slot mode (default: I2S_SLOT_MODE_STEREO)
+    slot_mode: "I2S_SLOT_MODE_STEREO"  # [TO_BE_CONFIRMED] Slot mode
+
+    # PDM slot mask (default: I2S_PDM_SLOT_BOTH)
+    slot_mask: "I2S_PDM_SLOT_BOTH"
+    # Valid values for single-line mode:
+    # - I2S_PDM_SLOT_LEFT
+    # - I2S_PDM_SLOT_RIGHT
+    # - I2S_PDM_SLOT_BOTH
+    # Valid values for multi-line mode (ESP32S3/ESP32P4):
+    # - I2S_PDM_RX_LINE0_SLOT_LEFT
+    # - I2S_PDM_RX_LINE0_SLOT_RIGHT
+    # - I2S_PDM_RX_LINE1_SLOT_LEFT
+    # - I2S_PDM_RX_LINE1_SLOT_RIGHT
+    # - I2S_PDM_RX_LINE2_SLOT_LEFT
+    # - I2S_PDM_RX_LINE2_SLOT_RIGHT
+    # - I2S_PDM_RX_LINE3_SLOT_LEFT
+    # - I2S_PDM_RX_LINE3_SLOT_RIGHT
+    # - I2S_PDM_LINE_SLOT_ALL
+
+    # Data format (default: I2S_PDM_DATA_FMT_PCM)
+    # This field is emitted only on ESP-IDF >= 5.5. On older IDF versions,
+    # explicit I2S_PDM_DATA_FMT_RAW is rejected; PCM is treated as the default.
+    data_fmt: "I2S_PDM_DATA_FMT_PCM"
+    # Valid values:
+    # - I2S_PDM_DATA_FMT_PCM
+    # - I2S_PDM_DATA_FMT_RAW
+
+    # High pass filter settings.
+    # Emitted only when SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER is enabled.
+    hp_en: true
+    hp_cut_off_freq_hz: 35.5
+
+    # Amplification number (default: 1).
+    # Emitted only when SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER is enabled.
+    amplify_num: 1
+
+    # ===== GPIO CONFIGURATION =====
+    pins:
+      # PDM RX mode pins - Single line mode
+      clk: -1                     # [IO] Clock pin
+      din: -1                     # [IO] Data input pin
+
+      # PDM RX mode pins - Multi-line mode (ESP32S3/ESP32P4)
+      # Uncomment and configure for multi-line mode:
+      # din0: -1  # [IO] Line 0 data pin
+      # din1: -1  # [IO] Line 1 data pin
+      # din2: -1  # [IO] Line 2 data pin
+      # din3: -1  # [IO] Line 3 data pin
+
+    # Invert flags
+    invert_flags:
+      clk_inv: false
+
+# =============================================================================
+# NOTES
+# =============================================================================
+
+# 1. PDM Mode Limitations:
+#    - Data bit width is fixed to 16 bits for PDM mode
+#    - PDM RX multi-line mode is only supported on ESP32S3 and ESP32P4
+#    - PDM TX dual-line mode is supported on most chips except ESP32
+
+# 2. Clock Configuration:
+#    - Standard mode: bclk_div is available on ESP-IDF >= 5.5
+#    - TDM mode: Includes bclk_div parameter
+#    - PDM TX mode: Includes up_sample_fp/fs parameters
+#    - PDM RX mode: Includes dn_sample_mode parameter
+
+# 3. GPIO Configuration:
+#    - Standard/TDM: Uses mclk, bclk, ws, dout, din pins
+#    - PDM TX: Uses clk, dout, dout2 (optional) pins
+#    - PDM RX: Uses clk, din (single-line) or dins[4] (multi-line) pins
+
+# 4. Slot Mask Configuration:
+#    - Standard: I2S_STD_SLOT_LEFT/RIGHT/BOTH
+#    - TDM: I2S_TDM_SLOT0-15 (default based on slot_mode, explicit expressions allowed)
+#    - PDM TX: I2S_PDM_SLOT_LEFT/RIGHT/BOTH
+#    - PDM RX: I2S_PDM_SLOT_* (single-line) or I2S_PDM_RX_LINE*_SLOT_* (multi-line)

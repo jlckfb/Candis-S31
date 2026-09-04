@@ -1019,16 +1019,12 @@ void ui_manager_init(void)
 
     lv_indev_t *indev = bsp_display_get_input_dev();
     if (indev) {
-        /* NOTE: with the current esp_lvgl_adapter this call is a no-op
-         * and is kept only for intent. The adapter already gates the
-         * touch reads: the CST820 INT ISR merely gives a semaphore
-         * (esp_lv_adapter_input_touch.c), and the read callback performs
-         * the I2C transfer only when that semaphore is set - I2C traffic
-         * therefore already happens strictly after real interrupts, not
-         * on every refresh tick. The 2026-08-21 taskLVGL CPU storm was
-         * caused by the scale press transitions (removed that day), not
-         * by the indev mode. Do not remove the call without
-         * re-verifying the adapter's read path. */
+        /* esp_lvgl_port initially selects EVENT mode when the CST820 IRQ is
+         * available. This demo deliberately uses TIMER mode so held touches
+         * keep producing PRESSING events and release transitions are sampled
+         * even without another edge. The IRQ still wakes the LVGL task, while
+         * the timer mode adds periodic I2C reads. The 2026-08-21 taskLVGL CPU
+         * storm came from the removed scale press transitions, not this mode. */
         lv_indev_set_mode(indev, LV_INDEV_MODE_TIMER);
         lv_indev_add_event_cb(indev, indev_activity_cb, LV_EVENT_PRESSED, NULL);
         /* PRESSED fires once per touch; PRESSING fires on every indev

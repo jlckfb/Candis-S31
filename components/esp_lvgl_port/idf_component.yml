@@ -1,0 +1,8 @@
+version: "2.9.0"
+description: Candis-S31 LVGL compatibility port with TE diagnostics support
+url: https://github.com/jlckfb/Candis-S31/tree/main/components/esp_lvgl_port
+dependencies:
+  idf: ">=5.2"
+  lvgl/lvgl:
+    version: ">=8,<10"
+    public: true

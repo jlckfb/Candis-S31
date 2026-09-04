@@ -7,7 +7,7 @@ Espressif player stack: `espressif/esp_player`, the GMF framework
 `esp_lvgl_port` components (see `main/idf_component.yml`; all resolve from
 the ESP Component Registry on first build).
 
-Status: compile-tested with ESP-IDF v6.1-rc1 (`--preview`, vendored BSP).
+Status: compile-tested with ESP-IDF v6.1-rc1 (`--preview`, repository board component).
 No on-board playback session has been recorded yet — treat the runtime
 path as unverified until the EVT1 board confirms it.
 
@@ -30,8 +30,9 @@ idf.py --preview -C examples/esp-idf/player -D IDF_TARGET=esp32s31 build
 idf.py --preview -C examples/esp-idf/player -D IDF_TARGET=esp32s31 flash monitor
 ```
 
-The BSP resolves to the vendored snapshot (`vendor/esp-bsp`) by default; set
-`CANDIS_S31_BSP_PATH` to develop against a live esp-bsp checkout. The committed
-`dependencies.lock` pins the player-stack component versions and hashes; do not
-edit it by hand. A fresh build still needs network access to download the
-pinned Registry packages.
+The board runtime is injected from the repository-owned
+`components/candis_s31/` component; its manifest maps the four reusable
+drivers to `vendor/idf-extra-components/`. The committed `dependencies.lock`
+pins the player-stack versions and hashes; do not edit it by hand. A fresh
+build still needs network access to download the pinned public Registry
+packages.

@@ -235,11 +235,11 @@ static int command_display_sleep_test(int argc, char **argv)
 
 /* --- Read-only TE (tearing-effect) probe -------------------------------- */
 
-/* The CO5300 TE line (BSP_LCD_TE) carries one pulse per panel scan. The
- * display is created by esp_lvgl_adapter, whose TE observer is not exposed as
- * a public API. Sample the GPIO directly instead: GPIO inputs can be observed
- * without changing the adapter-owned interrupt configuration or the LVGL
- * object tree. */
+/* The CO5300 TE line (BSP_LCD_TE) carries one pulse per panel scan.
+ * esp_lvgl_port owns the GPIO interrupt used for refresh gating; this command
+ * never changes that ISR. It polls the input level directly because the
+ * public edge observer reports rising edges only, while this diagnostic also
+ * measures high and low pulse widths. */
 
 #define DISPLAY_TE_WINDOW_MS_DEFAULT 1000
 #define DISPLAY_TE_WINDOW_MS_MIN     100

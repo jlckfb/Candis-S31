@@ -27,5 +27,5 @@ idf.py --preview -C firmware/powercycle -D IDF_TARGET=esp32s31 build
 idf.py --preview -C firmware/powercycle -D IDF_TARGET=esp32s31 flash monitor
 ```
 
-The BSP resolves to the vendored snapshot (`vendor/esp-bsp`) by default; set
-`CANDIS_S31_BSP_PATH` to develop against a live esp-bsp checkout.
+工程通过仓库自有 `components/candis_s31/` 构建，通用驱动映射在
+`vendor/idf-extra-components/`；不需要外部 BSP 检出。

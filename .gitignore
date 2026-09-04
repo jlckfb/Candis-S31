@@ -7,7 +7,9 @@ sdkconfig
 sdkconfig.old
 **/managed_components/
 .manifest_sha
-vendor/esp-bsp/**/test_apps/dependencies.lock
+# Component-library test apps resolve afresh against their local component.
+**/test_apps/dependencies.lock
+/build-logs/
 
 # Firmware images belong in release assets, not the source tree
 *.bin

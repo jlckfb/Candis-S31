@@ -7,7 +7,7 @@ after the operator taps PASS on the display — serial-only frame checks are
 reported separately as automatic evidence (`main/camera_test_main.c` header).
 
 The `esp_cam_sensor` format table named RGB565_BE writes `0x4300=0x6F`, which
-OV5640/Linux semantics define as RGB565 LE. The vendored BSP re-applies
+OV5640/Linux semantics define as RGB565 LE. The repository board component re-applies
 `0x61` (RGB565 BE) after that table; this diagnostic verifies the resulting
 RGB565X byte stream without hiding it behind esp_video byte swapping
 (`sdkconfig.defaults` keeps `CONFIG_ESP_VIDEO_ENABLE_SWAP_BYTE=n`).
@@ -26,10 +26,9 @@ idf.py --preview -C firmware/camera_test -p /dev/ttyACM0 -b 4000000 flash
 idf.py --preview -C firmware/camera_test -p /dev/ttyACM0 monitor
 ```
 
-The BSP resolves to the vendored snapshot (`vendor/esp-bsp`) by default; set
-`CANDIS_S31_BSP_PATH` to develop against a live esp-bsp checkout. A 5 s boot
-delay (`CONFIG_CAMERA_TEST_BOOT_DELAY_MS`) leaves a window for the serial
-monitor to attach after reset.
+该工程通过 `cmake/candis_components.cmake` 使用仓库自有
+`components/candis_s31/`，四个通用驱动来自 `vendor/idf-extra-components/`。
+5 s 启动延迟（`CONFIG_CAMERA_TEST_BOOT_DELAY_MS`）为串口监控连接预留窗口。
 
 ## Variants
 

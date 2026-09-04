@@ -77,7 +77,7 @@ dependencies:
       public: true
       version: ^1.2.0
     source:
-      path: ../../vendor/esp-bsp/components/lcd_touch/esp_lcd_touch_cst820
+      path: ../../vendor/idf-extra-components/esp_lcd_touch_cst820
       type: local
     version: 1.2.0
   espressif/esp_lvgl_port:
@@ -88,7 +88,7 @@ dependencies:
       public: true
       version: '>=8,<10'
     source:
-      path: ../../vendor/esp-bsp/components/esp_lvgl_port
+      path: ../../components/esp_lvgl_port
       type: local
     version: 2.9.0
   espressif/esp_sccb_intf:
@@ -150,7 +150,7 @@ dependencies:
     - name: idf
       version: '>=5.3'
     source:
-      path: ../../vendor/esp-bsp/components/fusb303b
+      path: ../../vendor/idf-extra-components/fusb303b
       type: local
     version: 0.3.0
   espressif/led_indicator:
@@ -186,7 +186,7 @@ dependencies:
     - name: idf
       version: '>=5.3'
     source:
-      path: ../../vendor/esp-bsp/components/rx8130ce
+      path: ../../vendor/idf-extra-components/rx8130ce
       type: local
     version: 0.4.0
   espressif/tg28_sw:
@@ -194,7 +194,7 @@ dependencies:
     - name: idf
       version: '>=5.3'
     source:
-      path: ../../vendor/esp-bsp/components/tg28_sw
+      path: ../../vendor/idf-extra-components/tg28_sw
       type: local
     version: 0.4.0
   espressif/usb:
@@ -262,6 +262,6 @@ direct_dependencies:
 - espressif/usb
 - idf
 - lvgl/lvgl
-manifest_hash: 6688a613e9025e863a8f8859f1b22864b1a8283e67a7defd39a708d045dca918
+manifest_hash: 534eb315dd233f137f315a1f2f7f86c68b3681a35e0e2a15cbfb13d077bfab6e
 target: esp32s31
 version: 3.0.0

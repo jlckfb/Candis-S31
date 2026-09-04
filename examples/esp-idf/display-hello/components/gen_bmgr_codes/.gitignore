@@ -1,0 +1,2 @@
+# Board Manager output is committed so a plain clone builds without a
+# separate generation step.

@@ -1,0 +1,31 @@
+{
+  "catalogSchemaVersion": 3,
+  "profiles": [
+    {
+      "id": "5.4",
+      "path": "idf_5_4.json",
+      "version": "5.4.0"
+    },
+    {
+      "id": "5.5",
+      "path": "idf_5_5.json",
+      "version": "5.5.0"
+    },
+    {
+      "id": "6.0",
+      "path": "idf_6_0.json",
+      "version": "6.0.0"
+    },
+    {
+      "id": "6.1",
+      "path": "idf_6_1.json",
+      "version": "6.1.0"
+    },
+    {
+      "id": "6.2",
+      "path": "idf_6_2.json",
+      "version": "6.2.0"
+    }
+  ],
+  "schemaVersion": 1
+}

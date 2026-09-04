@@ -1,0 +1,72 @@
+version: 0.6.1
+description: Board manager for Espressif
+url: https://github.com/espressif/esp-board-manager
+documentation: https://github.com/espressif/esp-board-manager/blob/main/esp_board_manager/README.md
+issues: https://github.com/espressif/esp-board-manager/issues
+
+tags:
+- board_manager
+- esp_board_manager
+- board
+- boards
+- adf
+- gmf
+
+examples:
+  - path: examples/play_sdcard_music
+  - path: examples/record_to_sdcard
+  - path: examples/play_embed_music
+  - path: examples/record_and_play
+  - path: examples/display_lvgl
+
+dependencies:
+  espressif/esp_boards:
+    version: "*"
+
+  espressif/esp_codec_dev:
+    require: public
+    version: ~1.6
+    matches:
+      - if: "$CONFIG{ESP_BOARD_DEV_AUDIO_CODEC_SUPPORT} == True"
+
+  espressif/esp_lcd_touch:
+    require: public
+    version: "*"
+    matches:
+      - if: "$CONFIG{ESP_BOARD_DEV_LCD_TOUCH_SUPPORT} == True"
+
+  espressif/esp_io_expander:
+    require: public
+    version: ^1.0.1
+    matches:
+      - if: "$CONFIG{ESP_BOARD_DEV_GPIO_EXPANDER_SUPPORT} == True"
+
+  espressif/esp_video:
+    require: public
+    version: "^2.1.0"
+    matches:
+      - if: "$CONFIG{ESP_BOARD_DEV_CAMERA_SUPPORT} == True"
+
+  espressif/button:
+    require: public
+    version: "^4.1.4"
+    matches:
+      - if: "$CONFIG{ESP_BOARD_DEV_BUTTON_SUPPORT} == True"
+
+  espressif/led_strip:
+    require: public
+    version: "*"
+    matches:
+      - if: "$CONFIG{ESP_BOARD_DEV_LED_STRIP_SUPPORT} == True"
+
+  espressif/esp_lcd_panel_io_additions:
+    require: public
+    version: "^1.0.0"
+    matches:
+      - if: "$CONFIG{ESP_BOARD_DEV_DISPLAY_LCD_SUB_RGB_3WIRE_SPI_SUPPORT} == True"
+
+  joltwallet/littlefs:
+    require: public
+    version: "^1.22.1"
+    matches:
+      - if: "$CONFIG{ESP_BOARD_DEV_LITTLEFS_SUPPORT} == True"

@@ -1,0 +1,122 @@
+# Peripherals Configuration for Candis-S31
+peripherals:
+  # Main control bus for touch and audio codec.
+
+  - name: i2c_main
+    type: i2c
+    role: master
+    config:
+      port: 0
+      pins:
+        sda: 34
+        scl: 33
+      enable_internal_pullup: false
+
+  # Low-power control bus for the PMIC and RTC.
+  - name: i2c_low_power
+    type: i2c
+    role: master
+    config:
+      port: 1
+      pins:
+        sda: 7
+        scl: 6
+      enable_internal_pullup: false
+
+  - name: i2s_audio_out
+    type: i2s
+    role: master
+    format: std-out
+    config: &i2s_audio_config
+      port: 0
+      # Keep in sync with BSP_I2S_SAMPLE_RATE in bsp/candis_s31.h (BSP is the
+      # primary line, this definition is the parallel BM adaptation).
+      # 16000 Hz is a row in the es8389 driver's coeff_div[] table
+      # (8000/16000/24000/32000/44100/48000/88200/96000/192000); the previous
+      # 22050 Hz is not. The codec is clocked from MCLK (use_mclk=true), which
+      # makes es8389_set_fs() skip that lookup, so 22050 Hz did not fail
+      # outright - it left the codec clock dividers at their reset defaults.
+      # Staying inside the table keeps both clocking paths valid.
+      sample_rate_hz: 16000
+      mclk_multiple: 256
+      data_bit_width: 16
+      slot_bit_width: I2S_SLOT_BIT_WIDTH_AUTO
+      slot_mode: I2S_SLOT_MODE_STEREO
+      slot_mask: I2S_STD_SLOT_BOTH
+      ws_width: 16
+      pins:
+        mclk: 35
+        bclk: 18
+        ws: 19
+        dout: 8
+        din: 44
+
+  - name: i2s_audio_in
+    type: i2s
+    role: master
+    format: std-in
+    config: *i2s_audio_config
+
+  - name: spi_display
+    type: spi
+    role: master
+    config:
+      spi_bus_config:
+        spi_port: SPI2_HOST
+        data0_io_num: 11
+        data1_io_num: 13
+        data2_io_num: 14
+        data3_io_num: 9
+        sclk_io_num: 12
+        max_transfer_sz: 44160
+
+
+  - name: gpio_display_vbat
+    type: gpio
+    role: io
+    config:
+      pin: 5
+      mode: GPIO_MODE_OUTPUT
+      default_level: 0
+
+  - name: gpio_display_vci
+    type: gpio
+    role: io
+    config:
+      pin: 38
+      mode: GPIO_MODE_OUTPUT
+      default_level: 0
+
+  - name: gpio_sd_power
+    type: gpio
+    role: io
+    config:
+      pin: 36
+      mode: GPIO_MODE_OUTPUT
+      default_level: 1
+
+  - name: gpio_pa_control
+    type: gpio
+    role: io
+    config:
+      pin: 42
+      mode: GPIO_MODE_OUTPUT
+      default_level: 0
+
+
+  # TG28 and RX8130CE share this wire-ORed active-low interrupt line.
+  - name: gpio_pmic_rtc_interrupt
+    type: gpio
+    role: io
+    config:
+      pin: 2
+      mode: GPIO_MODE_INPUT
+      pull_up: true
+      intr_type: GPIO_INTR_LOW_LEVEL
+
+  - name: gpio_display_te
+    type: gpio
+    role: io
+    config:
+      pin: 16
+      mode: GPIO_MODE_INPUT

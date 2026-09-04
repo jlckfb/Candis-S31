@@ -1,0 +1,136 @@
+version: 1.0.0
+devices:
+  - name: gpio_expander
+    chip: tca9554
+    type: gpio_expander
+    version: default
+    dependencies:
+      espressif/esp_io_expander_tca95xx_16bit: "*"
+    config:
+      max_pins: 16
+      output_io_mask: [3, 4, 8, 9, 10, 11, 12, 13]
+      output_io_level_mask: [0, 0, 1, 1, 1, 0, 1, 1]
+      input_io_mask: [0, 1, 2, 5, 6, 7, 14, 15]
+    peripherals:
+      - name: i2c_master
+        i2c_addr: [0x40]
+
+  - name: audio_dac
+    chip: es8389
+    type: audio_codec
+    version: default
+    config:
+      dac_enabled: true
+      dac_max_channel: 2
+      dac_channel_mask: "11"
+      dac_init_gain: 0
+      mclk_enabled: true
+    peripherals:
+      - name: i2s_audio_out
+      - name: i2c_master
+        address: 0x20
+        frequency: 100000          # Hz
+
+  - name: audio_adc
+    chip: es8389
+    type: audio_codec
+    version: default
+    config:
+      adc_enabled: true
+      adc_max_channel: 2
+      adc_channel_mask: "11"
+      adc_init_gain: 0
+    peripherals:
+      - name: i2s_audio_in
+      - name: i2c_master
+        address: 0x20
+        frequency: 100000
+
+  - name: fs_sdcard
+    type: fs_fat
+    sub_type: spi
+    config:
+      sub_config:
+        cs_gpio_num: 15
+        frequency: SDMMC_FREQ_DEFAULT
+    peripherals:
+      - name: spi_master
+
+  - name: lcd_rd_gpio_ctrl
+    type: gpio_ctrl
+    config:
+      active_level: 1
+      default_level: 0
+    peripherals:
+      - name: gpio_lcd_rd
+
+  - name: lcd_bl_gpio_ctrl
+    type: gpio_ctrl
+    config:
+      active_level: 1
+      default_level: 0
+    peripherals:
+      - name: gpio_lcd_bl
+
+  - name: display_lcd
+    type: display_lcd
+    depends_on: ["lcd_rd_gpio_ctrl", "lcd_bl_gpio_ctrl"]
+    version: default
+    sub_type: i80
+    chip: st7789
+    config:
+      swap_xy: false
+      mirror_x: false
+      mirror_y: false
+      x_max: 240
+      y_max: 320
+      invert_color: true
+      need_reset: true
+
+      bus_config:
+        dc_gpio_num: 12
+        wr_gpio_num: 11
+        clk_src: LCD_CLK_SRC_DEFAULT
+        data_gpio_nums: [13, 9, 8, 7, 6, 5, 4, 3]
+        bus_width: 8
+        max_transfer_bytes: 153600
+        dma_burst_size: 64
+
+      io_config:
+        cs_gpio_num: 14
+        pclk_hz: 10000000
+        trans_queue_depth: 7
+        lcd_cmd_bits: 8
+        lcd_param_bits: 8
+        dc_levels:
+          dc_idle_level: 1
+          dc_cmd_level: 0
+          dc_dummy_level: 0
+          dc_data_level: 1
+        flags:
+          cs_active_high: false
+          pclk_active_neg: false
+          pclk_idle_low: false
+
+      panel_config:
+        reset_gpio_num: -1
+        rgb_ele_order: LCD_RGB_ELEMENT_ORDER_RGB
+        bits_per_pixel: 16
+        flags:
+          reset_active_high: false
+
+  - name: button_l
+    type: button
+    depends_on: gpio_expander
+    sub_type: custom
+    config:
+      long_press_time: 2000
+      short_press_time: 100
+
+  - name: button_m
+    type: button
+    depends_on: gpio_expander
+    sub_type: custom
+    config:
+      long_press_time: 2000
+      short_press_time: 100

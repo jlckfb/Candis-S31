@@ -60,30 +60,22 @@ CONFIG_LV_DEF_REFR_PERIOD=15
 CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=48
 CONFIG_BSP_LCD_DRAW_BUF_DOUBLE=y
 
-# Rendering runs on one SW draw unit; RGB565 byte order is the CO5300
-# contract, handled by the BSP/port flush path. CLIB allocators and a single
-# SW draw unit are the validated baseline (the
-# dual-unit dispatch path spun with zero progress on this board; the
-# adapter task serializes rendering).
+# Rendering uses the validated single LVGL software draw unit and the LCD
+# peripheral's asynchronous QSPI DMA path. RGB565 byte order is handled by the
+# board component/port flush path. A second SW draw unit previously spun with
+# zero progress on this board, so keep exactly one.
 CONFIG_LV_USE_CLIB_MALLOC=y
 CONFIG_LV_USE_CLIB_STRING=y
 CONFIG_LV_USE_CLIB_SPRINTF=y
 CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=1
-# PPA acceleration route: the adapter's blend/fill handler
-# (enable_ppa_accel in the BSP display profile), NOT LVGL's native PPA draw
-# unit. CONFIG_LV_USE_PPA must stay disabled: lv_draw_ppa_private.h requires
-# CONFIG_LV_DRAW_BUF_ALIGN == CONFIG_CACHE_L2_CACHE_LINE_SIZE, and that
-# Kconfig symbol only exists on ESP32-P4 (ESP32-S31 has none), so the native
-# unit cannot compile here; LVGL's esp.cmake also links esp_driver_ppa only
-# for esp32p4. The adapter path is compile-clean on S31 (its CMake adds
-# esp_driver_ppa for esp32s31) and is mutually exclusive with the native
-# unit anyway. Keep exactly one SW draw unit: the adapter PPA path requires
-# LV_DRAW_SW_DRAW_UNIT_CNT == 1 (dual units spun with zero progress on this
-# board).
+# PPA is verified separately by the `accel.ppa` hardware diagnostic, but it is
+# not part of this display pipeline. The repository LVGL compatibility port
+# only compiles its optional PPA rotation helper for ESP32-P4, and LVGL's
+# native PPA draw unit is not integrated for ESP32-S31 here. Keep it disabled
+# instead of claiming acceleration that the display path does not use.
 CONFIG_LV_USE_PPA=n
-# Cache-line draw-buffer alignment (S31 dcache line = 64 B, factory-proven
-# value): keeps every LVGL draw/layer buffer aligned for the adapter's
-# esp_cache_msync writeback and for PPA/DMA transfers.
+# S31 D-cache line = 64 B. Keep LVGL draw/layer buffers cache-line aligned for
+# cache writeback and LCD DMA transfers.
 CONFIG_LV_DRAW_BUF_ALIGN=64
 CONFIG_LV_FONT_MONTSERRAT_16=y
 # 1 ms tick so the LVGL task paces refresh cycles against the 16.67 ms TE period.

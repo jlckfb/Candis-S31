@@ -27,42 +27,49 @@ idf.py --preview -p PORT flash monitor
 
 | 开发环境 | 当前状态 |
 |---|---|
-| ESP-IDF | 入门工程、Factory、低功耗示例以及仓内 BSP 快照均使用 `v6.1-rc1` 编译通过；Board Manager 定义可生成并在本地组件覆盖下编译，待四个驱动发布后再走纯 Registry 路径；核心外设已在 EVT1 实物上验证（见上方硬件状态） |
+| ESP-IDF | 入门工程、Board Manager 屏幕示例、Factory、低功耗示例、播放器和仓内板级组件均使用 `v6.1-rc1` 编译通过；核心外设已在 EVT1 实物上验证（见上方硬件状态） |
 | Arduino | 等待 ESP32-S31 Core，再提交 Candis-S31 board 与 variant |
 | PlatformIO | 等待 ESP32-S31 平台、工具和框架支持，再增加 board manifest |
 
-Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会加入。单独的 variant 或 board JSON 不能带来一个新 SoC 的支持。本仓库不提供私有 ESP-IDF 分叉、修改版框架或复制的第三方库。
+Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会加入。单独的 variant 或 board JSON 不能带来一个新 SoC 的支持。本仓库不提供私有 ESP-IDF 分叉或修改版框架；仓内组件镜像均在 `components/`、`vendor/` 和 [UPSTREAM.md](UPSTREAM.md) 中明确标注来源与归属。
 
-### 构建验证 — 2026-09-02
+### 构建验证 — 2026-09-04
 
-基线：ESP-IDF `v6.1-rc1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 13 个默认目标；维护者 2026-09-02 完整回归 13/13 通过。构建日志属于本地产物，按设计不随仓库发布；可直接运行 `tools/build-all.sh` 重现并查看末尾汇总。`example:*` 目标为维护者专享：它们从外部 esp-bsp 检出（`ESP_BSP_ROOT`）编译 esp-bsp 示例，检出缺失时报 SKIP——详见 `tools/build-all.sh` 头注释。`display_usb_hid` 示例不在矩阵内：它通过 `esp_lvgl_port` 助手驱动 HID 输入，而本板 BSP 使用 `esp_lvgl_adapter`。
+基线：ESP-IDF `v6.1-rc1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 14 个默认目标；矩阵设计为普通克隆即可运行。构建日志属于本地产物，按设计不随仓库发布；可直接运行 `tools/build-all.sh` 重现并查看末尾汇总。`display-hello` 目标额外验证仓内 Board Manager 生成文件和相对路径覆盖。
 
-| 目标（`tools/build-all.sh --list`） | 源码位置 | 状态（2026-09-02） |
+| 目标（`tools/build-all.sh --list`） | 源码位置 | 状态 |
 |---|---|---|
 | `factory` | `firmware/factory` | 编译通过 |
 | `getting-started` | `examples/esp-idf/getting-started` | 编译通过 |
 | `low-power` | `examples/esp-idf/low-power` | 编译通过 |
 | `player` | `examples/esp-idf/player` | 编译通过 |
+| `display-hello` | `examples/esp-idf/display-hello` | 编译通过；Board Manager 本地路径 |
 | `demo` | `firmware/demo` | 编译通过 |
 | `camera-test` | `firmware/camera_test` | 编译通过 |
 | `powercycle` | `firmware/powercycle` | 编译通过 |
 | `usb-cdc-device` | `firmware/usb_cdc_device` | 编译通过 |
-| `testapp:candis_s31` | `vendor/esp-bsp/bsp/candis_s31/test_apps` | 编译通过 |
-| `testapp:tg28_sw` | `vendor/esp-bsp/components/tg28_sw/test_apps` | 编译通过 |
-| `testapp:rx8130ce` | `vendor/esp-bsp/components/rx8130ce/test_apps` | 编译通过 |
-| `testapp:fusb303b` | `vendor/esp-bsp/components/fusb303b/test_apps` | 编译通过 |
-| `testapp:cst820` | `vendor/esp-bsp/components/lcd_touch/esp_lcd_touch_cst820/test_apps` | 编译通过 |
+| `testapp:candis_s31` | `components/candis_s31/test_apps` | 编译通过 |
+| `testapp:tg28_sw` | `vendor/idf-extra-components/tg28_sw/test_apps` | 编译通过 |
+| `testapp:rx8130ce` | `vendor/idf-extra-components/rx8130ce/test_apps` | 编译通过 |
+| `testapp:fusb303b` | `vendor/idf-extra-components/fusb303b/test_apps` | 编译通过 |
+| `testapp:cst820` | `vendor/idf-extra-components/esp_lcd_touch_cst820/test_apps` | 编译通过 |
 
-全部固件目标基于仓内 [`vendor/esp-bsp/`](vendor/esp-bsp/README.md) 的内置 BSP 快照构建，普通克隆即可编译，无需额外出库或环境变量。
+板级运行时维护在 [`components/candis_s31/`](components/candis_s31)，可复用驱动映射到 [`vendor/idf-extra-components/`](vendor/idf-extra-components)，声明式 Board Manager 定义位于 [`vendor/esp-board-manager/`](vendor/esp-board-manager)。不需要外部 BSP 检出。
 
 ## 仓库目录
 
 ```text
 .
 ├── hardware/                  # 原理图、引脚表和 EVT 注意事项
+├── docs/                      # 系统总览和板卡使用说明
+├── cmake/                     # 独立工程共用接线
+├── components/
+│   ├── candis_s31/            # 仓库自有板级运行时组件
+│   └── esp_lvgl_port/         # 板级 LVGL 兼容端口
 ├── examples/
 │   └── esp-idf/
-│       ├── getting-started/   # 独立 ESP-IDF 工程
+│       ├── getting-started/   # 工具链最小验证
+│       ├── display-hello/     # Board Manager + LVGL 屏幕示例
 │       ├── low-power/         # S0/S1/深睡/S2 状态机原型
 │       └── player/            # TF 卡音视频播放器（基于 ESP-GMF）
 ├── firmware/
@@ -72,12 +79,14 @@ Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会
 │   ├── powercycle/            # 功耗测量辅助固件
 │   ├── recovery/              # 恢复流程
 │   └── usb_cdc_device/        # Type-C2 USB CDC 设备诊断
-├── tools/                     # 构建验证、BSP 同步与发布脚本
-├── vendor/                    # 内置 esp-bsp BSP 快照
+├── tools/                     # 构建验证和发布脚本
+├── vendor/
+│   ├── esp-board-manager/     # Board Manager 与 friends-board 快照
+│   └── idf-extra-components/  # 可复用驱动快照
 └── .github/workflows/         # 构建验证
 ```
 
-仓库根目录有意不提供 `CMakeLists.txt`、`components/` 或框架安装文件。
+仓库根目录没有顶层应用 `CMakeLists.txt`；每个 ESP-IDF 工程都从自身目录构建。
 
 ## 硬件资料
 
@@ -93,19 +102,13 @@ Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会
 
 ## 板级适配
 
-Candis-S31 按照代码职责分别提交到对应上游：
+本仓库按乐鑫维护方在 [esp-bsp#823](https://github.com/espressif/esp-bsp/pull/823) 给出的归属建议组织：
 
-- Candis-S31 BSP 本体托管在公开的 [`LeenixP/esp-bsp`](https://github.com/LeenixP/esp-bsp) fork（`feat/candis-s31` 分支）；可复用的 TG28_SW / RX8130CE / FUSB303B / CST820 驱动组件按官方指引提交 [`espressif/idf-extra-components`](https://github.com/espressif/idf-extra-components)——本仓库在 [`vendor/esp-bsp/`](vendor/esp-bsp/README.md) 内置了可直接编译的 BSP 快照，普通克隆即可编译全部固件；
-- 完整 ESP-IDF 板级定义进入 ESP Board Manager 的 [`espressif/esp_friends_boards`](https://components.espressif.com/components/espressif/esp_friends_boards)；
-- 可复用器件驱动进入各自源码仓库并发布到 [ESP Component Registry](https://components.espressif.com/)；
-- Arduino-ESP32 具备 ESP32-S31 Core 后，再向 [Arduino-ESP32](https://github.com/espressif/arduino-esp32) 提交 board 与 variant；
-- PlatformIO Espressif32 具备 ESP32-S31 平台支持后，再向 [platform-espressif32](https://github.com/platformio/platform-espressif32) 提交 board manifest。
+- Candis-S31 的完整运行时组件维护在 [`components/candis_s31/`](components/candis_s31)，包括引脚、电源时序、Type-C 策略、相机时钟规避和 AMOLED/LVGL 管线；不依赖 esp-bsp 检出。
+- TG28_SW、RX8130CE、FUSB303B、CST820 四个可复用驱动暂存于 [`vendor/idf-extra-components/`](vendor/idf-extra-components)，待后续手动提交 `espressif/idf-extra-components`。
+- 声明式板卡定义暂存于 [`vendor/esp-board-manager/esp_friends_boards/`](vendor/esp-board-manager/esp_friends_boards)，待后续手动提交 `esp_friends_boards`；[`display-hello`](examples/esp-idf/display-hello) 展示其本地 Board Manager 接入方式。
 
-ESP32-S31 的通用问题才需要修改 ESP-IDF 本身。Candis-S31 的引脚分配和器件选择通常不需要进入 ESP-IDF 核心仓库。BSP 遵循 ESP-BSP 公共 API，让 Factory 固件和上游示例验证同一份实现。esp-bsp 官方维护方答复（espressif/esp-bsp#823）只接收 Espressif 与 M5Stack 官方板，因此驱动组件改投 idf-extra-components；Board Manager 定义单独维护。
-
-BSP 开发时把 `CANDIS_S31_BSP_PATH` 指向活的 esp-bsp 工作区即可覆盖内置快照；维护者用 `tools/sync_bsp.sh` 刷新快照。逐仓库的提交范围见[上游归属和贡献路径](UPSTREAM.md)。
-
-BSP 已覆盖显示与触摸、TG28_SW 电源管理、RX8130CE RTC、FUSB303B 与 USB Host、SDMMC、ES8389 音频、DVP 摄像头链路和 RGB LED。Board Manager 定义已使用开发组件完成生成和编译，但刻意不暴露 Type-C 控制器和 OTG GPIO：其当前模型无法原子保证"先 Source、后升压"和仅 500 mA 的板级约束；Type-C2 USB Host 必须使用 BSP API。
+Board Manager 能描述设备和外设接线，但不承载本板完整的共享中断、充电、Type-C、相机时钟和显示事务策略；高级固件使用仓库自有运行时组件，小型屏幕示例直接使用 Board Manager。
 
 ## 许可
 

@@ -173,7 +173,7 @@ S2 的最后一步现在调用 `bsp_pmic_power_off()`：它封装 TG28 的软件
 
 ```
 low-power/
-├── CMakeLists.txt                  # 工程；校验并注入 CANDIS_S31_BSP_PATH
+├── CMakeLists.txt                  # 工程；注入仓库自有板级组件
 ├── sdkconfig.defaults              # 通用配置（含 ULP/LP core 开关）
 ├── sdkconfig.defaults.esp32s31     # S31 专属（flash 容量、分区）
 ├── README.md
@@ -183,19 +183,20 @@ low-power/
     ├── low_power_main.c            # 状态机、唤醒源、pad 归属、RTC 闹钟
     └── lp_core/
         └── main.c                  # LP 管家固件（rv32imac）
-```
 
 ## 构建
 
-BSP 默认使用仓内 `vendor/esp-bsp/` 快照，无需环境变量。BSP 开发时可设 `CANDIS_S31_BSP_PATH` 指向活的 esp-bsp 工作区覆盖快照：
+工程默认通过 `cmake/candis_components.cmake` 使用
+`components/candis_s31/`；四个可复用驱动映射到
+`vendor/idf-extra-components/`，无需任何外部检出。
 
 ```bash
 idf.py --preview set-target esp32s31
 idf.py --preview build
 ```
 
-默认使用仓内 `vendor/esp-bsp/` 的 BSP 快照，无需任何环境变量。BSP 开发时可设
-`CANDIS_S31_BSP_PATH` 指向活的 esp-bsp 工作区覆盖快照。
+Board Manager 的声明式定义位于 `vendor/esp-board-manager/`，由
+`examples/esp-idf/display-hello` 单独演示。
 
 ## 未完成项
 

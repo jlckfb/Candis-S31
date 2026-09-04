@@ -3,66 +3,45 @@
 #
 # Baseline ESP-IDF v6.1-rc1; esp32s31 is a *preview* target -> --preview.
 #
-# Default set (13 targets, every one buildable from a plain clone — the BSP
-# and the reusable drivers are vendored at vendor/esp-bsp):
-#   factory          firmware/factory. Vendored BSP by default; set
-#                    CANDIS_S31_BSP_PATH to build against a live esp-bsp
-#                    checkout instead.
-#   getting-started  examples/esp-idf/getting-started. Default build/ dir.
-#   low-power        examples/esp-idf/low-power (HP light-sleep state machine
-#                    plus an LP core companion; vendored BSP by default).
-#   player           examples/esp-idf/player. Default build/ dir.
-#   demo             firmware/demo. Default build/ dir.
-#   camera-test      firmware/camera_test. Default build/ dir.
-#   powercycle       firmware/powercycle. Default build/ dir.
-#   usb-cdc-device   firmware/usb_cdc_device. Default build/ dir.
-#   testapp:<name>   5 BSP/driver test_apps (candis_s31, tg28_sw, rx8130ce,
-#                    fusb303b, cst820), built from the vendored snapshot at
-#                    the same paths the CI drivers job uses, build dir
-#                    `build_esp32s31/`.
-# Firmware projects resolve their remaining dependencies from the ESP
-# Component Registry on first build; committed dependencies.lock files pin
-# the selected versions and hashes so later clones do not drift silently.
+# Default set (14 targets, every one buildable from a plain clone). The board
+# implementation is first-party under components/candis_s31; reusable drivers
+# are mirrored under vendor/idf-extra-components.
+#   factory          firmware/factory
+#   getting-started  examples/esp-idf/getting-started
+#   low-power       examples/esp-idf/low-power (HP light-sleep state machine
+#                    plus an LP core companion)
+#   player           examples/esp-idf/player
+#   display-hello    examples/esp-idf/display-hello (Board Manager path)
+#   demo             firmware/demo
+#   camera-test      firmware/camera_test
+#   powercycle       firmware/powercycle
+#   usb-cdc-device   firmware/usb_cdc_device
+#   testapp:<name>   board and reusable-driver test_apps
 #
-# Maintainer-only targets (built only when named explicitly on the command
-# line; never part of the default set):
-#   example:<name>   7 esp-bsp examples (display, display_camera_video,
-#                    display_lvgl_demos, display_lvgl_benchmark, display_sdcard,
-#                    audio, display_audio_photo). They live outside this repo,
-#                    in an esp-bsp checkout rooted at $ESP_BSP_ROOT (default
-#                    $CANDIS_WS/espressif-Prj/esp-bsp), and are built with the
-#                    esp-bsp convention
-#                    `-D SDKCONFIG_DEFAULTS=sdkconfig.bsp.candis_s31`,
-#                    build dir `build_candis_s31/` inside each example. When
-#                    that checkout is absent the target is reported as SKIP
-#                    (not FAIL), so it neither aborts the run nor masks real
-#                    failures.
+# Firmware projects resolve their remaining public dependencies from the ESP
+# Component Registry on first build; committed dependencies.lock files pin the
+# selected versions and hashes.
+#
+# There are no hidden maintainer-only targets. A target listed by --list is
+# available from this checkout and is safe to run after a plain clone.
 #
 # Why not `set-target`: idf.py global options (-B/-D/--preview) must precede the
-# action verb. The 2026-07-31 ws1 script wrote `set-target esp32s31 -B dir build`,
-# which idf.py rejected ("No such option '-B'") or forwarded to ninja, so 10/12
-# targets never compiled — and set-target still renamed existing sdkconfig files
-# to sdkconfig.old as a side effect. This script never calls set-target: the SoC
-# comes from `-D IDF_TARGET=esp32s31` (plus the self-contained
-# sdkconfig.bsp.candis_s31 for BSP examples), which is idempotent.
+# action verb. This script uses `-D IDF_TARGET=esp32s31`, which is idempotent and
+# avoids set-target renaming an existing sdkconfig as a side effect.
 #
 # Properties:
 #   * Serial: one target at a time; a failure does not stop later targets.
 #   * Idempotent: re-runs reuse build dirs (incremental). A stale git-ignored
 #     sdkconfig configured for a different SoC is deleted so defaults re-apply.
-#   * Callable from any cwd; paths derive from the script location.
-#   * Logs stay outside every git worktree:
-#     $BUILD_LOG_ROOT/build-all-<yyyymmdd-HHMMSS>/<target>.log + summary.txt,
-#     with a `latest` symlink. Build dir names above are covered by the
-#     respective .gitignore files (esp-bsp: `build*`; this repo: `**/build/`).
+#   * Callable from any cwd; paths derive from the script location. Build
+#     directories are covered by this repository's `**/build/` ignore rule.
 #
 # Usage:
-#   tools/build-all.sh                          # all 13 default targets
+#   tools/build-all.sh                          # all default targets
 #   tools/build-all.sh getting-started factory  # subset (names from --list)
-#   tools/build-all.sh example:display          # maintainer target, explicit
-#   tools/build-all.sh --list                   # print default target names
+#   tools/build-all.sh --list                   # print target names
 #
-# Env overrides: CANDIS_WS, ESP_BSP_ROOT, BUILD_LOG_ROOT, IDF_PATH, IDF_TOOLS_PATH.
+# Env overrides: CANDIS_WS, BUILD_LOG_ROOT, IDF_PATH, IDF_TOOLS_PATH.
 # If idf.py is not in PATH, the script activates $CANDIS_WS/.tools/esp-idf itself.
 
 set -u
@@ -70,7 +49,6 @@ set -u
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 CANDIS_REPO=$(cd -- "$SCRIPT_DIR/.." && pwd)
 CANDIS_WS=${CANDIS_WS:-$(cd -- "$CANDIS_REPO/../.." && pwd)}
-ESP_BSP_ROOT=${ESP_BSP_ROOT:-$CANDIS_WS/espressif-Prj/esp-bsp}
 BUILD_LOG_ROOT=${BUILD_LOG_ROOT:-$CANDIS_WS/build-logs}
 IDF_TARGET=esp32s31
 
@@ -87,23 +65,17 @@ fi
 command -v idf.py >/dev/null 2>&1 || die "idf.py still not available after activation"
 
 # --- target table ------------------------------------------------------------
-FIRMWARE_TARGETS=(factory getting-started low-power player demo camera-test powercycle usb-cdc-device)
+FIRMWARE_TARGETS=(factory getting-started low-power player display-hello demo camera-test powercycle usb-cdc-device)
 TEST_APPS=(candis_s31 tg28_sw rx8130ce fusb303b cst820)
-# Maintainer-only esp-bsp examples: outside the default set (see header).
-BSP_EXAMPLES=(display display_camera_video display_lvgl_demos display_lvgl_benchmark display_sdcard audio display_audio_photo)
-
-VENDOR_BSP=$CANDIS_REPO/vendor/esp-bsp
 
 ALL_TARGETS=("${FIRMWARE_TARGETS[@]}")
 for ta in "${TEST_APPS[@]}"; do ALL_TARGETS+=("testapp:$ta"); done
-MAINTAINER_TARGETS=()
-for ex in "${BSP_EXAMPLES[@]}"; do MAINTAINER_TARGETS+=("example:$ex"); done
 
 testapp_dir() {
     case "$1" in
-        candis_s31) printf '%s\n' "$VENDOR_BSP/bsp/candis_s31/test_apps" ;;
-        cst820) printf '%s\n' "$VENDOR_BSP/components/lcd_touch/esp_lcd_touch_cst820/test_apps" ;;
-        *)      printf '%s\n' "$VENDOR_BSP/components/$1/test_apps" ;;
+        candis_s31) printf '%s\n' "$CANDIS_REPO/components/candis_s31/test_apps" ;;
+        cst820) printf '%s\n' "$CANDIS_REPO/vendor/idf-extra-components/esp_lcd_touch_cst820/test_apps" ;;
+        *)      printf '%s\n' "$CANDIS_REPO/vendor/idf-extra-components/$1/test_apps" ;;
     esac
 }
 
@@ -145,29 +117,10 @@ run_target() {
     fi
 }
 
-# Record a target as skipped (missing optional prerequisite). Unlike a FAIL
-# this does not affect the exit status, matching the fail-soft property above.
-skip_target() {
-    local name=$1 reason=$2
-    echo "[$name] SKIP ($reason)" | tee -a "$SUMMARY"
-    R_NAME+=("$name"); R_RESULT+=("SKIP"); R_DUR+=("-")
-}
 
 build_one() {
     local name=$1
     case "$name" in
-        example:*)
-            local ex=${name#example:}
-            if [ ! -d "$ESP_BSP_ROOT/bsp/candis_s31" ]; then
-                skip_target "$name" \
-                    "maintainer target: no esp-bsp checkout at $ESP_BSP_ROOT (set ESP_BSP_ROOT)"
-                return
-            fi
-            run_target "$name" "$ESP_BSP_ROOT/examples/$ex" \
-                idf.py --preview -B build_candis_s31 \
-                       -D IDF_TARGET=$IDF_TARGET \
-                       -D SDKCONFIG_DEFAULTS=sdkconfig.bsp.candis_s31 build
-            ;;
         testapp:*)
             local ta=${name#testapp:}
             run_target "$name" "$(testapp_dir "$ta")" \
@@ -189,6 +142,10 @@ build_one() {
             run_target "$name" "$CANDIS_REPO/examples/esp-idf/player" \
                 idf.py --preview -D IDF_TARGET=$IDF_TARGET build
             ;;
+        display-hello)
+            run_target "$name" "$CANDIS_REPO/examples/esp-idf/display-hello" \
+                idf.py --preview -D IDF_TARGET=$IDF_TARGET build
+            ;;
         demo)
             run_target "$name" "$CANDIS_REPO/firmware/demo" \
                 idf.py --preview -D IDF_TARGET=$IDF_TARGET build
@@ -205,10 +162,9 @@ build_one() {
             run_target "$name" "$CANDIS_REPO/firmware/usb_cdc_device" \
                 idf.py --preview -D IDF_TARGET=$IDF_TARGET build
             ;;
-        *) die "unknown target: $name (valid: ${ALL_TARGETS[*]} ${MAINTAINER_TARGETS[*]})" ;;
+        *) die "unknown target: $name (valid: ${ALL_TARGETS[*]})" ;;
     esac
 }
-
 # --- argument parsing ----------------------------------------------------------
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     sed -n '2,66p' "${BASH_SOURCE[0]}"
@@ -223,8 +179,8 @@ SELECTED=()
 if [ "$#" -gt 0 ]; then
     for want in "$@"; do
         found=""
-        for t in "${ALL_TARGETS[@]}" "${MAINTAINER_TARGETS[@]}"; do [ "$t" = "$want" ] && found=$t; done
-        [ -n "$found" ] || die "unknown target '$want' (valid: ${ALL_TARGETS[*]} ${MAINTAINER_TARGETS[*]})"
+        for t in "${ALL_TARGETS[@]}"; do [ "$t" = "$want" ] && found=$t; done
+        [ -n "$found" ] || die "unknown target '$want' (valid: ${ALL_TARGETS[*]})"
         SELECTED+=("$found")
     done
 else

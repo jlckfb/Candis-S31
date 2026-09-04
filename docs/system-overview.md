@@ -10,7 +10,7 @@ first-power procedures live in [`hardware/bring-up.md`](../hardware/bring-up.md)
 Candis-S31 is a compact ESP32-S31 development board built around a square
 2.0-inch 460 × 460 AMOLED. The configuration is frozen for EVT1:
 
-- SoC: ESP32-S31NRV16 (in-package 8 MB long-octal PSRAM, rated 120 MHz)
+- SoC: ESP32-S31 with the validated 32 MB in-package Octal PSRAM
 - Flash: external W25Q128, 16 MB QSPI, 3.3 V
 - Display: AM200Q460460LK (CO5300 QSPI AMOLED) + CST820 capacitive touch
 - Power: TG28 PMIC (DCDC1-4, ALDO1-4, BLDO1/2, DLDO1/2 switches, CPUSLDO,
@@ -31,29 +31,30 @@ The product ships without a battery and without an enclosure.
 
 ## Software architecture
 
-Three layers, plus a declarative Board Manager track:
+The repository has three runtime layers plus a declarative Board Manager track:
 
 ```text
-examples/ (getting-started, low-power, esp-bsp examples)
-        │  consume only the board API
-bsp/candis_s31 (esp-bsp worktree)  ← board-level: pin map, power rails,
-        │                            display/touch/camera/audio init
-components/ (chip-level drivers: tg28_sw, rx8130ce, fusb303b, cst820,
-             co5300, es8389, ...)  ← know chips, never the board
+examples/ and firmware/  ── consume the board runtime or Board Manager APIs
+          │
+components/candis_s31     ── repository-owned board runtime: pins, rails,
+          │                   display/touch/camera/audio/USB policy
+components/esp_lvgl_port  ── board-local LVGL compatibility and TE diagnostics
+          │
+vendor/idf-extra-components ── reusable chip drivers (TG28/RX8130CE/
+                                FUSB303B/CST820), never board policy
 
-esp_friends_boards/candis_s31 (esp-board-manager) — declarative board
-definition, a separate integration from the BSP
+vendor/esp-board-manager/esp_friends_boards/candis_s31
+                         ── declarative wiring and generated Board Manager demo
 ```
 
-- Components are chip drivers. They must not encode Candis-S31 pin choices.
-- The BSP owns every board decision: GPIO map, rail control, reset and
-  interrupt wiring, device probe order. Firmware builds against the vendored
-  snapshot in `vendor/esp-bsp/` by default; set `CANDIS_S31_BSP_PATH` to a
-  live esp-bsp checkout for BSP development.
-- The Board Manager definition is a parallel, declarative integration. It
-  intentionally omits the Type-C controller and OTG GPIO because its current
-  model cannot atomically enforce Source-before-boost and the 500 mA-only
-  policy; Type-C2 USB Host must go through the BSP API.
+- Reusable drivers know only their chip protocol and public interfaces.
+- `components/candis_s31/` owns every board decision: GPIO map, rail control,
+  reset and interrupt wiring, device probe order, Type-C policy, camera clock
+  workaround, and display transitions.
+- `vendor/esp-board-manager/` is the staged declarative board definition.
+  Board Manager does not replace the runtime component because its generic
+  model cannot encode this board's complete charging, shared-interrupt,
+  Type-C, camera-clock, or LVGL/TE policy.
 - Toolchain: ESP-IDF `v6.1-rc1`; target `esp32s31` is a **preview** target — every
   `idf.py` invocation needs `--preview`.
 
@@ -117,8 +118,10 @@ Normal development flow:
 2. Open the CH343P console at 115200 baud.
 3. Flash with esptool: merged factory image at 0x0 for production, or
    `idf.py --preview flash` for development builds.
-4. Interact through factory commands, or develop against the BSP
-   (`bsp_display_start()` and friends) from an example project.
+4. Interact through factory commands, or develop against
+   `components/candis_s31/` (`bsp_display_start()` and friends) from an
+   example project. The Board Manager path is demonstrated by
+   `examples/esp-idf/display-hello`.
 
 Usage boundaries:
 

@@ -44,35 +44,34 @@ The current baseline is ESP-IDF `v6.1-rc1`. Installation Manager (EIM), the offi
 
 | Environment | Status |
 |---|---|
-| ESP-IDF | Starter, Factory, the complete local BSP, and the local Board Manager definition compile with `v6.1-rc1`; the Board Manager definition currently needs local component overrides until the four driver releases are published |
+| ESP-IDF | Starter, the repository-owned board runtime, and the local Board Manager definition compile with `v6.1-rc1`; the four reusable drivers are mapped to local snapshots until their releases are published |
 | Arduino | Waiting for the ESP32-S31 core, followed by the Candis-S31 board and variant |
 | PlatformIO | Waiting for ESP32-S31 platform, tool, and framework support before adding a board manifest |
 
-Arduino and PlatformIO projects will be added only after they build with their normal public tools. A board variant or JSON manifest cannot add a new SoC by itself. This repository does not provide a private ESP-IDF fork, patched framework, or copied third-party libraries.
+Arduino and PlatformIO projects will be added only after they build with their normal public tools. A board variant or JSON manifest cannot add a new SoC by itself. This repository does not provide a private ESP-IDF fork or patched framework; repository-local component mirrors are identified under `components/`, `vendor/`, and [UPSTREAM.md](UPSTREAM.md).
 
-### Build verification — 2026-09-02
+### Build verification — 2026-09-04
 
-Baseline: ESP-IDF `v6.1-rc1`, target `esp32s31` (preview). `tools/build-all.sh` compiles the thirteen default targets serially; the maintainer's complete 2026-09-02 regression passed 13/13. Build logs are local artifacts and are intentionally not shipped; reproduce the matrix with `tools/build-all.sh` and inspect its printed summary. The `example:*` targets are maintainer-only: they build esp-bsp examples from an external checkout (`ESP_BSP_ROOT`) and are reported as SKIP when that checkout is absent — see the header of `tools/build-all.sh`. The `display_usb_hid` example is not part of the matrix: it drives HID inputs through `esp_lvgl_port` helpers that this `esp_lvgl_adapter`-based BSP does not use.
+Baseline: ESP-IDF `v6.1-rc1`, target `esp32s31` (preview). `tools/build-all.sh` compiles the fourteen default targets serially; the matrix is designed to run from a plain clone. Build logs are local artifacts and are intentionally not shipped; reproduce the matrix with `tools/build-all.sh` and inspect its printed summary. The `display-hello` target also validates the local Board Manager generation output and its relative component overrides.
 
-| Target (`tools/build-all.sh --list`) | Source | Status (2026-09-02) |
+| Target (`tools/build-all.sh --list`) | Source | Status |
 |---|---|---|
 | `factory` | `firmware/factory` | Compiles |
 | `getting-started` | `examples/esp-idf/getting-started` | Compiles |
 | `low-power` | `examples/esp-idf/low-power` | Compiles |
 | `player` | `examples/esp-idf/player` | Compiles |
+| `display-hello` | `examples/esp-idf/display-hello` | Compiles; local Board Manager path |
 | `demo` | `firmware/demo` | Compiles |
 | `camera-test` | `firmware/camera_test` | Compiles |
 | `powercycle` | `firmware/powercycle` | Compiles |
 | `usb-cdc-device` | `firmware/usb_cdc_device` | Compiles |
-| `testapp:candis_s31` | `vendor/esp-bsp/bsp/candis_s31/test_apps` | Compiles |
-| `testapp:tg28_sw` | `vendor/esp-bsp/components/tg28_sw/test_apps` | Compiles |
-| `testapp:rx8130ce` | `vendor/esp-bsp/components/rx8130ce/test_apps` | Compiles |
-| `testapp:fusb303b` | `vendor/esp-bsp/components/fusb303b/test_apps` | Compiles |
-| `testapp:cst820` | `vendor/esp-bsp/components/lcd_touch/esp_lcd_touch_cst820/test_apps` | Compiles |
+| `testapp:candis_s31` | `components/candis_s31/test_apps` | Compiles |
+| `testapp:tg28_sw` | `vendor/idf-extra-components/tg28_sw/test_apps` | Compiles |
+| `testapp:rx8130ce` | `vendor/idf-extra-components/rx8130ce/test_apps` | Compiles |
+| `testapp:fusb303b` | `vendor/idf-extra-components/fusb303b/test_apps` | Compiles |
+| `testapp:cst820` | `vendor/idf-extra-components/esp_lcd_touch_cst820/test_apps` | Compiles |
 
-All firmware targets build against the vendored BSP snapshot in
-[`vendor/esp-bsp/`](vendor/esp-bsp/README.md), so a plain clone compiles
-without extra checkouts or environment variables.
+The board runtime is maintained in [`components/candis_s31/`](components/candis_s31), and the reusable drivers are mapped to [`vendor/idf-extra-components/`](vendor/idf-extra-components). The declarative Board Manager sources are mirrored under [`vendor/esp-board-manager/`](vendor/esp-board-manager). No external BSP checkout is required.
 
 ## Repository layout
 
@@ -80,11 +79,16 @@ without extra checkouts or environment variables.
 .
 ├── hardware/                  # Schematic, pinout, and EVT notes
 ├── docs/                      # System overview and board usage
+├── cmake/                     # Shared standalone-project wiring
+├── components/
+│   ├── candis_s31/            # Repository-owned board runtime component
+│   └── esp_lvgl_port/         # Board-local LVGL compatibility port
 ├── examples/
 │   └── esp-idf/
-│       ├── getting-started/   # Standalone ESP-IDF project
+│       ├── getting-started/   # Toolchain smoke test
+│       ├── display-hello/     # Board Manager + LVGL display smoke test
 │       ├── low-power/         # S0/S1/deep-sleep/S2 state-machine prototype
-│       └── player/            # TF-card audio/video player (ESP-GMF)
+│       └── player/             # TF-card audio/video player (ESP-GMF)
 ├── firmware/
 │   ├── camera_test/           # Camera/DVP diagnostic with live AMOLED preview
 │   ├── demo/                  # Watch-style comprehensive LVGL demo
@@ -92,12 +96,15 @@ without extra checkouts or environment variables.
 │   ├── powercycle/            # Power-measurement helper firmware
 │   ├── recovery/              # Recovery procedure
 │   └── usb_cdc_device/        # Type-C2 USB CDC device diagnostics
-├── tools/                     # Build verification, BSP sync, and release scripts
-├── vendor/                    # Vendored esp-bsp BSP snapshot
+├── tools/                     # Build verification and release scripts
+├── vendor/
+│   ├── esp-board-manager/     # Local Board Manager and friends-board snapshot
+│   └── idf-extra-components/  # Local reusable-driver snapshot
 └── .github/workflows/         # Build verification
 ```
 
-There is intentionally no top-level `CMakeLists.txt`, `components/`, or framework installation inside this repository.
+Each standalone ESP-IDF project builds from its own directory. The repository
+root intentionally has no top-level application `CMakeLists.txt`.
 
 ## Hardware resources
 
@@ -114,13 +121,27 @@ Do not enable display bias, USB OTG, or other switched rails before the EVT1 pow
 
 ## Board support
 
-Candis-S31 support is split by ownership:
+The repository follows the ownership split requested by the Espressif
+maintainers in [esp-bsp#823](https://github.com/espressif/esp-bsp/pull/823):
 
-- Candis-S31 BSP lives in the public [`LeenixP/esp-bsp`](https://github.com/LeenixP/esp-bsp) fork (branch `feat/candis-s31`); the reusable TG28_SW / RX8130CE / FUSB303B / CST820 drivers are staged in the [`LeenixP/idf-extra-components`](https://github.com/LeenixP/idf-extra-components/tree/feat/candis-s31-drivers) fork branch for manual upstream submission. This repository vendors a build-ready BSP snapshot at [`vendor/esp-bsp/`](vendor/esp-bsp/README.md), so every firmware project compiles from a plain clone;
-- the complete ESP-IDF board definition belongs in ESP Board Manager's [`espressif/esp_friends_boards`](https://components.espressif.com/components/espressif/esp_friends_boards) collection; the prepared definition is in the [`LeenixP/esp-board-manager`](https://github.com/LeenixP/esp-board-manager/tree/feat/candis-s31) fork branch for manual submission, while local validation uses temporary component overrides until those registry versions exist;
-- reusable device drivers belong in their component source repositories and the [ESP Component Registry](https://components.espressif.com/);
+- The Candis-S31 runtime component is maintained here at
+  [`components/candis_s31/`](components/candis_s31). It contains board pins,
+  power sequencing, Type-C policy, camera clock workarounds, and the validated
+  AMOLED/LVGL path; no ESP-BSP checkout is required.
+- The reusable TG28_SW, RX8130CE, FUSB303B, and CST820 drivers are staged in
+  [`vendor/idf-extra-components/`](vendor/idf-extra-components) for later
+  manual submission to `espressif/idf-extra-components`.
+- The declarative board description is staged in
+  [`vendor/esp-board-manager/esp_friends_boards/`](vendor/esp-board-manager/esp_friends_boards)
+  for later manual submission to `esp_friends_boards`. The
+  [`display-hello`](examples/esp-idf/display-hello) example demonstrates its
+  local Board Manager integration.
 
-The BSP covers display and touch, TG28_SW power management, RX8130CE RTC, FUSB303B and USB Host, SDMMC, ES8389 audio, the DVP camera pipeline, and the RGB LED. The Board Manager definition generates and compiles against the development components but intentionally omits the Type-C controller and OTG GPIO: its current model cannot atomically enforce Source-before-boost and this board's 500 mA-only policy, so Type-C2 USB Host must use the BSP API.
+Board Manager describes device and peripheral wiring, but it does not encode
+this board's complete shared-interrupt, charging, Type-C, camera-clock, or
+display-transition policy. The advanced firmware therefore consumes the
+repository-owned runtime component while the small display example uses the
+Board Manager path directly.
 
 ## License
 

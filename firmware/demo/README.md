@@ -97,7 +97,9 @@ FACTORY_RESULT {"id":"audio.speaker_tone","status":"PASS","evidence":"880Hz 2s a
 
 ## 构建与烧录
 
-克隆后开箱即编（默认使用仓内 `vendor/esp-bsp/` BSP 快照）:
+克隆后开箱即编。工程通过仓库共用的
+`cmake/candis_components.cmake` 注入 `components/candis_s31/`，四个可复用
+驱动由组件清单映射到 `vendor/idf-extra-components/`：
 
 ```sh
 cd firmware/demo
@@ -106,7 +108,7 @@ idf.py --preview build
 idf.py --preview flash   # 板子经 /dev/ttyACM0 连接时
 ```
 
-BSP 开发时可设 `CANDIS_S31_BSP_PATH=<esp-bsp>/bsp/candis_s31` 覆盖快照。
+不要设置外部 BSP 路径；如需修改板级运行时，直接修改仓库内组件并重新构建。
 
 ## Host/Web LVGL 模拟器（设计评审用）
 

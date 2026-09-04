@@ -1,23 +1,9 @@
 # Candis-S31 headless camera driver diagnostic.
 cmake_minimum_required(VERSION 3.22)
 
-# Use the repository BSP by default; a live esp-bsp checkout can be selected
-# for BSP development without changing this project.
-if(DEFINED ENV{CANDIS_S31_BSP_PATH} AND NOT "$ENV{CANDIS_S31_BSP_PATH}" STREQUAL "")
-    file(TO_CMAKE_PATH "$ENV{CANDIS_S31_BSP_PATH}" CANDIS_S31_BSP_PATH)
-else()
-    get_filename_component(CANDIS_S31_BSP_PATH
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/esp-bsp/bsp/candis_s31" ABSOLUTE)
-endif()
-
-if(NOT EXISTS "${CANDIS_S31_BSP_PATH}/CMakeLists.txt" OR
-   NOT EXISTS "${CANDIS_S31_BSP_PATH}/include/bsp/candis_s31.h")
-    message(FATAL_ERROR
-        "Candis-S31 BSP not found at ${CANDIS_S31_BSP_PATH}: restore vendor/esp-bsp or set CANDIS_S31_BSP_PATH")
-endif()
-
-list(APPEND EXTRA_COMPONENT_DIRS "${CANDIS_S31_BSP_PATH}")
-
+# Use the repository-owned board component. This keeps the camera diagnostic
+# independent of any external BSP checkout.
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/candis_components.cmake")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # Keep the image focused on the camera path; no display, audio, RF, or UI
 # service is initialized by the application.

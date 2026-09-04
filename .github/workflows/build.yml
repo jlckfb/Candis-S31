@@ -15,9 +15,9 @@ env:
   # Update the tag and commit together after the new version passes validation.
   IDF_REF: v6.1-rc1
   IDF_COMMIT: 44f0c59f7c81a72a5868a52d5f6dfbbf88829704
-  # The BSP is vendored at vendor/esp-bsp (see vendor/esp-bsp/SOURCE_COMMIT);
-  # CI builds exactly what a plain clone contains. Maintainers refresh the
-  # snapshot with tools/sync_bsp.sh after esp-bsp changes land.
+  # The board runtime is first-party under components/candis_s31. Reusable
+  # drivers and Board Manager sources are mirrored under vendor/ and are
+  # consumed through relative override_path entries.
 
 jobs:
   getting-started:
@@ -34,13 +34,12 @@ jobs:
       - name: Build getting started
         run: |
           . "$RUNNER_TEMP/esp-idf/export.sh"
-          idf.py --preview -C examples/esp-idf/getting-started set-target esp32s31
-          idf.py --preview -C examples/esp-idf/getting-started build
+          idf.py --preview -C examples/esp-idf/getting-started \
+            -D IDF_TARGET=esp32s31 build
 
-  # The Candis-S31 BSP and four reusable drivers are vendored under
-  # vendor/esp-bsp. Their test apps are the acceptance gate for the code that
-  # firmware/factory depends on, so CI compiles them with the same flags that
-  # tools/build-all.sh uses locally.
+  # The board component and four reusable drivers are part of this checkout.
+  # Their test apps are the acceptance gate for the code that firmware/factory
+  # depends on, so CI compiles them with the same flags as build-all.sh.
   drivers:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -67,17 +66,17 @@ jobs:
         if: steps.idf-cache.outputs.cache-hit == 'true'
         run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
 
-      - name: Build BSP and driver test apps (vendored snapshot)
+      - name: Build board and driver test apps (repository snapshots)
         run: |
           . ~/esp-idf/export.sh
           for app in \
-            bsp/candis_s31/test_apps \
-            components/tg28_sw/test_apps \
-            components/rx8130ce/test_apps \
-            components/fusb303b/test_apps \
-            components/lcd_touch/esp_lcd_touch_cst820/test_apps; do
+            components/candis_s31/test_apps \
+            vendor/idf-extra-components/tg28_sw/test_apps \
+            vendor/idf-extra-components/rx8130ce/test_apps \
+            vendor/idf-extra-components/fusb303b/test_apps \
+            vendor/idf-extra-components/esp_lcd_touch_cst820/test_apps; do
             echo "::group::$app"
-            ( cd "vendor/esp-bsp/$app" \
+            ( cd "$app" \
               && idf.py --preview -B build_esp32s31 -D IDF_TARGET=esp32s31 build )
             echo "::endgroup::"
           done
@@ -161,7 +160,6 @@ jobs:
       - name: Pack factory release (dry-run)
         run: |
           RELEASE_NAME="ci-${GITHUB_SHA}" \
-          CANDIS_S31_BSP_PATH="$GITHUB_WORKSPACE/vendor/esp-bsp/bsp/candis_s31" \
           IDF_PATH=~/esp-idf \
             tools/release/pack_factory_release.sh firmware/factory "$RUNNER_TEMP/factory-release"
           python3 -c 'from pathlib import Path; p=Path("'"$RUNNER_TEMP"'/factory-release/launchpad.toml"); s=p.read_text(); assert "ci-${{ github.sha }}" in s and "@" not in s and "<tag>" not in s'
@@ -173,9 +171,9 @@ jobs:
           path: ${{ runner.temp }}/factory-release.*
           if-no-files-found: error
 
-  # Firmware fleet jobs build against the vendored BSP snapshot. Registry
-  # dependencies are pinned by the committed per-project dependencies.lock
-  # files; the runner still downloads those exact packages when uncached.
+  # Firmware fleet jobs build against the repository-owned board component.
+  # Registry dependencies are pinned by each committed dependencies.lock file;
+  # the runner downloads only those exact public packages when uncached.
   demo:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -299,6 +297,37 @@ jobs:
         run: |
           . ~/esp-idf/export.sh
           idf.py --preview -C firmware/usb_cdc_device -D IDF_TARGET=esp32s31 build
+
+  display-hello:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build Board Manager display example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/display-hello -D IDF_TARGET=esp32s31 build
 
   player:
     runs-on: ubuntu-latest

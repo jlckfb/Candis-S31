@@ -1,93 +1,88 @@
 # Candis-S31 内测指南
 
-> 面向内测用户：拿到本仓库后，只需要装好 ESP-IDF 环境，即可直接编译全部固件工程。所有板级支持代码（BSP 与器件驱动）已完整内置于 `vendor/esp-bsp/`，**不依赖任何未发布的外部代码、不需要额外环境变量**。
+> 面向内测用户：安装官方 ESP-IDF 后，克隆本仓库即可编译全部工程。板级运行时位于 `components/candis_s31/`，四个可复用驱动和 Board Manager 资料分别位于 `vendor/idf-extra-components/`、`vendor/esp-board-manager/`；不依赖外部 BSP 检出，也不需要额外环境变量。
 
 ## 1. 这块板子是什么
 
-Candis-S31 是围绕 ESP32-S31 与 2.0 英寸 460×460 方形 AMOLED 设计的低功耗核心板。板上资源：CO5300 AMOLED（QSPI）+ CST820 触摸、TG28 电源管理/充电/电量计、RX8130CE RTC、双 USB Type-C（C1 供电+调试、C2 OTG）、ES8389 音频（扬声器 + 双麦克风）、DVP 摄像头接口、microSD、按键、单颗 WS2812 RGB 灯。
+Candis-S31 是围绕 ESP32-S31 与 2.0 英寸 460×460 方形 AMOLED 设计的低功耗开发板。板上资源：CO5300 AMOLED（QSPI）+ CST820 触摸、TG28 电源管理/充电/电量计、RX8130CE RTC、双 USB Type-C（C1 供电+调试、C2 OTG）、ES8389 音频（扬声器 + 双麦克风）、DVP 摄像头接口、microSD、按键、单颗 WS2812 RGB 灯。
 
-**当前硬件状态（EVT1）**：显示、触摸、microSD、USB Host/Device、Wi-Fi、BLE、RTC、PMIC/充电域均已在实物上验证；ES8389 编解码器初始化和数字音频链路检查通过，扬声器听感与麦克风录音验收仍待复核。相机 FPC 转接板已到位，传感器识别、DVP 取流和内建彩条已在 EVT1 实板验证，真实场景成像与 JPEG 拍照落卡仍待确认；长时老化与低功耗功耗数据尚未表征。
+**当前硬件状态（EVT1）**：显示、触摸、microSD、USB Host/Device、Wi-Fi、BLE、RTC、PMIC/充电域均已在实物上验证；音频数字链路已验证，听感和录音验收仍按当前硬件记录维护。相机传感器识别、DVP 取流和内建彩条已验证；真实场景图像质量与 Demo JPEG 落卡仍待确认；长时老化与完整低功耗功耗拆分仍待补充。
 
-## 2. 环境准备（唯一前置条件）
+## 2. 环境准备（唯一必需前置条件）
 
-安装 **ESP-IDF `v6.1-rc1`** 或更新版本。任选一种官方方式：
+安装 **官方 ESP-IDF `v6.1-rc1`** 或更新版本，并启用 preview target：
 
-- **EIM（ESP-IDF Installation Manager）**：按官方指引选择 v6.1-rc1 安装；
-- **命令行**：
-  ```bash
-  git clone -b v6.1-rc1 --recursive https://github.com/espressif/esp-idf.git
-  cd esp-idf && ./install.sh esp32s31 && . ./export.sh
-  ```
+```bash
+git clone -b v6.1-rc1 --recursive https://github.com/espressif/esp-idf.git
+cd esp-idf
+./install.sh esp32s31
+. ./export.sh
+```
 
-ESP32-S31 目前是 **preview target**，`idf.py` 命令需要带 `--preview`（本文命令均已带上）。
+也可以使用 Espressif Installation Manager（EIM）或官方 VS Code 扩展选择同一版本。ESP32-S31 目前是 **preview target**，本文命令均带 `--preview`。
 
-## 3. 快速开始：五个固件工程
+## 3. 快速开始
 
-克隆仓库后直接编译，无需任何额外设置：
+克隆仓库后，在仓库根目录执行完整构建矩阵：
 
 ```bash
 git clone https://github.com/jlckfb/Candis-S31.git
 cd Candis-S31
-
-# 手表综合演示（表盘 + 16 个应用：录音/播放/WiFi/BLE/文件/USB/游戏/设置/电源等）
-# 核心外设已在 EVT1 实板验证；相机真实成像与 JPEG 落卡仍待确认
-
-cd firmware/demo
-idf.py --preview set-target esp32s31
-idf.py --preview build
-
-# Factory 产测/诊断固件（60+ 条硬件诊断命令，见 firmware/factory/README.md）
-cd ../../firmware/factory
-idf.py --preview set-target esp32s31
-idf.py --preview build
-
-# USB Device CDC 固件（C2 口枚举为串口设备）
-cd ../usb_cdc_device
-idf.py --preview set-target esp32s31
-idf.py --preview build
-
-# 相机 DVP 自动诊断（内建彩条 + 取流，真实成像/JPEG 待确认）
-cd ../camera_test
-idf.py --preview set-target esp32s31
-idf.py --preview build
-
-
-
-# 功耗测量辅助固件
-cd ../powercycle
-idf.py --preview set-target esp32s31
-idf.py --preview build
+./tools/build-all.sh
 ```
 
-**首次编译会从 ESP Component Registry 联网下载公开依赖**（LVGL、esp_lvgl_adapter、esp_video、esp_codec_dev 等官方组件）；已提交的 `dependencies.lock` 会固定解析到的版本与哈希。板级相关代码全部来自仓内 `vendor/esp-bsp/` 快照。
+也可以单独编译任一工程：
 
+```bash
+cd firmware/demo                 # 综合手表 Demo
+idf.py --preview -D IDF_TARGET=esp32s31 build
+
+cd ../../examples/esp-idf/display-hello  # Board Manager 屏幕示例
+idf.py --preview -D IDF_TARGET=esp32s31 build
+```
+
+可用工程清单：
+
+- `examples/esp-idf/getting-started`：只验证 SoC、Flash 和串口，不初始化板级外设；
+- `examples/esp-idf/display-hello`：使用仓内 Board Manager 生成配置和官方 LVGL adapter 的最小屏幕示例；
+- `examples/esp-idf/low-power`：S0/S1/深睡/S2 + LP core 状态机原型；
+- `examples/esp-idf/player`：TF 卡音视频播放器；
+- `firmware/demo`：综合 LVGL Demo 与 41 项测试中心；
+- `firmware/factory`、`firmware/camera_test`、`firmware/powercycle`、`firmware/usb_cdc_device`：产测、相机、功耗和 USB 专用固件。
+
+`display-hello` 的 Board Manager 配置文件已经提交在工程的 `components/gen_bmgr_codes/`，普通用户不必先安装额外 Python 工具。修改 `vendor/esp-board-manager/esp_friends_boards/candis_s31/` 后，维护者才需要加载本地 `idf_ext.py` 并重新运行 `idf.py bmgr -b candis_s31`。
+
+首次编译会从 ESP Component Registry 下载公开依赖（LVGL、esp_lvgl_adapter、esp_video、esp_codec_dev 等）；各工程的 `dependencies.lock` 固定已解析的版本和哈希。仓内板级代码和四个未发布驱动通过相对 `override_path` 固定到本仓路径。
 
 ## 4. 烧录与串口
 
-- **只用 C1 口**（CH343P USB 转串口）：先用 `idf.py --preview -p /dev/ttyACM0 -b 4000000 flash` 烧录，再用 `idf.py --preview -p /dev/ttyACM0 monitor` 以 115200 监控；4,000,000 baud 为当前实测最高可靠下载速率，若线材/主机不稳定再降速。
+- **只用 C1 口**（CH343P USB 转串口）：`idf.py --preview -p /dev/ttyACM0 -b 4000000 flash`，再用 `idf.py --preview -p /dev/ttyACM0 monitor` 监控；4,000,000 baud 是当前实测最高可靠下载速率，线材或主机不稳定时降速。
 - **C2 口不能烧录**：ESP32-S31 ROM 无 USB-OTG 下载模式；C2 是 USB Host/Device 数据口。
 - Windows 下串口名为对应 COM 口；Linux 通常为 `/dev/ttyACM0`。
 
 ## 5. 硬件使用注意（务必读）
 
-1. **整机异常掉电（电流跌到约 4mA、串口无响应）（将取电限制放宽后未复现）**：长按 PWRON 恢复；**先不要拔线**——恢复后先用 `pmic regs`、`pmic power_off_source`、`pmic power_on_source`、`pmic irq_snapshot` 取证，再动硬件（TG28 只有拔 VBUS 才复位，拔线会丢现场）。
-2. **插相机必须使用 FPC 转接板**：主板 FPC1 座与部分模组的 24P 排线线序存在镜像问题，转接板已到位并完成验证，**请通过转接板连接相机模组**；板上 R95 保持拆除状态，不要自行补焊。
-3. **自动烧录电路异常（仅出现一次，后面再未复现）**（串口完全静默、连 ROM 启动行都没有）：先量 BOOT 脚电平，若为 0V，拔插 C1 冷启动 20 秒即可恢复；不要反复烧录。
-4. **GPIO16（TE）中断所有权归显示栈**，自定义诊断代码不要再对该脚注册 ISR。
+1. **整机异常掉电（电流跌到约 4mA、串口无响应）**：长按 PWRON 恢复；先不要拔线，恢复后先用 `pmic regs`、`pmic power_off_source`、`pmic power_on_source`、`pmic irq_snapshot` 取证，再动硬件。
+2. **插相机必须使用 FPC 转接板**：主板 FPC1 座与部分模组的排线线序存在镜像问题，请通过已验证的转接板连接；板上 R95 保持拆除状态，除非按相机专项流程重新确认。
+3. **自动烧录电路异常**：若串口完全静默，先量 BOOT；若为 0V，拔插 C1 冷启动约 20 秒后再量，不要反复烧录。
+4. **GPIO16（TE）中断所有权归显示栈**：自定义诊断代码不要对该脚注册 ISR；Factory 使用已有 TE observer/显示栈接口。
+5. **GPIO36 是 VDD_SPI strap 且兼作 TF 电源控制**：不要拆除 R6，也不要在复位采样期间强行拉低该脚。
 
 ## 6. 已知限制（内测期）
 
-- 相机：传感器识别、DVP 取流和内建彩条诊断已验证；真实场景颜色/图像质量以及硬件 JPEG 落卡尚未完成实板确认。拍照 UI 与 `/photos/IMG_nnnn.jpg` 是待验证路径，不能当作已发布功能。
-- 电池电量计：默认使用 TG28 芯片内置 ROM 模型；SOC 仅参考精度，具体电芯未做标定。
-- RTC 存在快慢交替现象（约 ±1-2 秒/30 秒量级，VRTC 域，待定位）。
-- 低功耗各模式功耗数据尚未表征；深睡唤醒闭环仍需完整实板回归。
-- 音量映射曲线未校准（出厂默认音量偏大）。
+- 相机：传感器识别、DVP 取流和内建彩条已验证；真实场景颜色/图像质量以及 Demo JPEG `/sdcard/IMG_nnnn.jpg` 落卡尚未完成硬件验收。
+- 电池电量计：默认使用 TG28 芯片内置 ROM 模型；SOC 仅作参考，具体电芯尚未标定。
+- RTC：板上没有独立的 RTC 纽扣电池或超级电容，电池与 C1 同时移除会丢失时间；长期漂移数据仍需按记录补齐。
+- 低功耗：通用深睡和触摸唤醒已有实测，完整示例状态机与功耗分项仍需持续回归。
+- 音频：数字链路已验证，音量映射和不同声源下的最终产品听感仍需按板卡复核。
+- 显示：默认物理方向为 180°；48 MHz QSPI 下局部更新目标约 60 FPS、全屏更新目标约 30 FPS，不要把全屏 60 FPS 当作当前硬件指标。
 
 ## 7. 开发者向（可跳过）
 
-- 固件默认使用仓内 `vendor/esp-bsp/` 的 BSP 快照。若你在同步开发 BSP：设置 `CANDIS_S31_BSP_PATH=<你的 esp-bsp 工作区>/bsp/candis_s31` 即可切换回活代码，构建系统优先使用该环境变量。
-- 维护者同步快照：`tools/sync_bsp.sh`（来源提交记录在 `vendor/esp-bsp/SOURCE_COMMIT`）。
-- 与上游的关系：espressif/esp-bsp 官方答复不接收第三方板卡（见 `UPSTREAM.md`）；可复用器件驱动将提交 `espressif/idf-extra-components`，板级定义提交 esp-board-manager 的 `esp_friends_boards`，BSP 本体由 LeenixP/esp-bsp fork 承载并以 vendor 快照内置本仓，使用本仓库不依赖任何上游 PR。
+- 仓库自有板级组件：`components/candis_s31/`；统一注入入口：`cmake/candis_components.cmake`。
+- 可复用驱动快照：`vendor/idf-extra-components/`；Board Manager 与 `candis_s31` 定义：`vendor/esp-board-manager/`。
+- `tools/sync_upstream.sh` 从维护者的本地准备工作树刷新两个 vendor 快照；来源提交记录在各自的 `SOURCE_COMMIT`。
+- 上游归属和暂不提交 PR 的说明见 `UPSTREAM.md`。官方 `esp-bsp` 仅维护 Espressif/M5Stack 板，本仓库不依赖其检出。
 
 ## 8. 反馈
 
