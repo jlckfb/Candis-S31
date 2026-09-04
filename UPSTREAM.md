@@ -8,12 +8,12 @@ Candis-S31 support is maintained where users already install their tools. This r
 |---|---|---|
 | Generic ESP32-S31 target, HAL, driver, build, flash, or debug fix | [ESP-IDF](https://github.com/espressif/esp-idf) or the affected Espressif tool | No |
 | Reusable Candis-S31 BSP API and implementation | The `feat/candis-s31` branch of the [LeenixP/esp-bsp](https://github.com/LeenixP/esp-bsp) fork, vendored into this repository — ESP-BSP upstream accepts only Espressif and M5Stack boards per the official answer in espressif/esp-bsp#823 | No |
-| Candis-S31 board description expressible with safe Board Manager semantics | [`espressif/esp_friends_boards`](https://components.espressif.com/components/espressif/esp_friends_boards) in [ESP Board Manager](https://github.com/espressif/esp-board-manager); Type-C2/OTG remains BSP-only until Board Manager can enforce the board policy atomically | No |
+| Candis-S31 board description expressible with safe Board Manager semantics | [`espressif/esp_friends_boards`](https://components.espressif.com/components/espressif/esp_friends_boards) in [ESP Board Manager](https://github.com/espressif/esp-board-manager) ([PR #7](https://github.com/espressif/esp-board-manager/pull/7), pending) | No |
 | CO5300 LCD controller fix | [`espressif/esp_lcd_co5300`](https://components.espressif.com/components/espressif/esp_lcd_co5300) source in [ESP-IoT-Solution](https://github.com/espressif/esp-iot-solution) | No |
-| Reusable CST820 touch driver | [`espressif/idf-extra-components`](https://github.com/espressif/idf-extra-components), published independently from the board repository | No |
+| Reusable CST820 touch driver | [`espressif/idf-extra-components`](https://github.com/espressif/idf-extra-components) ([PR #824](https://github.com/espressif/idf-extra-components/pull/824), pending) | No |
 | ES8389 audio codec fix | [`espressif/esp_codec_dev`](https://components.espressif.com/components/espressif/esp_codec_dev) | No |
 | DVP controller or camera sensor fix | [`esp_video` and `esp_cam_sensor`](https://github.com/espressif/esp-video-components) | No |
-| Reusable TG28_SW, RX8130CE, or FUSB303B driver | [`espressif/idf-extra-components`](https://github.com/espressif/idf-extra-components), published independently from the board repository | No |
+| Reusable TG28_SW, RX8130CE, or FUSB303B driver | [`espressif/idf-extra-components`](https://github.com/espressif/idf-extra-components) ([PR #824](https://github.com/espressif/idf-extra-components/pull/824), pending) | No |
 | Arduino board menu entry and pin variant | [Arduino-ESP32](https://github.com/espressif/arduino-esp32), after generic ESP32-S31 core support is released | No |
 | PlatformIO board manifest | [PlatformIO Espressif32](https://github.com/platformio/platform-espressif32), after the platform, tools, and selected framework support ESP32-S31 | No |
 | HMI, multimedia, or agent application adaptation | The relevant application repository, such as [ESP-Brookesia](https://github.com/espressif/esp-brookesia), [ESP-GMF](https://github.com/espressif/esp-gmf), or [ESP-Claw](https://github.com/espressif/esp-claw) | No |
@@ -98,7 +98,7 @@ The current compatibility baseline is:
 | Item | Version | Validation |
 |---|---|---|
 | ESP-IDF | `v6.1-rc1` | All thirteen default build-all.sh targets pass; core domains have recorded EVT evidence |
-| Candis-S31 BSP | `1.2.0` | Vendored snapshot from esp-bsp `dcec04c`; raw/LVGL 180° path builds and Demo boots |
+| Candis-S31 BSP | `1.2.0` | Vendored snapshot from esp-bsp `97280577`; raw/LVGL 180° path builds and Demo boots |
 | TG28_SW driver | `0.4.0` | Component test app passes; factory ROM model read is logged on Demo boot |
 | RX8130CE driver | `0.4.0` | Component test app passes; explicit primary-cell policy fields are set by BSP |
 | FUSB303B driver | `0.3.0` | Component test app passes; NONE advertisement is preserved through BSP status |
@@ -106,8 +106,8 @@ The current compatibility baseline is:
 | esp_lvgl_port (vendored for Factory TE diagnostics) | `2.9.0` | Factory display/TE commands compile and link |
 | Factory Bring-up firmware | Development source | Full peripheral command set remains the hardware evidence path |
 | Candis-S31 hardware | EVT1 schematic revision 0.5 (fab `v0.5_260803_1544`) | Bring-up largely closed; camera real-scene/JPEG and audio listening remain open |
-| ESP Friends Boards definition | `candis_s31` development definition | Generation and local-component-overrides build pass; pure Registry path waits for driver publication |
-| idf-extra driver preparation | commit `0e56065` on local branch | Four components, examples, rules, release metadata, upload and issue registrations pass local checks; not pushed |
+| ESP Friends Boards definition | `candis_s31` development definition | PR #7 is open; generation and local-component-overrides build pass; pure Registry path waits for driver publication |
+| idf-extra driver preparation | commit `0e56065` / [PR #824](https://github.com/espressif/idf-extra-components/pull/824) | Four components, examples, rules, release metadata, upload and issue registrations pass local checks; PR open |
 | Arduino ESP32-S31 core and Candis board | Not released | Not available |
 | PlatformIO ESP32-S31 platform and Candis board | Not released | Not available |
 
