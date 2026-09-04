@@ -107,7 +107,7 @@ The current compatibility baseline is:
 | Factory Bring-up firmware | Development source | Full peripheral command set remains the hardware evidence path |
 | Candis-S31 hardware | EVT1 schematic revision 0.5 (fab `v0.5_260803_1544`) | Bring-up largely closed; camera real-scene/JPEG and audio listening remain open |
 | ESP Friends Boards definition | `candis_s31` development definition | Generation and local-component-overrides build pass; pure Registry path waits for driver publication |
-| idf-extra driver preparation | commit `e13d304` on local branch | Four components, examples, rules, upload and issue registrations pass local checks; not pushed |
+| idf-extra driver preparation | commit `0e56065` on local branch | Four components, examples, rules, release metadata, upload and issue registrations pass local checks; not pushed |
 | Arduino ESP32-S31 core and Candis board | Not released | Not available |
 | PlatformIO ESP32-S31 platform and Candis board | Not released | Not available |
 
