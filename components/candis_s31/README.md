@@ -237,28 +237,30 @@ OV5640, and the checked-in camera example selects its
 800 x 600 RGB565 DVP mode. Select the corresponding `esp_cam_sensor` option if
 a different module is fitted.
 
-The sensor tables use a nominal 24 MHz XCLK identifier
-(`BSP_CAMERA_XCLK_CLOCK_MHZ`) and are authored around that input. On EVT1 the
-validated board workaround drives the LEDC timer at 20 MHz (measured about
-20.1 MHz); do not describe the runtime clock as an exact 24 MHz signal. The
-constant remains 24 MHz to document the selected table and protect against
-accidentally mixing a different sensor table. Only the DVP video device is
-initialized (`ESP_VIDEO_INIT_FLAGS_DVP`).
+EVT1 drives an exact 20 MHz XCLK from the XTAL-backed LEDC path. After the
+upstream 800 x 600 mode table runs, the board profile programs a 760 MHz
+sensor PLL1, 95 MHz 8-bit DVP byte clock (47.5 Mpixel/s RGB565), HTS=1896 and
+VTS=835, for a 30.003 fps target. Relative to the measured
+`0x3034/0x3035/0x3036/0x3037 = 0x1a/0x21/0xb0/0x13` profile, the final
+`0x18/0x21/0x4c/0x12` dividers lower PCLK and VTS by about 19% while retaining
+30 fps. PLL1 is 760 MHz and PCLK stays below the OV5640's 96 MHz maximum.
+HTS remains unchanged, following OmniVision's dummy-line guidance. Matched
+50/60 Hz banding caps exposure at 30.06/25.03 ms instead of 44-72 ms.
+These timing and image-quality changes still require EVT1 visual confirmation.
 
-XCLK comes from LEDC, not from the CAM controller. The esp_video DVP clock path
-only supports integer clock dividers, and no ESP32-S31 default CAM source gives
-an exact 24 MHz divider. With `CONFIG_BSP_CAMERA_XCLK_USE_LEDC=y` (the default)
-the board component starts the board-local LEDC clock, passes `xclk_io=GPIO_NUM_NC` /
-`xclk_freq=0` to esp_video, and skips the failing controller clock path; the DVP
-video device creates its controller with `pin_dont_init=true`, so capture is
-still possible. The actual sensor/module image quality remains an EVT-specific
-validation item.
+`CONFIG_BSP_CAMERA_XCLK_USE_LEDC=y` keeps the validated clock source under
+board ownership and passes `xclk_io=GPIO_NUM_NC` / `xclk_freq=0` to esp_video.
+Disabling it selects esp_video's controller-driven 20 MHz XCLK; 20 MHz divides
+the ESP32-S31 160 MHz CAM source exactly, but that alternate path is not the
+EVT1 baseline.
 
-This board has no autofocus hardware: the schematic carries no VCM driver and
-the camera FPC's AF_VCC pin is tied to the 2.8 V camera rail through a 0 ohm
-resistor with no I2C control path. The OV5640 therefore runs fixed focus, so
-`esp_video_init_config_t.cam_motor` stays unset and only the DVP video device
-is initialized. See the note in `bsp_camera.c`.
+The fitted module is autofocus-capable. AF_VCC powers the voice-coil motor,
+while the OV5640's internal VCM current sink controls it; therefore no separate
+`cam_motor` I2C device is expected. After `VIDIOC_STREAMON`,
+`bsp_camera_autofocus_once()` downloads the sensor's embedded AF firmware and
+runs OmniVision's documented `0x12` zone relaunch, `0x03` single-focus and
+`0x07` result sequence. A focus attempt passes only when firmware status is
+`0x10` and at least one returned zone is focused.
 
 ## Audio codec
 

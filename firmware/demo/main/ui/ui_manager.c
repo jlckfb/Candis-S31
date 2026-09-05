@@ -317,6 +317,7 @@ static int s_time_last_minute = -1;
 static int s_batt_last_percent = INT_MIN;
 static bool s_batt_last_charging;
 static bool s_batt_last_present;
+static bool s_batt_last_reference_model;
 
 typedef struct {
     int a;
@@ -348,24 +349,34 @@ static void status_apply_value(const ui_status_msg_t *msg)
         }
         break;
     }
-    case 1: /* battery: v0=percent(-1 = absent or no valid model) v1=charging v2=present */
-        if (v0 == s_batt_last_percent && v1 == s_batt_last_charging &&
+    case 1: { /* battery: signed v0=percent; v1 bit0=charging, bit1=reference model; v2=present */
+        const int percent = (int16_t)v0;
+        const bool charging = (v1 & 1) != 0;
+        const bool reference_model = (v1 & 2) != 0;
+        if (percent == s_batt_last_percent &&
+            charging == s_batt_last_charging &&
+            reference_model == s_batt_last_reference_model &&
             v2 == s_batt_last_present) {
             break; /* unchanged since last apply: no LVGL write, no redraw */
         }
-        s_batt_last_percent = v0;
-        s_batt_last_charging = v1;
+        s_batt_last_percent = percent;
+        s_batt_last_charging = charging;
+        s_batt_last_reference_model = reference_model;
         s_batt_last_present = v2;
-        if (!v2 || v0 < 0) {
+        if (!v2 || percent < 0) {
             lv_label_set_text(s_lbl_batt, "--");
         } else {
-            lv_label_set_text_fmt(s_lbl_batt, "%s%d%%",
-                                  v1 ? LV_SYMBOL_CHARGE " " : "", v0);
+            lv_label_set_text_fmt(s_lbl_batt, "%s%s%d%%",
+                                  charging ? LV_SYMBOL_CHARGE " " : "",
+                                  reference_model ? "~" : "", percent);
         }
-        lv_obj_set_style_text_color(s_lbl_batt,
-                                    lv_color_hex(v1 ? UI_COL_PASS : UI_COL_TEXT), 0);
+        lv_obj_set_style_text_color(
+            s_lbl_batt,
+            lv_color_hex(charging ? UI_COL_PASS :
+                         reference_model ? UI_COL_WARN : UI_COL_TEXT), 0);
         lv_obj_set_style_opa(s_lbl_batt, LV_OPA_COVER, 0);
         break;
+    }
     case 2: /* wifi */
         lv_obj_set_style_text_color(s_lbl_wifi,
                                     lv_color_hex(v0 == 2 ? UI_COL_ACCENT :
@@ -431,9 +442,11 @@ void ui_status_set_time(int hour, int minute)
     status_post(0, hour < 0 ? 0xFFFF : hour, minute, 0);
 }
 
-void ui_status_set_battery(int percent, bool charging, bool present)
+void ui_status_set_battery(int percent, bool charging, bool present,
+                           bool reference_model)
 {
-    status_post(1, percent, charging, present);
+    const int flags = (charging ? 1 : 0) | (reference_model ? 2 : 0);
+    status_post(1, percent, flags, present);
 }
 
 void ui_status_set_wifi(int state)

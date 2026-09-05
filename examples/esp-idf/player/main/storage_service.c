@@ -26,17 +26,14 @@ static const char *TAG = "player_storage";
 #define MOUNT_RETRY_MS   5000
 #define DEMO_PATH        BSP_SD_MOUNT_POINT "/Candis_demo_460x460_30fps.avi"
 #define DEMO_TMP         BSP_SD_MOUNT_POINT "/.Candis_demo.tmp"
-#define MP4_PATH         BSP_SD_MOUNT_POINT "/Candis_reference_460x460_30fps.mp4"
-#define MP4_TMP          BSP_SD_MOUNT_POINT "/.Candis_reference_mp4.tmp"
+#define LEGACY_AVI_PATH  BSP_SD_MOUNT_POINT "/Candis_reference_460x460_30fps.avi"
+#define LEGACY_MP4_PATH  BSP_SD_MOUNT_POINT "/Candis_reference_460x460_30fps.mp4"
+#define LEGACY_MP4_TMP   BSP_SD_MOUNT_POINT "/.Candis_reference_mp4.tmp"
 
 extern const uint8_t s_demo_start[]
     asm("_binary_Candis_demo_460x460_30fps_avi_start");
 extern const uint8_t s_demo_end[]
     asm("_binary_Candis_demo_460x460_30fps_avi_end");
-extern const uint8_t s_mp4_start[]
-    asm("_binary_Candis_reference_460x460_30fps_mp4_start");
-extern const uint8_t s_mp4_end[]
-    asm("_binary_Candis_reference_460x460_30fps_mp4_end");
 
 static storage_cb_t s_callback;
 static void *s_user;
@@ -252,13 +249,11 @@ esp_err_t storage_install_reference_media(void)
     if (error != ESP_OK) {
         return error;
     }
-    unlink(BSP_SD_MOUNT_POINT "/Candis_reference_460x460_30fps.avi");
+    unlink(LEGACY_AVI_PATH);
+    unlink(LEGACY_MP4_PATH);
+    unlink(LEGACY_MP4_TMP);
     error = install_embedded_file(DEMO_PATH, DEMO_TMP,
                                   s_demo_start, s_demo_end);
-    if (error == ESP_OK) {
-        error = install_embedded_file(MP4_PATH, MP4_TMP,
-                                      s_mp4_start, s_mp4_end);
-    }
     storage_lease_release(&lease);
     return error;
 }

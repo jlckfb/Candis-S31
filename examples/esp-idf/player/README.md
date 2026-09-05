@@ -15,11 +15,14 @@ path as unverified until the EVT1 board confirms it.
 
 - On boot the board and display come up, the playback surface attaches to
   the active LVGL screen, and the file list follows the TF card.
-- When the TF card mounts, the reference media from `main/assets`
-  (460x460 @ 30 fps AVI clips, plus an MP4 and the Noto Sans SC subtitle
-  font under OFL-1.1) is installed onto the card automatically
+- When the TF card mounts, the 460x460 @ 30 fps MJPEG/PCM AVI from
+  `main/assets` is installed onto the card automatically
   (`storage_install_reference_media()`), so a blank card becomes playable
   without a host copy step.
+- The browser lists `.avi` files only. The previously bundled H.264/AAC MP4
+  is deliberately removed during migration: the current ESP32-S31 extractor
+  returned no video codec for that file on hardware, so exposing it produced
+  a deterministic playback failure.
 - Short-press the power key to toggle the on-screen overlay; long-press
   BOOT to stop playback (`on_input` in `main/player_main.c`).
 

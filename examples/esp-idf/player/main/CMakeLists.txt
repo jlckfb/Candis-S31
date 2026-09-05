@@ -37,7 +37,6 @@ idf_component_register(
     EMBED_FILES
         "assets/NotoSansSC-Regular-sub.ttf"
         "assets/Candis_demo_460x460_30fps.avi"
-        "assets/Candis_reference_460x460_30fps.mp4"
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE

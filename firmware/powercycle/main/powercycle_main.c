@@ -3,10 +3,9 @@
  *
  * Each cycle:
  *   1. ACTIVE (10 s): display on, white frame, maximum brightness.
- *   2. MIDDLE (10 s): panel parked (backlight off + SLPIN) while the SoC
- *                     stays awake; every rail remains up. Measures the
- *                     screen-off-but-running state.
- *   3. Wake is a fresh reset, which starts the next cycle.
+ *   2. LOW POWER (10 s): disable charger/gauge, force every peripheral into
+ *      the board safe state, then enter timer-only SoC deep sleep.
+ *   3. The timer wake is a fresh reset, which starts the next cycle.
  *
  * A series meter (e.g. across the lifted C1 pad) reads the steady-state
  * current of each phase directly; the cycle repeats indefinitely.

@@ -137,7 +137,9 @@ void ui_unlock(void);
 
 /* Status bar setters. THREAD-SAFE (internally forward via ui_async). */
 void ui_status_set_time(int hour, int minute);              /* -1 = unknown */
-void ui_status_set_battery(int percent, bool charging, bool present);
+/** A factory-reference SOC is rendered with '~'; it is not cell-calibrated. */
+void ui_status_set_battery(int percent, bool charging, bool present,
+                           bool reference_model);
 void ui_status_set_wifi(int state);   /**< 0=off 1=connecting 2=connected */
 void ui_status_set_ble(bool active);
 void ui_status_set_sd(bool mounted);

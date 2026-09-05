@@ -86,12 +86,12 @@ static void power_refresh_cb(lv_timer_t *timer)
     svc_power_get_status(&st);
 
     if (st.present && st.percent >= 0) {
-        /* "ref" means the TG28 factory ROM model; a runtime override is
-         * labelled "custom" and neither label implies cell calibration. */
-        lv_label_set_text_fmt(s_power.lbl_voltage,
-                              "Battery: %d mV  SOC: %d%% (%s)",
-                              st.battery_mv, st.percent,
-                              st.fuel_gauge_reference_model ? "ref" : "custom");
+        lv_label_set_text_fmt(
+            s_power.lbl_voltage,
+            st.fuel_gauge_reference_model ?
+            "Battery: %d mV  ~%d%% (ref)" :
+            "Battery: %d mV  %d%% (custom)",
+            st.battery_mv, st.percent);
     } else if (st.present) {
         /* Battery fitted but no model active this boot: honest empty
          * state, never a voltage-derived percent. */
@@ -105,7 +105,7 @@ static void power_refresh_cb(lv_timer_t *timer)
     if (st.vbus && st.charge_target_ma > 0) {
         /* Target = verified REG62 ceiling; the real current can be lower
          * at any moment (VINDPM back-off) and is not measured here. */
-        lv_label_set_text_fmt(s_power.lbl_charge, "Charge: %s  target: %d mA (%s)",
+        lv_label_set_text_fmt(s_power.lbl_charge, "Charge: %s  %d mA (%s)",
                               charge_state_text(&st), st.charge_target_ma,
                               charge_phase_text(st.charge_phase));
     } else {

@@ -483,8 +483,13 @@ static int command_bitscrambler_test(int argc, char **argv)
     }
 
     bitscrambler_handle_t bitscrambler = NULL;
+    /*
+     * SPI2's AXI-GDMA trigger is permanently owned by the resident CO5300
+     * QSPI bus. SPI3 has no owner in this firmware and is released again by
+     * bitscrambler_free(), so use it for the transient loopback handshake.
+     */
     esp_err_t result = bitscrambler_loopback_create(
-        &bitscrambler, SOC_BITSCRAMBLER_ATTACH_GPSPI2,
+        &bitscrambler, SOC_BITSCRAMBLER_ATTACH_GPSPI3,
         BITSCRAMBLER_TEST_SIZE);
     if (result == ESP_OK) {
         result = bitscrambler_load_program(bitscrambler,

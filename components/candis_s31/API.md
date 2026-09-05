@@ -2061,8 +2061,8 @@ Install or clear (callback == NULL) the application shutdown callback. Configure
 
 ## :camera: Camera
 
-The BSP provides a helper function bsp_camera_start() for initializing the on-board camera module.
-This function sets up the required I2C bus, video subsystem, and camera clock if necessary.
+The BSP initializes the DVP pipeline, applies the EVT1 sensor timing / image
+profile, and exposes the OV5640 embedded single-shot autofocus flow.
 
 ### Example Usage
 
@@ -2083,7 +2083,8 @@ For a complete board diagnostic, refer to [`firmware/camera_test`](../../firmwar
 
 | Type | Name |
 | ---: | :--- |
-|  esp\_err\_t | [**bsp\_camera\_apply\_workaround**](#function-bsp_camera_apply_workaround) (void) <br> |
+|  esp\_err\_t | [**bsp\_camera\_apply\_workaround**](#function-bsp_camera_apply_workaround) (uint32\_t v4l2\_pixel\_format) <br> |
+|  esp\_err\_t | [**bsp\_camera\_autofocus\_once**](#function-bsp_camera_autofocus_once) (uint32\_t timeout\_ms) <br> |
 |  esp\_err\_t | [**bsp\_camera\_start**](#function-bsp_camera_start) (const [**bsp\_camera\_cfg\_t**](#struct-bsp_camera_cfg_t) \*cfg) <br> |
 |  esp\_err\_t | [**bsp\_camera\_stop**](#function-bsp_camera_stop) (void) <br> |
 
@@ -2107,7 +2108,7 @@ For a complete board diagnostic, refer to [`firmware/camera_test`](../../firmwar
 | define  | [**BSP\_CAMERA\_RST**](#define-bsp_camera_rst)  GPIO\_NUM\_39<br> |
 | define  | [**BSP\_CAMERA\_VSYNC**](#define-bsp_camera_vsync)  GPIO\_NUM\_56<br> |
 | define  | [**BSP\_CAMERA\_XCLK**](#define-bsp_camera_xclk)  GPIO\_NUM\_55<br> |
-| define  | [**BSP\_CAMERA\_XCLK\_CLOCK\_MHZ**](#define-bsp_camera_xclk_clock_mhz)  24<br> |
+| define  | [**BSP\_CAMERA\_XCLK\_CLOCK\_MHZ**](#define-bsp_camera_xclk_clock_mhz)  20<br> |
 
 
 ## Structures and Types Documentation
@@ -2126,12 +2127,24 @@ Variables:
 
 ```c
 esp_err_t bsp_camera_apply_workaround (
-    void
-) 
+    uint32_t v4l2_pixel_format
+)
 ```
 
-
 Reapply the board sensor override after esp\_video\_open() reloads its table.
+
+### function `bsp_camera_autofocus_once`
+
+```c
+esp_err_t bsp_camera_autofocus_once (
+    uint32_t timeout_ms
+)
+```
+
+Run the OV5640 embedded single-shot autofocus sequence after DVP streaming
+starts. The firmware is downloaded once per camera power cycle; a successful
+call requires focused firmware status and at least one focused zone.
+
 ### function `bsp_camera_start`
 
 ```c
@@ -2142,6 +2155,7 @@ esp_err_t bsp_camera_start (
 
 
 DVP camera pipeline. Sensor support is selected in project configuration.
+
 ### function `bsp_camera_stop`
 
 ```c

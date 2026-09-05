@@ -131,26 +131,14 @@ menu "Board Support Package (Candis-S31)"
             bool "Generate the camera XCLK with LEDC"
             default y
             help
-                Keep this enabled. The esp_video DVP clock path
-                (esp_cam_ctlr_dvp_output_clock, called by init_dvp_clk_func
-                in esp_video_init.c whenever xclk_io >= 0 and xclk_freq > 0)
-                only supports integer clock dividers, and no ESP32-S31 CAM
-                controller clock source (PLL_F160M, XTAL, APLL) is an integer
-                multiple of the 24 MHz the OV5640 register tables require
-                (160 % 24 = 16, 40 % 24 = 16). esp_cam_ctlr_dvp_output_clock
-                hard-fails with "calculated frequency divider is not integer"
-                and aborts esp_video_init_with_flags() before sensor
-                detection. APLL could provide 96 MHz = 4 x 24 MHz, but
-                esp_video hardcodes CAM_CLK_SRC_DEFAULT (PLL_F160M), so the
-                controller path cannot be fixed without patching official
-                components. With this option enabled the BSP drives the
-                LEDC timer at 20 MHz nominal (about 20.1 MHz measured on
-                EVT1) and passes xclk_io=GPIO_NUM_NC / xclk_freq=0 to esp_video,
-                which skips the failing controller clock path. The 24 MHz
-                value is the selected OV5640 table identifier, not an exact
-                runtime clock measurement. Disable only for a diagnostic
-                experiment with a controller-driven XCLK at a frequency that
-                evenly divides PLL_F160M (e.g. 20 MHz).
+                Keep this enabled for the validated EVT1 path. The BSP drives
+                an exact 20 MHz, 50 percent duty-cycle XCLK from XTAL-backed
+                LEDC and prevents esp_video from claiming the same pin.
+
+                The post-format board profile compensates the selected
+                OV5640 table for this 20 MHz input through the sensor PLL.
+                Disable only to exercise esp_video's controller-driven
+                20 MHz clock, which is also an integer divisor of PLL_F160M.
 
         config BSP_CAMERA_XCLK_LEDC_CH
             int "LEDC channel used for camera XCLK"

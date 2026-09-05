@@ -418,8 +418,24 @@ static void run_bitscrambler(const test_ctx_t *ctx, test_result_t *out)
     }
 
     bitscrambler_handle_t bitscrambler = NULL;
+    /* Attach to GPSPI3, never GPSPI2. On ESP32-S31 the GPSPI2 attach
+     * selects AXI-GDMA trigger instance 1 (SOC_GDMA_TRIG_PERIPH_SPI2 == 1),
+     * which the resident CO5300 QSPI display owns for the whole boot:
+     * bsp_display.c initializes SPI2_HOST with SPI_DMA_CH_AUTO and the
+     * spi_master driver keeps both of its GDMA channels connected to that
+     * trigger (esp_driver_spi gpspi/spi_common.c). The IDF loopback driver
+     * ignores gdma_connect failures (bitscrambler_loopback.c), so the
+     * collision surfaced as "peripheral 1 is already used by another
+     * channel" followed by a bogus loopback timeout instead of a clean
+     * create error. GPSPI3 (trigger instance 2) has no owner in this
+     * build: the RGB LED runs on the RMT backend, the TF card is SDMMC
+     * with dedicated DMA, the camera DVP sits on the CAM0 trigger
+     * (instance 0), JPEG uses no GDMA and PPA uses DMA2D. The BitScrambler
+     * only borrows the SPI3 handshake lines for the loopback; the
+     * bitscrambler_free() below disconnects and deletes both channels on
+     * every exit path, restoring the trigger. */
     esp_err_t result = bitscrambler_loopback_create(
-        &bitscrambler, SOC_BITSCRAMBLER_ATTACH_GPSPI2,
+        &bitscrambler, SOC_BITSCRAMBLER_ATTACH_GPSPI3,
         BITSCRAMBLER_TEST_SIZE);
     if (result == ESP_OK) {
         result = bitscrambler_load_program(bitscrambler,
@@ -465,12 +481,23 @@ static void run_bitscrambler(const test_ctx_t *ctx, test_result_t *out)
     const uint32_t kib_per_second = total_us == 0 ? 0 :
         (uint32_t)((uint64_t)ACCEL_RUN_COUNT * BITSCRAMBLER_TEST_SIZE *
                    1000000ULL / total_us / 1024ULL);
-    snprintf(out->evidence, sizeof(out->evidence),
-             "4096B avg_us=%" PRIu32 " KiBps=%" PRIu32
-             " mismatch=%" PRIu32,
-             average_us, kib_per_second, mismatch_count);
-    out->st = (result == ESP_OK && mismatch_count == 0) ? TEST_ST_PASS
-                                                        : TEST_ST_FAIL;
+    if (result == ESP_OK && mismatch_count == 0) {
+        snprintf(out->evidence, sizeof(out->evidence),
+                 "4096B avg_us=%" PRIu32 " KiBps=%" PRIu32 " mismatch=0",
+                 average_us, kib_per_second);
+        out->st = TEST_ST_PASS;
+    } else {
+        /* Lead the evidence with the cause: out=/4096 exposes a short
+         * transfer, err names the driver failure (a timeout here means
+         * the loopback never saw data - usually the attach trigger was
+         * hijacked and the IDF driver swallowed the gdma_connect error).
+         * ESP_OK as err with mismatch>0 reads as a pure data mismatch. */
+        snprintf(out->evidence, sizeof(out->evidence),
+                 "4096B out=%zu/%u err=%s mismatch=%" PRIu32,
+                 output_size, (unsigned)BITSCRAMBLER_TEST_SIZE,
+                 esp_err_to_name(result), mismatch_count);
+        out->st = TEST_ST_FAIL;
+    }
 }
 #endif /* SOC_BITSCRAMBLER_SUPPORTED */
 

@@ -51,6 +51,7 @@ typedef struct {
     int r_weekday;
     int r_batt_percent;
     bool r_batt_charging;
+    bool r_batt_reference_model;
 } wf_state_t;
 
 static wf_state_t s = {
@@ -98,28 +99,37 @@ static void wf_battery_apply(void)
 
     const int percent = (ps.present && ps.percent >= 0) ? ps.percent : -1;
     const bool charging = ps.present && ps.charging;
+    const bool reference_model =
+        ps.present && ps.fuel_gauge_reference_model;
 
-    if (percent == s.r_batt_percent && charging == s.r_batt_charging) {
+    if (percent == s.r_batt_percent &&
+        charging == s.r_batt_charging &&
+        reference_model == s.r_batt_reference_model) {
         return; /* unchanged: no arc/label write, no full-frame redraw */
     }
     s.r_batt_percent = percent;
     s.r_batt_charging = charging;
+    s.r_batt_reference_model = reference_model;
 
     lv_arc_set_value(s.arc, percent < 0 ? 0 : percent);
     lv_obj_set_style_arc_color(
-        s.arc, lv_color_hex(charging ? UI_COL_PASS : UI_COL_ACCENT),
+        s.arc,
+        lv_color_hex(charging ? UI_COL_PASS :
+                     reference_model ? UI_COL_WARN : UI_COL_ACCENT),
         LV_PART_INDICATOR);
 
     if (percent < 0) {
         lv_label_set_text(s.lbl_batt, "--");
         lv_obj_set_style_text_color(s.lbl_batt,
                                     lv_color_hex(UI_COL_TEXT_DIM), 0);
-    } else if (charging) {
-        lv_label_set_text_fmt(s.lbl_batt, LV_SYMBOL_CHARGE " %d%%", percent);
-        lv_obj_set_style_text_color(s.lbl_batt, lv_color_hex(UI_COL_PASS), 0);
     } else {
-        lv_label_set_text_fmt(s.lbl_batt, "%d%%", percent);
-        lv_obj_set_style_text_color(s.lbl_batt, lv_color_hex(UI_COL_TEXT), 0);
+        lv_label_set_text_fmt(s.lbl_batt, "%s%s%d%%",
+                              charging ? LV_SYMBOL_CHARGE " " : "",
+                              reference_model ? "~" : "", percent);
+        lv_obj_set_style_text_color(
+            s.lbl_batt,
+            lv_color_hex(charging ? UI_COL_PASS :
+                         reference_model ? UI_COL_WARN : UI_COL_TEXT), 0);
     }
 }
 

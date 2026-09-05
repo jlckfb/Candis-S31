@@ -42,7 +42,7 @@ static uint32_t camera_frame_crc(const uint8_t *pixels, uint32_t length,
                                  bool *uniform)
 {
     /* Sample one byte every 4 KiB: enough to catch a blank or frozen
-     * pipe without adding a full-frame pass to a 10 fps capture. */
+     * pipe without adding a full-frame pass to the capture. */
     uint32_t crc = 5381;
     const uint8_t first = pixels[0];
     *uniform = true;
@@ -84,11 +84,6 @@ static void run_camera_frames(const test_ctx_t *ctx, test_result_t *out)
             error = ESP_ERR_NOT_FOUND;
         }
     }
-    /* esp_video_open() lazily reloads the sensor table; restore the board
-     * override before configuring or streaming buffers. */
-    if (error == ESP_OK) {
-        error = bsp_camera_apply_workaround();
-    }
     if (error == ESP_OK) {
         /* A dead or unpowered sensor must not wedge the runner: bound
          * the per-frame DQBUF wait. */
@@ -116,8 +111,9 @@ static void run_camera_frames(const test_ctx_t *ctx, test_result_t *out)
     uint32_t previous_crc = 0;
     bool aborted = false;
 
-    if (error == ESP_OK && ioctl(file, VIDIOC_G_FMT, &format) != 0) {
-        /* No driver default: request the sensor format explicitly. */
+    if (error == ESP_OK) {
+        /* Select the format explicitly; the driver default varies with the
+         * project's esp_video configuration. */
         memset(&format, 0, sizeof(format));
         format.type = type;
         format.fmt.pix.width = 800;
@@ -126,6 +122,9 @@ static void run_camera_frames(const test_ctx_t *ctx, test_result_t *out)
         if (ioctl(file, VIDIOC_S_FMT, &format) != 0) {
             error = ESP_FAIL;
         }
+    }
+    if (error == ESP_OK) {
+        error = bsp_camera_apply_workaround(V4L2_PIX_FMT_RGB565X);
     }
 
     if (error == ESP_OK) {

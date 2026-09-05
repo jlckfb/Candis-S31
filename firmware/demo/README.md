@@ -7,9 +7,9 @@ GPIO16 TE 门控（QSPI 48 MHz）。历史实板基线为局部更新约 60 fps�
 页查看 TE/FPS 统计。速度档：Flash QIO 80 MHz + PSRAM Octal DDR 250 MHz
 （S31 官方 Kconfig 档位，证据见 `firmware/factory/sdkconfig.qio80_psram250.defaults`）。
 
-相机页面用于验证 OV5640 DVP 链路。当前已确认传感器识别、DVP 取流和内建彩条；
-真实场景成像质量、颜色顺序和硬件 JPEG 拍照落卡仍需 EVT 实板确认，不把 JPEG
-路径描述为已验证功能。
+相机页面用于验证 OV5640 DVP 链路。传感器识别、DVP 取流和内建彩条已有实板
+证据；30 fps 时序、单帧曝光上限、单次自动对焦和图像细节参数已按原厂资料
+完成离线实现，仍须下次 EVT 实板确认真实场景画质与 JPEG 落卡。
 
 ## 功能
 
@@ -20,7 +20,7 @@ GPIO16 TE 门控（QSPI 48 MHz）。历史实板基线为局部更新约 60 fps�
 - 菜单：三列卡片网格（132×112）+ 分组节头（TESTS/HARDWARE/CONNECTIVITY/
   SYSTEM/GAMES），注册数 16 个应用，按压反馈仅颜色交换
 - 测试中心（一级核心应用）：41 项主动测试分布于 9 个域（显示触控/相机/
-  音频/存储/网络/系统/存储介质/加速硬件/电源），其中 28 项非交互 AUTO
+  音频/存储/网络/系统/存储介质/加速硬件/电源），其中 27 项非交互 AUTO
   项可一键 "RUN ALL" 顺序执行（约 3-4 分钟）；结果入库为会话级 RAM 结果库，
   PASS/FAIL/WARN/SKIP/NOT RUN 五档语义与 factory 固件对齐；聚合优先级
   FAIL > WARN > NOT_RUN > SKIP > PASS；交互项（四色块/触摸四角/画线/取景/
@@ -29,9 +29,14 @@ GPIO16 TE 门控（QSPI 48 MHz）。历史实板基线为局部更新约 60 fps�
   音频占用）自动 SKIP 并留证据串，不伪判为通过
 - 屏幕测试（显示触控）：纯色/黑白/灰阶全屏、触摸坐标全屏、局部动效 +
   TE/FPS 实时统计行（TE 经 esp_lvgl_port observer，不进 ISR）
-- 相机：真实取景（OV5640 800×600 RGB565 大端，零拷贝贴帧）+ 拍照经 S31 硬件
-  JPEG 编码器存 TF（`/photos/IMG_nnnn.jpg` 顺序命名，长按拍照键存 RGB565
-  裸帧调试帧）；传感器识别、取流和内建彩条已验证，真实成像与 JPEG 落卡待确认。
+- 相机：OV5640 800×600 RGB565 大端取景，中心裁切后零缩放贴帧；目标帧率
+  30.003 fps，50/60 Hz 最大曝光分别为 30.06/25.03 ms，启动时执行内嵌单次
+  自动对焦，点击取景画面可重新对焦。拍照经 S31 硬件 JPEG 编码器存 TF
+  （`/photos/IMG_nnnn.jpg` 顺序命名，长按拍照键存 RGB565 裸帧）；真实成像与
+  JPEG 落卡仍待实板确认。
+  零拷贝 V4L2 MMAP 缓冲仅在 `LV_EVENT_REFR_READY` 后归还驱动，避免 AMOLED
+  尚在取源时被下一帧覆盖。
+  取景期间每 2 s 刷新闲置计时以避免中途息屏；离页后停止刷新，继续按用户设置计时。
   另有 5 帧捕获 CRC 自检测试项（camera.frames）。
 
 - 录音机：仅左 MIC / 仅右 MIC / 双 MIC / 双 MIC+基础降噪，增益 0–36 dB，
@@ -72,7 +77,8 @@ UI 显示的是**已验证的目标档位**（REG62 上限），实际电流可�
 收敛预算）；重复压降(2 次)或连续控制器轮询失败(3 次)收敛回 50 mA 并锁定到
 拔线重插。500 mA 上限待电芯/连接器热签核；固定 TS 分压、无 NTC，不存在电芯
 温度闭环。ROM 模型下的 SOC 为参考精度，不同电芯 SKU/化学体系需要授权的新模型；
-模型不可读时百分比显示“电量模型未装入”，电压仅作诊断量。
+状态栏和表盘以 `~` 标明未标定估值，电源页明确显示 `uncalibrated ref`。模型不可读时
+百分比显示“电量模型未装入”，电压仅作诊断量。
 
 ## 测试报告导出（TF 卡 JSONL）
 
@@ -87,6 +93,15 @@ FACTORY_RESULT {"id":"audio.speaker_tone","status":"PASS","evidence":"880Hz 2s a
 "skip":..,"not_run":..}`。行格式与 factory 固件主机工具（run_evt.py）
 解析器完全兼容，可直接复用。结果不落 NVS（会话级诊断，factory 自身已有
 持久化，职责不重复）；"Reset" 按钮清空结果库。
+
+无人值守回归可在配置阶段传入
+`-D CANDIS_DEMO_AUTOTEST=ON`。固件启动后会直接排队同一组 27 项 AUTO
+测试，并逐项输出 `AUTOTEST_RESULT`，结束时输出 `AUTOTEST_SUMMARY`。
+交互项仍保持 `NOT_RUN`，不会用默认答案伪造人工确认。此选项默认关闭。
+`-D CANDIS_DEMO_PAGE_WALK=ON` 会在启动后依次打开 13 个非破坏性应用页，
+逐页保留 `ui_perf` 创建/打开耗时并输出 `ui_page_walk: complete pages=13`；
+测试中心、相机和 USB 因资源或链路仲裁不在此遍历中，分别由 AUTO 批次和独立
+固件验证。
 
 ## 操作
 

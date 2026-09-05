@@ -8,7 +8,7 @@ int main(void)
 {
     assert(player_media_file_supported("movie.avi"));
     assert(player_media_file_supported("MOVIE.AVI"));
-    assert(player_media_file_supported("clip.Mp4"));
+    assert(!player_media_file_supported("clip.Mp4"));
     assert(!player_media_file_supported("movie.mjpeg"));
     assert(!player_media_file_supported("avi"));
     assert(!player_media_file_supported(NULL));

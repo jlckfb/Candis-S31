@@ -28,7 +28,7 @@ bool player_media_file_supported(const char *name)
         return false;
     }
     const char *dot = strrchr(name, '.');
-    return dot != NULL && (extension_is(dot, ".avi") || extension_is(dot, ".mp4"));
+    return dot != NULL && extension_is(dot, ".avi");
 }
 
 int player_clamp_percent(int percent)

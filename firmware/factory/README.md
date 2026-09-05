@@ -241,8 +241,9 @@ The initial configuration uses 16 MB flash, DIO at 40 MHz, and octal PSRAM at
 100 MHz (the long-octal part is rated 120 MHz). PSRAM-not-found is tolerated
 during boot so the console remains available to report the failure. The
 explicit `psram_test` command performs a small non-destructive allocation test.
-`sdkconfig.defaults` also enables the OV5640 DVP sensor in RGB565 big-endian
-800x600 at 10 fps and the BLE controller for `ble_smoke`.
+`sdkconfig.defaults` also enables the OV5640 DVP sensor through the upstream
+800x600 table; the Candis BSP reapplies the 30.003 fps RGB565 profile after
+format selection. It also enables the BLE controller for `ble_smoke`.
 The BLE host stack is disabled (`BT_CONTROLLER_ONLY`): the smoke test talks to
 the controller directly. Because the diagnostic build exceeds the 1 MB default
 app partition, the project ships a custom `partitions.csv` with a 4 MB factory
@@ -397,6 +398,13 @@ from the host clock (UTC), because a fresh board powers up with an invalid RTC
 time. The board identity defaults to the base MAC from `board_info`.
 `--non-interactive` supplies safe canned answers for unattended parser
 validation; it is not a substitute for fixture observations.
+The optional `power_rail_scan` composite check cycles the ES8389 audio rail,
+whose rail-only API leaves the codec addressable. CST820 is intentionally not
+graded there because it needs a reset pulse after ALDO2 rises (before that it
+can answer at boot address `0x6A` rather than runtime `0x15`); OV5640 likewise
+needs XCLK plus reset/PWDN release. Their complete activation paths remain
+`touch_test` and `camera_test`, so rail-only silence is not mislabeled as a
+hardware fault.
 `python3 host_tools/run_evt.py --self-test` verifies the parser and report
 writer against a scripted fake firmware on a pseudo terminal and needs no
 hardware.

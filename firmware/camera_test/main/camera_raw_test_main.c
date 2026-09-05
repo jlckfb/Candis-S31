@@ -229,7 +229,8 @@ static esp_err_t raw_session_start(raw_session_t *session)
         ESP_LOGE(TAG, "open %s failed errno=%d", BSP_CAMERA_DEVICE, errno);
         return ESP_ERR_NOT_FOUND;
     }
-    const esp_err_t workaround_error = bsp_camera_apply_workaround();
+    const esp_err_t workaround_error =
+        bsp_camera_apply_workaround(V4L2_PIX_FMT_RGB565X);
     close(video_fd);
     ESP_RETURN_ON_ERROR(workaround_error, TAG,
                         "post-open sensor workaround failed");

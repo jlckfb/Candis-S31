@@ -33,7 +33,8 @@ static void sim_on_power(const svc_power_status_t *st,
                          svc_power_event_t ev, void *user)
 {
     (void)user;
-    ui_status_set_battery(st->percent, st->charging, st->present);
+    ui_status_set_battery(st->percent, st->charging, st->present,
+                          st->fuel_gauge_reference_model);
     (void)ev;
 }
 
@@ -73,7 +74,8 @@ void sim_ui_init(const char *screen, const char *state)
 
     svc_power_status_t power;
     svc_power_get_status(&power);
-    ui_status_set_battery(power.percent, power.charging, power.present);
+    ui_status_set_battery(power.percent, power.charging, power.present,
+                          power.fuel_gauge_reference_model);
     ui_status_set_wifi(state != NULL && strcmp(state, "wifi") == 0 ? 2 : 0);
     ui_status_set_ble(state != NULL && strcmp(state, "ble") == 0);
     ui_status_set_sd(state != NULL && strcmp(state, "sd") == 0);

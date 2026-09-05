@@ -255,16 +255,53 @@ static void run_psram_alias_probe(const test_ctx_t *ctx, test_result_t *out)
 /* mem.bandwidth (factory_diag.c:451-568)                              */
 /* Numbers are evidence only - no hard thresholds (spec F10: they move  */
 /* with the flash/PSRAM clock profile).                                */
+/*                                                                     */
+/* Window policy: demo runtime keeps display/network/audio services    */
+/* resident; they allocate continuously, so the largest PSRAM block    */
+/* shrinks below the 8 MiB cap and races this task. Sizing the window  */
+/* as "min(largest block, 8 MiB)" (factory_diag) is nearly the whole   */
+/* block once fragmented and fails on multi-heap bookkeeping alone.    */
+/* Here the window is the largest rung of a fixed ladder that places,  */
+/* floored at MEM_BW_SPAN_MIN (far above the S3 data cache, so numbers */
+/* stay representative; the floor bounds allocation policy only, spec  */
+/* F10 performance numbers stay evidence-only). Real pressure below    */
+/* the floor still FAILs.                                              */
 /* ------------------------------------------------------------------ */
 
-#define MEM_BW_CHUNK_BYTES  (64U * 1024U)
+#define MEM_BW_CHUNK_MAX    (64U * 1024U)
+#define MEM_BW_CHUNK_MIN    (16U * 1024U)
 #define MEM_BW_SPAN_MAX     (8U * 1024U * 1024U)
+#define MEM_BW_SPAN_MIN     (256U * 1024U)
+#define MEM_BW_ALLOC_TRIES  3
 #define MEM_BW_FLASH_BYTES  (4U * 1024U * 1024U)
 #define MEM_BW_FLASH_OFFSET (1024U * 1024U)
 
 static double bw_mbps(size_t bytes, int64_t elapsed_us)
 {
     return elapsed_us > 0 ? (double)bytes / (double)elapsed_us : 0.0;
+}
+
+/* Fixed-size ladder allocator: takes the largest rung that places,
+ * retrying each rung MEM_BW_ALLOC_TRIES times ~10 ms apart to absorb
+ * transient allocations from resident services. Deterministic given
+ * the heap state; NULL only when even the smallest rung cannot be
+ * placed (real memory pressure). */
+static void *bw_ladder_alloc(const size_t *rungs, size_t n_rungs,
+                             uint32_t caps, size_t *size_out)
+{
+    for (size_t r = 0; r < n_rungs; ++r) {
+        for (int tries = 0; tries < MEM_BW_ALLOC_TRIES; ++tries) {
+            void *p = heap_caps_malloc(rungs[r], caps);
+            if (p != NULL) {
+                *size_out = rungs[r];
+                return p;
+            }
+            if (tries + 1 < MEM_BW_ALLOC_TRIES) {
+                vTaskDelay(pdMS_TO_TICKS(10));
+            }
+        }
+    }
+    return NULL;
 }
 
 static void run_mem_bandwidth(const test_ctx_t *ctx, test_result_t *out)
@@ -274,22 +311,48 @@ static void run_mem_bandwidth(const test_ctx_t *ctx, test_result_t *out)
         return;
     }
 
-    size_t span = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM |
-                                                   MALLOC_CAP_8BIT);
-    if (span > MEM_BW_SPAN_MAX) {
-        span = MEM_BW_SPAN_MAX;
+    static const size_t win_rungs[] = {
+        MEM_BW_SPAN_MAX, 4U * 1024U * 1024U, 2U * 1024U * 1024U,
+        1024U * 1024U, 512U * 1024U, MEM_BW_SPAN_MIN,
+    };
+    static const size_t chunk_rungs[] = {
+        MEM_BW_CHUNK_MAX, 32U * 1024U, MEM_BW_CHUNK_MIN,
+    };
+
+    /* Window (PSRAM) first, then the flash-read staging chunk; the
+     * staging-failure path frees the window it already holds. */
+    size_t span = 0;
+    size_t chunk = 0;
+    uint32_t *psram = bw_ladder_alloc(win_rungs,
+                                      sizeof(win_rungs) / sizeof(win_rungs[0]),
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
+                                      &span);
+    uint8_t *iram = NULL;
+    if (psram != NULL) {
+        iram = bw_ladder_alloc(chunk_rungs,
+                               sizeof(chunk_rungs) / sizeof(chunk_rungs[0]),
+                               MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT,
+                               &chunk);
     }
-    span &= ~(size_t)4095U;
-    uint32_t *psram = heap_caps_malloc(span, MALLOC_CAP_SPIRAM |
-                                       MALLOC_CAP_8BIT);
-    uint8_t *iram = heap_caps_malloc(MEM_BW_CHUNK_BYTES,
-                                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (psram == NULL || iram == NULL || span < 2U * MEM_BW_CHUNK_BYTES) {
-        heap_caps_free(psram);
-        heap_caps_free(iram);
-        result_fail(out, "bandwidth window allocation failed");
+    if (psram == NULL) {
+        snprintf(out->evidence, sizeof(out->evidence),
+                 "window alloc failed largest=%u min=%u",
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM |
+                                                            MALLOC_CAP_8BIT),
+                 (unsigned)MEM_BW_SPAN_MIN);
+        out->st = TEST_ST_FAIL;
         return;
     }
+    if (iram == NULL) {
+        heap_caps_free(psram);
+        snprintf(out->evidence, sizeof(out->evidence),
+                 "staging alloc failed internal=%u",
+                 (unsigned)heap_caps_get_largest_free_block(
+                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        out->st = TEST_ST_FAIL;
+        return;
+    }
+
     const size_t words = span / sizeof(*psram);
 
     ctx->progress(ctx, 5, "psram write");
@@ -301,11 +364,27 @@ static void run_mem_bandwidth(const test_ctx_t *ctx, test_result_t *out)
 
     ctx->progress(ctx, 35, "psram read");
     volatile uint32_t sink = 0;
+    size_t bad_off = 0;
+    bool verified = true;
     t0 = esp_timer_get_time();
     for (size_t w = 0; w < words; ++w) {
-        sink += ((const volatile uint32_t *)psram)[w];
+        const uint32_t v = ((const volatile uint32_t *)psram)[w];
+        sink += v;
+        if (v != ((uint32_t)w ^ PSRAM_PATTERN_BASE)) {
+            bad_off = w * sizeof(*psram);
+            verified = false;
+            break;
+        }
     }
     const int64_t read_us = esp_timer_get_time() - t0;
+    if (!verified) {
+        heap_caps_free(psram);
+        heap_caps_free(iram);
+        snprintf(out->evidence, sizeof(out->evidence),
+                 "psram verify fail @0x%05zx", bad_off);
+        out->st = TEST_ST_FAIL;
+        return;
+    }
 
     ctx->progress(ctx, 60, "psram copy");
     const size_t half = span / 2U;
@@ -322,13 +401,17 @@ static void run_mem_bandwidth(const test_ctx_t *ctx, test_result_t *out)
            !ctx->cancel_requested(ctx)) {
         flash_error = esp_flash_read(esp_flash_default_chip, iram,
                                      MEM_BW_FLASH_OFFSET + flash_done,
-                                     MEM_BW_CHUNK_BYTES);
+                                     chunk);
         if (flash_error != ESP_OK) {
             break;
         }
         flash_sink += ((const uint32_t *)iram)[0] +
-                      ((const uint32_t *)iram)[MEM_BW_CHUNK_BYTES / 4U - 1U];
-        flash_done += MEM_BW_CHUNK_BYTES;
+                      ((const uint32_t *)iram)[chunk / 4U - 1U];
+        flash_done += chunk;
+        /* esp_flash_read() keeps this task runnable for several seconds at
+         * the S31 preview target's measured ~1 MB/s. Block one tick per
+         * chunk so IDLE0 can service the task watchdog during the benchmark. */
+        vTaskDelay(1);
     }
     const int64_t flash_us = esp_timer_get_time() - t0;
 
@@ -347,7 +430,8 @@ static void run_mem_bandwidth(const test_ctx_t *ctx, test_result_t *out)
         return;
     }
     snprintf(out->evidence, sizeof(out->evidence),
-             "W %.0f R %.0f C %.0f F %.0f MB/s",
+             "win=%uK W %.0f R %.0f C %.0f F %.0f MB/s",
+             (unsigned)(span / 1024U),
              bw_mbps(span, write_us), bw_mbps(span, read_us),
              bw_mbps(half, copy_us), bw_mbps(flash_done, flash_us));
     out->st = TEST_ST_PASS;

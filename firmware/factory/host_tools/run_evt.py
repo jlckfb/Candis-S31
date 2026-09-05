@@ -27,15 +27,14 @@ import time
 
 import serial
 
-# Host-side composite stage marker, not a console command: for each peripheral
-# behind a switched rail, run OFF -> scan -> ON -> scan -> OFF against the main
-# I2C bus, proving that CST820 (0x15), ES8389 (0x10), and OV5640 (0x3c) answer
-# only while their rail is on. A final scan with every rail off confirms none
-# of them answers. ES8389 answers at 7-bit 0x10 on the wire (AD0 and AD1 both
-# strapped low: R63/R68 100kOhm pull-downs fitted, R62/R65 DNP); 0x20 is its
-# 8-bit write address, which is what esp_codec_dev and the BSP take.
-# EvtRunner.run() expands the marker into the real command sequence;
-# --no-power-rail-scan drops it.
+# Host-side composite stage, not a console command. The rail-only API leaves
+# the ES8389 addressable, so OFF -> scan -> ON -> scan -> OFF proves its power
+# gating. CST820 needs a reset pulse after ALDO2 rises (rail-only boot address
+# is 0x6a, not the runtime 0x15), while OV5640 needs XCLK plus reset/PWDN
+# release; their dedicated touch_test/camera_test paths own those complete
+# sequences and the rail-only scan must not report their intentional silence
+# as hardware failures. A final main-bus scan still verifies the all-off state.
+# EvtRunner.run() expands the marker; --no-power-rail-scan drops it.
 POWER_RAIL_SCAN = "power_rail_scan"
 
 # Host-side proof that typec_test actually raised the FUSB303B control domain.
@@ -49,12 +48,10 @@ FUSB303B_ALT_ADDRESS = 0x31
 # so the runner drains it instead of waiting for a result.
 POWER_ALL_OFF = "power_all_off"
 
-# (peripheral_power name, main-bus address) for the devices behind switched
-# rails that the POWER_RAIL_SCAN stage checks.
+# (peripheral_power name, runtime main-bus address) for devices that remain
+# addressable after the public rail-only ON sequence.
 POWER_RAIL_DEVICES = (
-    ("touch", 0x15),    # CST820 touch, ALDO2
-    ("audio", 0x10),    # ES8389 codec, ALDO3 (7-bit; 0x20 is the 8-bit write address)
-    ("camera", 0x3c),   # OV5640 SCCB, camera rails
+    ("audio", 0x10),    # ES8389 codec, ALDO3 (7-bit; 0x20 is 8-bit write address)
 )
 
 # (command, console timeout in seconds, expected report test name or marker)
@@ -96,10 +93,9 @@ STAGES = [
     (POWER_ALL_OFF, 5, "INFO"),  # clear the audio block
     ("camera_test", 20, "camera"),
     (POWER_ALL_OFF, 5, "INFO"),  # clear the camera block
-    # Optional closed-loop rail check, expanded by the runner; must stay last
-    # so every device test has already powered its rail once. The stage ends
-    # with every switched rail OFF.
-    (POWER_RAIL_SCAN, 120, POWER_RAIL_SCAN),
+    # Optional rail-only loop for the ES8389, whose public power sequence
+    # leaves it addressable. The stage ends with every switched rail OFF.
+    (POWER_RAIL_SCAN, 60, POWER_RAIL_SCAN),
 ]
 
 RESULT_PREFIX = "FACTORY_RESULT "
@@ -335,16 +331,14 @@ class EvtRunner:
         }
 
     def _run_power_rail_scan(self, timeout_s):
-        """Toggle each switched-rail peripheral OFF->scan->ON->scan->OFF.
+        """Toggle each addressable rail-only peripheral OFF->scan->ON->scan->OFF.
 
         The firmware grades a switched-rail device as allowed-silent whenever
-        its rail reads back off, so only the host can close the loop: a device
-        that still answers with its rail off (or stays silent with it back on)
-        is recorded here under the synthetic power_rail_scan result. Every
-        rail is left OFF at the end of its cycle, and a final scan with all
-        rails off confirms none of the devices answers. The stage therefore
-        ends with every switched rail off; the board-side i2c_main result
-        reflects that all-off state.
+        its rail reads back off, so only the host can prove that an address
+        disappears and returns with the rail. Touch and camera are deliberately
+        excluded: their rail-only API holds the devices in pre-init reset states
+        and their dedicated tests own the complete reset/XCLK sequences. The
+        closing scan leaves and verifies the board's all-off state.
         """
         scans = 2 * len(POWER_RAIL_DEVICES) + 1
         per_scan = max(1, timeout_s // scans)
@@ -381,7 +375,7 @@ class EvtRunner:
             self._log("!!! %s FAIL: %s" % (POWER_RAIL_SCAN, detail))
         else:
             status = "PASS"
-            detail = "switched-rail devices answer only while powered; all rails left off"
+            detail = "rail-only devices answer only while powered; all rails left off"
             self._log("%s PASS: %s" % (POWER_RAIL_SCAN, detail))
         self.results[POWER_RAIL_SCAN] = {
             "test": POWER_RAIL_SCAN,
@@ -946,7 +940,23 @@ def main():
     if not args.port:
         parser.error("--port is required unless --self-test is given")
 
-    ser = serial.Serial(args.port, args.baud, timeout=0.1)
+    # pyserial opens ports with DTR/RTS asserted by default. On the Candis
+    # CH343P auto-download circuit that can hold EN/BOOT in reset instead of
+    # leaving the already-flashed Factory console running. Configure both
+    # lines deasserted before open, matching esp-idf-monitor's open sequence.
+    ser = serial.Serial(port=None, baudrate=args.baud, timeout=0.1)
+    ser.dtr = False
+    ser.rts = False
+    ser.port = args.port
+    ser.open()
+    ser.rts = False
+    ser.dtr = False
+    # Some USB-UART drivers still pulse the control lines while opening even
+    # when their requested state was configured above. Factory reaches its
+    # prompt in about 2.7 s after that reset (including PSRAM training).
+    # Do not send report_reset into the ROM/bootloader and lose the command.
+    time.sleep(4.0)
+    ser.reset_input_buffer()
     runner = EvtRunner(ser, args.out, board_id=args.board_id,
                        answer_fn=skip_answer if args.non_interactive else None)
     report = runner.run(build_stages(power_rail_scan=not args.no_power_rail_scan))

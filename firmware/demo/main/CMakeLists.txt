@@ -77,4 +77,22 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     CANDIS_S31_BSP_GIT_REV="${CANDIS_S31_BSP_GIT_REV}"
 )
 
+if(CANDIS_DEMO_AUTOTEST)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE
+        CANDIS_DEMO_AUTOTEST=1
+    )
+endif()
+if(CANDIS_DEMO_CAMERA_BENCH)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE
+        CANDIS_DEMO_CAMERA_BENCH=1
+    )
+endif()
+
+
+if(CANDIS_DEMO_PAGE_WALK)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE
+        CONFIG_DEMO_PAGE_WALK=1
+    )
+endif()
+
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wall -Wextra)

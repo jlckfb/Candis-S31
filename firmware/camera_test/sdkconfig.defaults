@@ -44,8 +44,8 @@ CONFIG_SPIRAM_USE_CAPS_ALLOC=y
 CONFIG_SPIRAM_SPEED_250M=y
 CONFIG_SPIRAM_MEMTEST=y
 
-# Generate XCLK through the board-local LEDC workaround. The DVP clock path
-# cannot produce the sensor table's required clock on ESP32-S31.
+# Keep XCLK on the validated board-owned 20 MHz LEDC path. The board profile
+# compensates the nominal upstream mode table through the sensor PLL.
 CONFIG_BSP_CAMERA_XCLK_USE_LEDC=y
 
 # Keep both verified RGB565X and UYVY sensor tables available. Select UYVY
@@ -56,6 +56,7 @@ CONFIG_CAMERA_OV5640_AUTO_DETECT_DVP_INTERFACE_SENSOR=y
 CONFIG_CAMERA_OV5640_DVP_RGB565_BE_800X600_10FPS=y
 CONFIG_CAMERA_OV5640_DVP_YUV422_800X600_10FPS=y
 CONFIG_CAMERA_OV5640_DVP_DEFAULT_FMT_YUV422_800X600_10FPS=y
+CONFIG_CAMERA_TEST_AUTOFOCUS=y
 CONFIG_CAMERA_OV3660=n
 CONFIG_CAM_CTRL_SPI_ENABLE=n
 

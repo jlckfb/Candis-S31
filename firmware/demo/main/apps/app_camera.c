@@ -9,26 +9,29 @@
  *  4. zero-copy display: lv_image + static lv_image_dsc_t, central 460x460
  *     crop, and LV_COLOR_FORMAT_RGB565_SWAPPED. The negotiated V4L2
  *     bytesperline is used when present; zero means tightly packed.
- *  5. 10 fps source posted at <=15 fps through a 66 ms LVGL timer
- *     (drop-when-behind frame handoff);
- *  6. capture button attempts S31 hardware JPEG encoding to
+ *  5. 30.003 fps sensor target polled at the 60 Hz AMOLED cadence through a
+ *     16 ms LVGL timer (drop-when-behind frame handoff);
+ *  6. after STREAMON, run the OV5640 embedded single-shot AF protocol;
+ *     tapping the preview requests a center-zone refocus;
+ *  7. capture button attempts S31 hardware JPEG encoding to
  *     /sdcard/photos/IMG_nnnn.jpg; long-pressing keeps a packed RGB565 debug
  *     frame. The capture path is compile-tested; real-scene color and JPEG
  *     file validation remain hardware test items;
- *  7. screen DELETE -> stop request -> fetch task runs the full STREAMOFF ->
+ *  8. screen DELETE -> stop request -> fetch task runs the full STREAMOFF ->
  *     munmap -> close -> bsp_camera_stop chain (the page does not block on
  *     the 3 s DQBUF; a reopen retries until the previous stream has drained);
- *  8. app_camera_stream_active() exported for C.5 arbitration;
- *  9. in-page "Frame test" button stops the preview, queues camera.frames,
+ *  9. app_camera_stream_active() exported for C.5 arbitration;
+ * 10. in-page "Frame test" button stops the preview, queues camera.frames,
  *     and shows the verdict when it lands in the result library.
  *
  * All V4L2 ioctls run on the fetch task only; the LVGL side consumes
- * frame buffers through a pending/release slot pair guarded by a
- * critical section.
+ * frame buffers through pending/retire/release queues guarded by a critical
+ * section. A retired V4L2 buffer is never re-queued before LV_EVENT_REFR_READY.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <assert.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -51,20 +54,22 @@
 #include "esp_video_ioctl.h"
 
 #include "demo_apps.h"
+#include "services/svc_power.h"
 #include "services/svc_storage.h"
 #include "tests/svc_test.h"
 #include "ui/ui_manager.h"
 
 static const char *TAG = "app_camera";
 
-#define CAM_BUF_COUNT        3
+#define CAM_BUF_COUNT 4 /* one LVGL frame plus DVP queueing headroom */
 #define CAM_DQBUF_TIMEOUT_MS 3000   /* spec: 3 s DQBUF timeout */
-#define CAM_POST_MS          66     /* <=15 fps on-screen posting */
+#define CAM_POST_MS 16 /* poll at display cadence; present each 30 fps DVP frame */
 #define CAM_TASK_STACK       8192   /* JPEG encoder path needs the depth
                                      * proven by the svc_test runner */
 #define CAM_TASK_PRIO        4
 #define CAM_TIMEOUT_GIVEUP   5      /* consecutive DQBUF timeouts */
 #define CAM_JPEG_QUALITY     80     /* factory jpeg_encode_test default */
+#define CAM_AF_TIMEOUT_MS    5000U /* measured full sequence is about 3.7 s */
 
 /* Pending capture kind (s_cam.save_request). Single byte on purpose. */
 #define CAM_SAVE_NONE        0
@@ -106,6 +111,8 @@ static struct {
                                      * byte so the dual-core handshake needs
                                      * no ordering between separate flags */
     volatile bool saving;
+    volatile bool focus_requested;
+    volatile bool focus_running;
     bool img_src_set;
     bool suppress_click;      /* long-press already acted; skip the click */
     bool test_pending;        /* "Frame test" waits for the stream to drain */
@@ -116,8 +123,18 @@ static struct {
     uint32_t pending_seq;
     int display_idx;          /* referenced by the image widget (-1 none) */
     uint32_t seen_seq;
-    int release_idx[CAM_BUF_COUNT]; /* displayed buffers to re-QBUF */
+    int retire_idx[CAM_BUF_COUNT]; /* wait for LV_EVENT_REFR_READY */
+    int retire_count;
+    int release_idx[CAM_BUF_COUNT]; /* safe for the fetch task to re-QBUF */
     int release_count;
+    uint32_t captured_frames;  /* completed DVP frames in stats window */
+    uint32_t presented_frames; /* frames published to the LVGL image */
+    uint32_t refreshed_frames; /* LVGL cycles that flushed camera pixels */
+    bool flushed_in_cycle;
+    bool refresh_hook_attached;
+    uint32_t dropped_frames;   /* superseded before LVGL consumed them */
+    int64_t stats_start_us;
+    int64_t keepawake_deadline_us; /* LVGL thread only */
     /* V4L2 handles (fetch task only) */
     int file;
     uint8_t *buffers[CAM_BUF_COUNT];
@@ -126,6 +143,7 @@ static struct {
     uint32_t stride_bytes;       /* negotiated bytes per line; 0 means tight */
 
     esp_err_t last_error;
+    esp_err_t focus_error;
 } s_cam;
 
 static lv_image_dsc_t s_img_dsc;
@@ -146,10 +164,15 @@ static void cam_ui_ready(void *arg)
     if (s_cam.root == NULL || s_cam.state != CAM_STATE_STARTING) {
         return;
     }
+    portENTER_CRITICAL(&s_cam.mux);
+    const esp_err_t focus_error = s_cam.focus_error;
+    portEXIT_CRITICAL(&s_cam.mux);
     s_cam.state = CAM_STATE_STREAMING;
     lv_label_set_text(s_cam.lbl_status, "");
     lv_obj_remove_flag(s_cam.btn_capture, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(s_cam.btn_test, LV_OBJ_FLAG_HIDDEN);
+    ui_toast(focus_error == ESP_OK ?
+             "Tap preview to refocus" : "Autofocus failed; tap to retry");
 }
 
 static void cam_ui_error(void *arg)
@@ -164,6 +187,19 @@ static void cam_ui_error(void *arg)
     lv_obj_add_flag(s_cam.btn_capture, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_cam.btn_test, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(s_cam.btn_start, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void cam_ui_focus_done(void *arg)
+{
+    (void)arg;
+    if (s_cam.root == NULL || s_cam.state != CAM_STATE_STREAMING) {
+        return;
+    }
+    portENTER_CRITICAL(&s_cam.mux);
+    const esp_err_t focus_error = s_cam.focus_error;
+    portEXIT_CRITICAL(&s_cam.mux);
+    lv_label_set_text(s_cam.lbl_status, "");
+    ui_toast(focus_error == ESP_OK ? "Focus locked" : "Focus failed");
 }
 
 static void cam_ui_save_done(void *arg)
@@ -458,15 +494,6 @@ static esp_err_t cam_open_pipeline(void)
             error = ESP_ERR_NOT_FOUND;
         }
     }
-    /* esp_video_open() lazily reloads the sensor table; restore the board
-     * override after open and before any buffers are streamed. */
-    if (error == ESP_OK) {
-        error = bsp_camera_apply_workaround();
-        if (error != ESP_OK) {
-            ESP_LOGE(TAG, "post-open sensor workaround failed: %s",
-                     esp_err_to_name(error));
-        }
-    }
     if (error == ESP_OK) {
         const struct timeval dqbuf_timeout = {
             .tv_sec = CAM_DQBUF_TIMEOUT_MS / 1000,
@@ -496,6 +523,16 @@ static esp_err_t cam_open_pipeline(void)
         s_cam.format.fmt.pix.pixelformat = V4L2_PIX_FMT_RGB565X;
         if (ioctl(s_cam.file, VIDIOC_S_FMT, &s_cam.format) != 0) {
             error = ESP_FAIL;
+        }
+    }
+
+    if (error == ESP_OK) {
+        /* S_FMT reloads the upstream table; now force the requested board
+         * byte order and ISP block before allocating capture buffers. */
+        error = bsp_camera_apply_workaround(V4L2_PIX_FMT_RGB565X);
+        if (error != ESP_OK) {
+            ESP_LOGE(TAG, "post-format sensor workaround failed: %s",
+                     esp_err_to_name(error));
         }
     }
 
@@ -592,6 +629,30 @@ static void cam_close_pipeline(void)
     bsp_camera_stop();
 }
 
+static void cam_display_refresh_cb(lv_event_t *event)
+{
+    switch (lv_event_get_code(event)) {
+    case LV_EVENT_FLUSH_START:
+        s_cam.flushed_in_cycle = true;
+        break;
+    case LV_EVENT_REFR_READY:
+        if (s_cam.flushed_in_cycle) {
+            s_cam.flushed_in_cycle = false;
+            portENTER_CRITICAL(&s_cam.mux);
+            ++s_cam.refreshed_frames;
+            while (s_cam.retire_count > 0 &&
+                    s_cam.release_count < CAM_BUF_COUNT) {
+                s_cam.release_idx[s_cam.release_count++] =
+                    s_cam.retire_idx[--s_cam.retire_count];
+            }
+            portEXIT_CRITICAL(&s_cam.mux);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 static void camera_task(void *arg)
 {
     (void)arg;
@@ -605,15 +666,45 @@ static void camera_task(void *arg)
         vTaskDelete(NULL);
         return;
     }
-
     s_cam.stream_active = true;
+    const esp_err_t initial_focus_error =
+        bsp_camera_autofocus_once(CAM_AF_TIMEOUT_MS);
+    portENTER_CRITICAL(&s_cam.mux);
+    s_cam.focus_error = initial_focus_error;
+    portEXIT_CRITICAL(&s_cam.mux);
+    if (initial_focus_error != ESP_OK) {
+        ESP_LOGW(TAG, "initial autofocus failed: %s",
+                 esp_err_to_name(initial_focus_error));
+    }
     ui_async(cam_ui_ready, NULL);
+    s_cam.stats_start_us = esp_timer_get_time();
 
     int timeouts = 0;
     bool running = true;
     while (running) {
         if (s_cam.stop_requested) {
             break;
+        }
+        bool run_focus = false;
+        portENTER_CRITICAL(&s_cam.mux);
+        if (s_cam.focus_requested) {
+            s_cam.focus_requested = false;
+            s_cam.focus_running = true;
+            run_focus = true;
+        }
+        portEXIT_CRITICAL(&s_cam.mux);
+        if (run_focus) {
+            const esp_err_t focus_error =
+                bsp_camera_autofocus_once(CAM_AF_TIMEOUT_MS);
+            portENTER_CRITICAL(&s_cam.mux);
+            s_cam.focus_error = focus_error;
+            s_cam.focus_running = false;
+            portEXIT_CRITICAL(&s_cam.mux);
+            if (focus_error != ESP_OK) {
+                ESP_LOGW(TAG, "tap autofocus failed: %s",
+                         esp_err_to_name(focus_error));
+            }
+            ui_async(cam_ui_focus_done, NULL);
         }
         /* Re-queue buffers the LVGL side has finished displaying. */
         portENTER_CRITICAL(&s_cam.mux);
@@ -661,14 +752,59 @@ static void camera_task(void *arg)
 
         /* Publish as the newest pending frame; an unconsumed previous
          * pending goes straight back to the driver (drop-when-behind). */
+        const int64_t stats_now_us = esp_timer_get_time();
+        uint32_t stats_captured = 0;
+        uint32_t stats_presented = 0;
+        uint32_t stats_dropped = 0;
+        uint32_t stats_refreshed = 0;
+        int64_t stats_elapsed_us = 0;
+        bool report_stats = false;
         int requeue = -1;
         portENTER_CRITICAL(&s_cam.mux);
+        ++s_cam.captured_frames;
         if (s_cam.pending_idx >= 0) {
             requeue = s_cam.pending_idx;
+            ++s_cam.dropped_frames;
         }
         s_cam.pending_idx = (int)done.index;
         ++s_cam.pending_seq;
+        stats_elapsed_us = stats_now_us - s_cam.stats_start_us;
+        if (stats_elapsed_us >= 2000000) {
+            stats_captured = s_cam.captured_frames;
+            stats_presented = s_cam.presented_frames;
+            stats_dropped = s_cam.dropped_frames;
+            stats_refreshed = s_cam.refreshed_frames;
+            s_cam.captured_frames = 0;
+            s_cam.presented_frames = 0;
+            s_cam.dropped_frames = 0;
+            s_cam.refreshed_frames = 0;
+            s_cam.stats_start_us = stats_now_us;
+            report_stats = true;
+        }
         portEXIT_CRITICAL(&s_cam.mux);
+        if (report_stats) {
+            const uint32_t capture_fps_x10 = (uint32_t)(
+                ((uint64_t)stats_captured * 10000000ULL +
+                 (uint64_t)stats_elapsed_us / 2U) /
+                (uint64_t)stats_elapsed_us);
+            const uint32_t present_fps_x10 = (uint32_t)(
+                ((uint64_t)stats_presented * 10000000ULL +
+                 (uint64_t)stats_elapsed_us / 2U) /
+                (uint64_t)stats_elapsed_us);
+            const uint32_t refresh_fps_x10 = (uint32_t)(
+                ((uint64_t)stats_refreshed * 10000000ULL +
+                 (uint64_t)stats_elapsed_us / 2U) /
+                (uint64_t)stats_elapsed_us);
+            ESP_LOGI(TAG,
+                     "preview capture=%" PRIu32 ".%01" PRIu32
+                     " fps present=%" PRIu32 ".%01" PRIu32
+                     " fps refresh=%" PRIu32 ".%01" PRIu32
+                     " fps dropped=%" PRIu32,
+                     capture_fps_x10 / 10U, capture_fps_x10 % 10U,
+                     present_fps_x10 / 10U, present_fps_x10 % 10U,
+                     refresh_fps_x10 / 10U, refresh_fps_x10 % 10U,
+                     stats_dropped);
+        }
         if (requeue >= 0) {
             cam_qbuf_index(requeue);
         }
@@ -680,6 +816,7 @@ static void camera_task(void *arg)
     portENTER_CRITICAL(&s_cam.mux);
     s_cam.pending_idx = -1;
     s_cam.display_idx = -1;
+    s_cam.retire_count = 0;
     s_cam.release_count = 0;
     portEXIT_CRITICAL(&s_cam.mux);
     s_cam.stream_active = false;
@@ -708,6 +845,17 @@ static void cam_start_stream(void)
     s_cam.pending_seq = 0;
     s_cam.seen_seq = 0;
     s_cam.release_count = 0;
+    s_cam.retire_count = 0;
+    s_cam.captured_frames = 0;
+    s_cam.presented_frames = 0;
+    s_cam.dropped_frames = 0;
+    s_cam.refreshed_frames = 0;
+    s_cam.flushed_in_cycle = false;
+    s_cam.stats_start_us = 0;
+    s_cam.keepawake_deadline_us = 0;
+    s_cam.focus_requested = false;
+    s_cam.focus_running = false;
+    s_cam.focus_error = ESP_OK;
     portEXIT_CRITICAL(&s_cam.mux);
     memset(s_cam.buffers, 0, sizeof(s_cam.buffers));
 
@@ -743,8 +891,8 @@ static void cam_request_stop(void)
 /* LVGL-side timers                                                    */
 /* ------------------------------------------------------------------ */
 
-/* 66 ms post timer: consume the newest pending frame (<=15 fps) and, in
- * the stopped state, watch for the queued frame-test result. */
+/* 16 ms post timer: consume every new frame at the AMOLED refresh cadence
+ * and, in the stopped state, watch for the queued frame-test result. */
 static void cam_post_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
@@ -791,15 +939,22 @@ static void cam_post_timer_cb(lv_timer_t *timer)
         new_idx = s_cam.pending_idx;
         s_cam.pending_idx = -1;
         s_cam.seen_seq = s_cam.pending_seq;
+        ++s_cam.presented_frames;
         const int old_idx = s_cam.display_idx;
         s_cam.display_idx = new_idx;
-        if (old_idx >= 0 && s_cam.release_count < CAM_BUF_COUNT) {
-            s_cam.release_idx[s_cam.release_count++] = old_idx;
+        if (old_idx >= 0) {
+            assert(s_cam.retire_count < CAM_BUF_COUNT);
+            s_cam.retire_idx[s_cam.retire_count++] = old_idx;
         }
     }
     portEXIT_CRITICAL(&s_cam.mux);
 
     if (new_idx >= 0 && s_cam.buffers[new_idx] != NULL) {
+        const int64_t now_us = esp_timer_get_time();
+        if (now_us >= s_cam.keepawake_deadline_us) {
+            svc_power_activity();
+            s_cam.keepawake_deadline_us = now_us + 2000000;
+        }
         const uint32_t stride = s_cam.stride_bytes != 0 ?
                                 s_cam.stride_bytes : CAM_STRIDE;
         s_img_dsc.header.stride = stride;
@@ -837,6 +992,25 @@ static void cam_back_cb(lv_event_t *event)
 {
     (void)event;
     ui_nav_back();
+}
+
+static void cam_focus_cb(lv_event_t *event)
+{
+    (void)event;
+    if (s_cam.state != CAM_STATE_STREAMING) {
+        return;
+    }
+
+    bool queued = false;
+    portENTER_CRITICAL(&s_cam.mux);
+    if (!s_cam.focus_requested && !s_cam.focus_running) {
+        s_cam.focus_requested = true;
+        queued = true;
+    }
+    portEXIT_CRITICAL(&s_cam.mux);
+    if (queued) {
+        lv_label_set_text(s_cam.lbl_status, "Focusing...");
+    }
 }
 
 static void cam_capture_cb(lv_event_t *event)
@@ -938,6 +1112,11 @@ static void cam_root_delete_cb(lv_event_t *event)
      * state further: the static dsc simply stops being repointed. The
      * object tree is being deleted anyway. */
     s_img_dsc.data = NULL;
+    if (s_cam.refresh_hook_attached) {
+        lv_display_remove_event_cb_with_user_data(
+            lv_display_get_default(), cam_display_refresh_cb, NULL);
+        s_cam.refresh_hook_attached = false;
+    }
 
     if (s_cam.post_timer != NULL) {
         lv_timer_delete(s_cam.post_timer);
@@ -993,6 +1172,14 @@ lv_obj_t *app_camera_create(void)
     lv_obj_set_style_pad_all(root, 0, 0);
     lv_obj_remove_flag(root, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(root, cam_root_delete_cb, LV_EVENT_DELETE, NULL);
+    lv_display_t *display = lv_display_get_default();
+    if (display != NULL) {
+        lv_display_add_event_cb(display, cam_display_refresh_cb,
+                                LV_EVENT_FLUSH_START, NULL);
+        lv_display_add_event_cb(display, cam_display_refresh_cb,
+                                LV_EVENT_REFR_READY, NULL);
+        s_cam.refresh_hook_attached = true;
+    }
 
     /* Zero-copy viewfinder surface (src set on the first frame). */
     memset(&s_img_dsc, 0, sizeof(s_img_dsc));
@@ -1004,7 +1191,8 @@ lv_obj_t *app_camera_create(void)
     s_img_dsc.data_size = CAM_VIEW_H * CAM_STRIDE;
     s_cam.img = lv_image_create(root);
     lv_obj_set_pos(s_cam.img, 0, 0);
-    lv_obj_remove_flag(s_cam.img, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(s_cam.img, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(s_cam.img, cam_focus_cb, LV_EVENT_CLICKED, NULL);
 
     s_cam.lbl_status = lv_label_create(root);
     lv_obj_set_style_text_font(s_cam.lbl_status, ui_font_body_lg(), 0);

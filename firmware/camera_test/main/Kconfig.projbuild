@@ -6,6 +6,31 @@ menu "Candis-S31 Camera Test"
             Select the sensor's UYVY path and convert it to RGB565 in the
             application, bypassing a module-specific RGB565 packing fault.
 
+    config CAMERA_TEST_ESP32_CAMERA_OV5640
+        bool "Configure OV5640 with Espressif esp32-camera"
+        depends on CAMERA_TEST_USE_UYVY
+        default y
+        help
+            Run the unmodified OV5640 sensor implementation from
+            espressif/esp32-camera 2.1.7 after VIDIOC_S_FMT. The ESP32-S31
+            DVP receiver remains provided by esp_video.
+
+    config CAMERA_TEST_SERIAL_FRAME_DUMP
+        bool "Dump one raw and converted frame over the console"
+        depends on CAMERA_TEST_USE_UYVY
+        default y
+        help
+            After the automatic cycles, write one source frame followed by
+            its PPA RGB565 output as length-delimited binary console data.
+
+    config CAMERA_TEST_AUTOFOCUS
+        bool "Run OV5640 embedded single-shot autofocus"
+        default y
+        help
+            After STREAMON, load the sensor's embedded autofocus firmware,
+            rebuild the center zone, run one focus cycle, and verify its
+            per-zone result through the public Candis-S31 BSP API.
+
     config CAMERA_TEST_DISPLAY_PATTERN
         bool "Display a fixed four-quadrant pattern"
         default n
@@ -18,6 +43,19 @@ menu "Candis-S31 Camera Test"
         help
             Enable the OV5640 internal color bar before streaming to isolate
             the DVP receiver from the analog image path.
+    config CAMERA_TEST_NATIVE_TABLE_ONLY
+        bool "Keep the native OV5640 format table after VIDIOC_S_FMT"
+        help
+            Skip the Candis post-format ISP/output override so the sensor's
+            exact boot-time format table remains unchanged.
+
+    config CAMERA_TEST_FAST_SHUTTER
+        bool "Force manual 1/60 s exposure"
+        default n
+        help
+            Hold OV5640 exposure at 418 lines (16.68 ms at the board's
+            47.5 Mpixel/s rate) and analog gain at 6x for motion-smear diagnosis.
+
 
     config CAMERA_TEST_SENSOR_PCLK_INVERT
         bool "Invert sensor PCLK polarity"

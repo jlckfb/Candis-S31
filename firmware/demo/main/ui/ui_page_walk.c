@@ -17,16 +17,20 @@
 #include <string.h>
 
 #include "esp_timer.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #include "ui/ui_manager.h"
+#include "services/svc_power.h"
 
 #define PAGE_WALK_STACK   4096
 #define PAGE_WALK_PRIO    2
 #define PAGE_WALK_DELAY_S 3    /* time to boot services before walking */
 #define PAGE_WALK_DWELL_S 2    /* dwell on each page */
 #define PAGE_WALK_GAP_MS  300  /* let each page settle after loading */
+
+static const char *TAG = "ui_page_walk";
 
 static const char *const s_walk_ids[] = {
     "display", "recorder", "player", "wifi", "ble", "files",
@@ -39,6 +43,9 @@ static void page_walk_task(void *arg)
 {
     (void)arg;
     vTaskDelay(pdMS_TO_TICKS(PAGE_WALK_DELAY_S * 1000));
+    /* This is synthetic navigation, not input-service activity. Keep the
+     * configured idle timeout from suspending the display mid-walk. */
+    svc_power_activity();
 
     if (!ui_lock()) {
         return;
@@ -47,6 +54,7 @@ static void page_walk_task(void *arg)
     ui_unlock();
 
     for (int i = 0; i < PAGE_WALK_COUNT; ++i) {
+        svc_power_activity();
         if (!ui_lock()) {
             return;
         }
@@ -63,6 +71,8 @@ static void page_walk_task(void *arg)
 
         vTaskDelay(pdMS_TO_TICKS(PAGE_WALK_GAP_MS));
     }
+
+    ESP_LOGI(TAG, "complete pages=%d", PAGE_WALK_COUNT);
     vTaskDelete(NULL);
 }
 

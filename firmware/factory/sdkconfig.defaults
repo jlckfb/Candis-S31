@@ -73,8 +73,8 @@ CONFIG_LV_DRAW_BUF_ALIGN=64
 CONFIG_LV_DRAW_SW_SUPPORT_RGB565_SWAPPED=y
 CONFIG_LV_OS_FREERTOS=y
 
-# OV5640 on the DVP interface; RGB565 big-endian 800x600 at 10 fps is the
-# EVT1 sensor configuration and doubles as the driver's default format.
+# OV5640 on the DVP interface. The upstream 800x600 table supplies the mode;
+# the board profile reapplies RGB565 big-endian output and 30.003 fps timing.
 CONFIG_CAMERA_OV5640=y
 # CONFIG_CAMERA_OV5640 only compiles the driver. Registering the sensor with
 # esp_video needs the auto-detect entry as well: the DVP detect function in

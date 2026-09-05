@@ -1321,7 +1321,22 @@ esp_err_t svc_ble_scan_stop(void)
         return ESP_ERR_INVALID_STATE;
     }
     net_msg_t msg = { .type = MSG_BLE_SCAN_STOP };
-    return net_send(&msg, pdMS_TO_TICKS(100)) ? ESP_OK : ESP_ERR_TIMEOUT;
+    if (!net_send(&msg, pdMS_TO_TICKS(100))) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    /*
+     * Stop is a lifecycle boundary: returning while the network task still
+     * owns the scan makes an immediate next start fail as "BLE busy".
+     * Normally the command is consumed within one 20 ms network-task cycle.
+     */
+    for (int i = 0; i < 25; ++i) {
+        if (!s_ble.scanning) {
+            return ESP_OK;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    return s_ble.scanning ? ESP_ERR_TIMEOUT : ESP_OK;
 }
 
 esp_err_t svc_ble_connect(const uint8_t addr[6], uint8_t addr_type,

@@ -14,13 +14,17 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "driver/uart.h"
 #include "bsp/esp-bsp.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "freertos/portmacro.h"
 #include "lvgl.h"
+#include "driver/ppa.h"
 
+#define VISUAL_SERIAL_DUMP_BAUD 2000000U
 static const char *TAG = "camera_visual";
 
 #define VISUAL_WIDTH             460U
@@ -28,6 +32,10 @@ static const char *TAG = "camera_visual";
 #define VISUAL_PIXEL_BYTES       2U
 #define VISUAL_STRIDE            (VISUAL_WIDTH * VISUAL_PIXEL_BYTES)
 #define VISUAL_BUFFER_BYTES      (VISUAL_STRIDE * VISUAL_HEIGHT)
+#define VISUAL_BUFFER_ALIGN 64U
+#define VISUAL_BUFFER_ALLOC_BYTES \
+    ((VISUAL_BUFFER_BYTES + VISUAL_BUFFER_ALIGN - 1U) & \
+     ~(VISUAL_BUFFER_ALIGN - 1U))
 #define VISUAL_CROP_X            ((800U - VISUAL_WIDTH) / 2U)
 #define VISUAL_CROP_Y            ((600U - VISUAL_HEIGHT) / 2U)
 #define VISUAL_SOURCE_WIDTH      800U
@@ -44,9 +52,38 @@ static const char *TAG = "camera_visual";
 #define VISUAL_BUTTON_HEIGHT     52
 #define VISUAL_BUTTON_Y          402
 
+#if !CONFIG_CAMERA_TEST_USE_UYVY
 static const char *const s_bayer_names[CAMERA_BAYER_COUNT] = {
     "RGGB", "BGGR", "GRBG", "GBRG",
 };
+#endif
+#if CONFIG_CAMERA_TEST_USE_UYVY
+static const char *const s_uyvy_names[CAMERA_BAYER_COUNT] = {
+    "UYVY", "YUYV", "VYUY", "YVYU",
+};
+#endif
+static ppa_srm_color_mode_t visual_yuv_color_mode(
+    camera_visual_bayer_t format)
+{
+    static const ppa_srm_color_mode_t modes[CAMERA_BAYER_COUNT] = {
+        PPA_SRM_COLOR_MODE_YUV422_UYVY,
+        PPA_SRM_COLOR_MODE_YUV422_YUYV,
+        PPA_SRM_COLOR_MODE_YUV422_VYUY,
+        PPA_SRM_COLOR_MODE_YUV422_YVYU,
+    };
+    return modes[format];
+}
+
+
+static const char *visual_format_name(camera_visual_bayer_t format)
+{
+#if CONFIG_CAMERA_TEST_USE_UYVY
+    return s_uyvy_names[format];
+#else
+    return s_bayer_names[format];
+#endif
+}
+
 
 
 typedef struct {
@@ -86,6 +123,7 @@ static visual_state_t s_visual = {
     .decision = CAMERA_VISUAL_PENDING,
     .mux = portMUX_INITIALIZER_UNLOCKED,
 };
+static ppa_client_handle_t s_visual_ppa;
 
 static void visual_pass_cb(lv_event_t *event)
 {
@@ -133,10 +171,10 @@ static void visual_format_cb(lv_event_t *event)
     bayer = s_visual.bayer;
     portEXIT_CRITICAL(&s_visual.mux);
     if (s_visual.phase_label != NULL) {
-        lv_label_set_text(s_visual.phase_label, s_bayer_names[bayer]);
+        lv_label_set_text(s_visual.phase_label, visual_format_name(bayer));
     }
-    ESP_LOGI(TAG, "CAMERA_TEST_BAYER_TOGGLE phase=%s",
-             s_bayer_names[bayer]);
+    ESP_LOGI(TAG, "CAMERA_TEST_FORMAT_TOGGLE format=%s",
+             visual_format_name(bayer));
 }
 
 static lv_obj_t *visual_button(lv_obj_t *parent, const char *text,
@@ -252,7 +290,7 @@ static void visual_ui_timer_cb(lv_timer_t *timer)
     lv_label_set_text_fmt(s_visual.stats,
                           "auto=%s LIVE %s c=%u f=%u shown=%" PRIu32 " d=%u",
                           auto_finished ? (auto_passed ? "PASS" : "FAIL") :
-                          "RUN", s_bayer_names[bayer],
+                          "RUN", visual_format_name(bayer),
                           auto_cycles, auto_frames, frame_count,
                           (unsigned)dropped_count);
 
@@ -283,6 +321,10 @@ static void visual_free_buffers(void)
             s_visual.buffers[index] = NULL;
         }
     }
+    if (s_visual_ppa != NULL) {
+        ppa_unregister_client(s_visual_ppa);
+        s_visual_ppa = NULL;
+    }
 }
 
 esp_err_t camera_visual_start(void)
@@ -291,16 +333,29 @@ esp_err_t camera_visual_start(void)
         return ESP_OK;
     }
 
+    const ppa_client_config_t ppa_config = {
+        .oper_type = PPA_OPERATION_SRM,
+        .max_pending_trans_num = 1,
+        .data_burst_length = PPA_DATA_BURST_LENGTH_128,
+    };
+    esp_err_t error = ppa_register_client(&ppa_config, &s_visual_ppa);
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "PPA client registration failed: %s",
+                 esp_err_to_name(error));
+        return error;
+    }
+
     for (unsigned index = 0; index < VISUAL_BUFFER_COUNT; ++index) {
-        s_visual.buffers[index] = heap_caps_malloc(
-            VISUAL_BUFFER_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        s_visual.buffers[index] = heap_caps_aligned_alloc(
+            VISUAL_BUFFER_ALIGN, VISUAL_BUFFER_ALLOC_BYTES,
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
         if (s_visual.buffers[index] == NULL) {
             ESP_LOGE(TAG, "display buffer allocation failed index=%u bytes=%u",
-                     index, (unsigned)VISUAL_BUFFER_BYTES);
+                     index, (unsigned)VISUAL_BUFFER_ALLOC_BYTES);
             visual_free_buffers();
             return ESP_ERR_NO_MEM;
         }
-        memset(s_visual.buffers[index], 0, VISUAL_BUFFER_BYTES);
+        memset(s_visual.buffers[index], 0, VISUAL_BUFFER_ALLOC_BYTES);
     }
 
     if (bsp_display_start() == NULL) {
@@ -327,9 +382,17 @@ esp_err_t camera_visual_start(void)
 
     memset(&s_visual.image_dsc, 0, sizeof(s_visual.image_dsc));
     s_visual.swapped = false;
+#if CONFIG_CAMERA_TEST_ESP32_CAMERA_OV5640
+    s_visual.bayer = CAMERA_BAYER_BGGR;
+#else
     s_visual.bayer = CAMERA_BAYER_RGGB;
+#endif
     s_visual.image_dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+#if CONFIG_CAMERA_TEST_USE_UYVY
+    s_visual.image_dsc.header.cf = LV_COLOR_FORMAT_RGB565;
+#else
     s_visual.image_dsc.header.cf = LV_COLOR_FORMAT_RGB565_SWAPPED;
+#endif
     s_visual.image_dsc.header.w = VISUAL_WIDTH;
     s_visual.image_dsc.header.h = VISUAL_HEIGHT;
     s_visual.image_dsc.header.stride = VISUAL_STRIDE;
@@ -501,30 +564,58 @@ bool camera_visual_publish(const uint8_t *frame, size_t length, uint32_t stride)
     visual_submit_buffer(target);
     return true;
 }
-static uint8_t visual_clamp_u8(int value)
+
+
+#if CONFIG_CAMERA_TEST_SERIAL_FRAME_DUMP
+static bool visual_serial_write_all(const uint8_t *data, size_t length)
 {
-    if (value < 0) {
-        return 0;
+    while (length != 0) {
+        const size_t written = fwrite(data, 1, length, stdout);
+        if (written == 0) {
+            return false;
+        }
+        data += written;
+        length -= written;
     }
-    if (value > 255) {
-        return 255;
-    }
-    return (uint8_t)value;
+    return true;
 }
 
-static uint16_t visual_yuv_to_rgb565(uint8_t y, uint8_t u, uint8_t v)
+static void visual_serial_dump(const uint8_t *frame, size_t frame_length,
+                               const uint8_t *rgb565,
+                               camera_visual_bayer_t format,
+                               uint32_t stride)
 {
-    const int c = (int)y - 16;
-    const int d = (int)u - 128;
-    const int e = (int)v - 128;
-    const uint8_t red = visual_clamp_u8((298 * c + 409 * e + 128) >> 8);
-    const uint8_t green =
-        visual_clamp_u8((298 * c - 100 * d - 208 * e + 128) >> 8);
-    const uint8_t blue = visual_clamp_u8((298 * c + 516 * d + 128) >> 8);
-    return (uint16_t)(((uint16_t)(red & 0xf8U) << 8) |
-                      ((uint16_t)(green & 0xfcU) << 3) |
-                      (blue >> 3));
+    const size_t raw_bytes =
+        VISUAL_SOURCE_WIDTH * VISUAL_SOURCE_HEIGHT * VISUAL_PIXEL_BYTES;
+    if (frame_length < raw_bytes) {
+        ESP_LOGE(TAG, "serial frame dump source is truncated");
+        return;
+    }
+    ESP_LOGI(TAG, "CAMERA_FRAME_DUMP preparing raw=%u rgb=%u baud=%u",
+             (unsigned)raw_bytes, (unsigned)VISUAL_BUFFER_BYTES,
+             VISUAL_SERIAL_DUMP_BAUD);
+    fflush(stdout);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    esp_log_level_set("*", ESP_LOG_NONE);
+    uart_set_baudrate(UART_NUM_0, VISUAL_SERIAL_DUMP_BAUD);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    printf("CAMERA_FRAME_DUMP_BEGIN baud=%u raw=%u rgb=%u stride=%" PRIu32
+           " width=%u height=%u crop_x=%u crop_y=%u order=%s\n",
+           VISUAL_SERIAL_DUMP_BAUD, (unsigned)raw_bytes,
+           (unsigned)VISUAL_BUFFER_BYTES, stride,
+           VISUAL_SOURCE_WIDTH, VISUAL_SOURCE_HEIGHT,
+           VISUAL_CROP_X, VISUAL_CROP_Y, visual_format_name(format));
+    fflush(stdout);
+    const bool ok = visual_serial_write_all(frame, raw_bytes) &&
+                    visual_serial_write_all(rgb565, VISUAL_BUFFER_BYTES);
+    fflush(stdout);
+    printf("\nCAMERA_FRAME_DUMP_END status=%s\n", ok ? "PASS" : "FAIL");
+    fflush(stdout);
+    esp_log_level_set("*", ESP_LOG_INFO);
+    ESP_LOGI(TAG, "CAMERA_FRAME_DUMP status=%s", ok ? "PASS" : "FAIL");
 }
+#endif
+
 
 bool camera_visual_publish_uyvy(const uint8_t *frame, size_t length,
                                 uint32_t stride)
@@ -543,26 +634,67 @@ bool camera_visual_publish_uyvy(const uint8_t *frame, size_t length,
         return false;
     }
 
-    uint8_t *destination = s_visual.buffers[target];
-    for (unsigned row = 0; row < VISUAL_HEIGHT; ++row) {
-        const uint8_t *source = frame +
-            (size_t)(VISUAL_CROP_Y + row) * stride +
-            (size_t)VISUAL_CROP_X * 2U;
-        uint8_t *output = destination + (size_t)row * VISUAL_STRIDE;
-        for (unsigned column = 0; column < VISUAL_WIDTH; column += 2U) {
-            const uint8_t u = source[column * 2U];
-            const uint8_t y0 = source[column * 2U + 1U];
-            const uint8_t v = source[column * 2U + 2U];
-            const uint8_t y1 = source[column * 2U + 3U];
-            const uint16_t pixel0 = visual_yuv_to_rgb565(y0, u, v);
-            const uint16_t pixel1 = visual_yuv_to_rgb565(y1, u, v);
-            /* LV_COLOR_FORMAT_RGB565_SWAPPED stores each RGB565 word MSB first. */
-            output[column * 2U] = (uint8_t)(pixel0 >> 8);
-            output[column * 2U + 1U] = (uint8_t)pixel0;
-            output[column * 2U + 2U] = (uint8_t)(pixel1 >> 8);
-            output[column * 2U + 3U] = (uint8_t)pixel1;
-        }
+    camera_visual_bayer_t format;
+    portENTER_CRITICAL(&s_visual.mux);
+    format = s_visual.bayer;
+    portEXIT_CRITICAL(&s_visual.mux);
+
+    const ppa_srm_oper_config_t operation = {
+        .in = {
+            .buffer = frame,
+            .pic_w = VISUAL_SOURCE_WIDTH,
+            .pic_h = VISUAL_SOURCE_HEIGHT,
+            .block_w = VISUAL_WIDTH,
+            .block_h = VISUAL_HEIGHT,
+            .block_offset_x = VISUAL_CROP_X,
+            .block_offset_y = VISUAL_CROP_Y,
+            .srm_cm = visual_yuv_color_mode(format),
+            .yuv_range = PPA_COLOR_RANGE_LIMIT,
+            .yuv_std = PPA_COLOR_CONV_STD_RGB_YUV_BT601,
+        },
+        .out = {
+            .buffer = s_visual.buffers[target],
+            .buffer_size = VISUAL_BUFFER_ALLOC_BYTES,
+            .pic_w = VISUAL_WIDTH,
+            .pic_h = VISUAL_HEIGHT,
+            .block_offset_x = 0,
+            .block_offset_y = 0,
+            .srm_cm = PPA_SRM_COLOR_MODE_RGB565,
+        },
+        .rotation_angle = PPA_SRM_ROTATION_ANGLE_0,
+        .scale_x = 1.0f,
+        .scale_y = 1.0f,
+        .mirror_x = false,
+        .mirror_y = false,
+        .alpha_update_mode = PPA_ALPHA_NO_CHANGE,
+        .mode = PPA_TRANS_MODE_BLOCKING,
+    };
+    const esp_err_t error =
+        ppa_do_scale_rotate_mirror(s_visual_ppa, &operation);
+    if (error != ESP_OK) {
+        portENTER_CRITICAL(&s_visual.mux);
+        s_visual.free_mask |= (uint8_t)(1U << target);
+        portEXIT_CRITICAL(&s_visual.mux);
+        ESP_LOGE(TAG, "PPA UYVY conversion failed: %s",
+                 esp_err_to_name(error));
+        return false;
     }
+#if CONFIG_CAMERA_TEST_SERIAL_FRAME_DUMP
+    static bool dumped;
+    bool auto_finished;
+    portENTER_CRITICAL(&s_visual.mux);
+    auto_finished = s_visual.auto_finished;
+    if (auto_finished && !dumped) {
+        dumped = true;
+    } else {
+        auto_finished = false;
+    }
+    portEXIT_CRITICAL(&s_visual.mux);
+    if (auto_finished) {
+        visual_serial_dump(frame, length, s_visual.buffers[target], format,
+                           stride);
+    }
+#endif
     visual_submit_buffer(target);
     return true;
 }

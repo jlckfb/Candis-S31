@@ -228,10 +228,8 @@
 #define BSP_CAMERA_VSYNC                       GPIO_NUM_56
 #define BSP_CAMERA_HSYNC                       GPIO_NUM_57
 #define BSP_CAMERA_DEVICE                      ESP_VIDEO_DVP_DEVICE_NAME
-/** Nominal XCLK used by the selected OV5640 register-table identifier (MHz).
- * EVT1's LEDC workaround runs at 20 MHz nominal, measured about 20.1 MHz;
- * this value must not be read as an exact runtime clock measurement. */
-#define BSP_CAMERA_XCLK_CLOCK_MHZ              24
+/** Validated OV5640 XCLK frequency on EVT1 (MHz). */
+#define BSP_CAMERA_XCLK_CLOCK_MHZ              20
 /** @} */
 
 /** @addtogroup g99_others
@@ -799,8 +797,16 @@ esp_err_t bsp_audio_codec_deinit(esp_codec_dev_handle_t device);
  */
 /** DVP camera pipeline. Sensor support is selected in project configuration. */
 esp_err_t bsp_camera_start(const bsp_camera_cfg_t *cfg);
-/** Reapply the board sensor override after esp_video_open() reloads its table. */
-esp_err_t bsp_camera_apply_workaround(void);
+/** Reapply the board sensor override after esp_video_open()/VIDIOC_S_FMT.
+ *  v4l2_pixel_format must be V4L2_PIX_FMT_RGB565X or V4L2_PIX_FMT_UYVY. */
+esp_err_t bsp_camera_apply_workaround(uint32_t v4l2_pixel_format);
+/** Run the OV5640 embedded single-shot autofocus sequence.
+ *
+ * The DVP stream must already be running so the sensor firmware can measure
+ * image edges. The firmware is loaded once per camera power cycle; later
+ * calls only relaunch the center zone and refocus.
+ */
+esp_err_t bsp_camera_autofocus_once(uint32_t timeout_ms);
 esp_err_t bsp_camera_stop(void);
 /** @} */
 
