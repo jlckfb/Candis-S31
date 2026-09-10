@@ -136,7 +136,6 @@ tools/build-all.sh             # 构建全部目标
 
 ```text
 .
-├── hardware/                  # 原理图、引脚与硬件说明
 ├── docs/                      # 系统概述
 ├── cmake/                     # 独立工程的公共接线
 ├── components/
@@ -158,9 +157,8 @@ tools/build-all.sh             # 构建全部目标
 ## 文档
 
 - [系统概述](docs/system-overview.md)
-- [硬件概览](hardware/README.md)
-- [原理图](hardware/schematic/SCH_Schematic_3_2026-08-10.pdf)
-- [引脚定义](hardware/pinout/README.md)
+- 原理图、PCB 与引脚定义：随开源硬件工程发布在
+  [立创开源硬件平台工程页](https://oshwhub.com/li-chuang-kai-fa-ban/project_spaoolal)
 - [板级运行时组件](components/candis_s31/README.md) 及其 [API 参考](components/candis_s31/API.md)
 - [产测固件](firmware/factory/README.md)
 - [恢复流程](firmware/recovery/README.md)

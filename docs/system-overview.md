@@ -1,9 +1,7 @@
 # Candis-S31 system overview and board usage
 
 This document describes how the Candis-S31 product, firmware, and power
-architecture fit together, and how the board is meant to be used. Pin-level
-and net-level facts live in [`hardware/facts.md`](../hardware/facts.md);
-first-power procedures live in [`hardware/bring-up.md`](../hardware/bring-up.md).
+architecture fit together, and how the board is meant to be used.
 
 ## Product definition
 
@@ -19,8 +17,8 @@ Candis-S31 is a compact ESP32-S31 development board built around a square
 - Audio: ES8389 codec + NS4150B speaker PA, analog microphones
 - Camera: DVP OV5640 target; FPC pin 23/24 expose AF power/ground and the
   schematic feeds pin 23 from camera 2.8 V through R95. Pin 23/24 assignment
-  differs between module families, so check the current R95 fit state in
-  [`hardware/facts.md`](../hardware/facts.md) before mating a module.
+  differs between module families, so check the R95 fit state on the board
+  before mating a module.
 - USB: two Type-C ports — USB1 debug (CH343P UART), USB2 OTG (FUSB303B CC
   controller, ISL9113 5 V boost, 500 mA only)
 - Storage: TF card slot (SDMMC, switched power)
@@ -78,8 +76,7 @@ Two firmware images, different jobs:
 
 ## Power architecture
 
-Rail-by-rail assignments are in [`hardware/facts.md`](../hardware/facts.md)
-(TG28 table). Summary: DCDC1 = always-on 3.3 V main rail; DCDC2 camera core;
+Rail-by-rail assignments (TG28 table). Summary: DCDC1 = always-on 3.3 V main rail; DCDC2 camera core;
 ALDO1 display logic, ALDO2 touch, ALDO3 audio, ALDO4 camera analog; BLDO1
 camera I/O, BLDO2 EXT connector; VRTC always on for the RTC; DCDC3/DCDC4/
 CPUSLDO unconnected (DCDC4 still starts at 1.8 V from OTP and is shut down by
@@ -132,5 +129,5 @@ Usage boundaries:
 - Speaker outputs (CN2) are a differential pair — neither side may be
   grounded.
 - Do not enable display bias, OTG boost, or other switched rails before the
-  EVT1 power checks in `hardware/bring-up.md` are complete.
+  board power checks are complete.
 

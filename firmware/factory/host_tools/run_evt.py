@@ -78,7 +78,7 @@ STAGES = [
     ("wifi_scan", 30, "wifi"),
     ("ble_smoke", 20, "ble"),
     # First light-up: cap brightness before any pattern, per
-    # hardware/bring-up.md.
+    # the board power sequence.
     # display_brightness prints no FACTORY_RESULT, so it reuses the "INFO"
     # marker semantics (send, wait out the timeout, record nothing).
     ("display_brightness 30", 5, "INFO"),
@@ -104,7 +104,7 @@ SUMMARY_PREFIX = "FACTORY_SUMMARY "
 INFO_PREFIX = "FACTORY_INFO "
 PROMPT_PREFIX = "FACTORY_PROMPT "
 
-# Graded fault policy (hardware/bring-up.md): a FAIL or TIMEOUT in one of
+# Graded fault policy: a FAIL or TIMEOUT in one of
 # these stages means the board is not safe to keep exercising — PMIC state,
 # rail bring-up, or the battery/charge path. The runner aborts the remaining
 # stages, sends one power_all_off as the safe teardown, and goes straight to

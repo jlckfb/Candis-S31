@@ -105,4 +105,4 @@ Candis-S31 board support is not copied into a local `components/` directory. A p
 - **Flash succeeds but the application does not start:** save the complete ROM and bootloader log before erasing anything.
 - **The screen remains black:** this project never powers the display; a black screen is expected.
 
-Read the [board bring-up notes](../../../hardware/bring-up.md) before adding board GPIO or power control.
+Check the board power sequence in `components/candis_s31/` before adding board GPIO or power control.

@@ -140,7 +140,6 @@ tools/build-all.sh             # build every target
 
 ```text
 .
-├── hardware/                  # Schematic, pinout and board notes
 ├── docs/                      # System overview
 ├── cmake/                     # Shared standalone-project wiring
 ├── components/
@@ -163,9 +162,8 @@ top-level application `CMakeLists.txt`.
 ## Documentation
 
 - [System overview](docs/system-overview.md)
-- [Hardware overview](hardware/README.md)
-- [Schematic](hardware/schematic/SCH_Schematic_3_2026-08-10.pdf)
-- [Pinout](hardware/pinout/README.md)
+- Schematic, PCB and pinout files: published with the open-source hardware project on
+  [OSHWHub](https://oshwhub.com/li-chuang-kai-fa-ban/project_spaoolal)
 - [Board runtime component](components/candis_s31/README.md) and its [API reference](components/candis_s31/API.md)
 - [Factory firmware](firmware/factory/README.md)
 - [Recovery procedure](firmware/recovery/README.md)

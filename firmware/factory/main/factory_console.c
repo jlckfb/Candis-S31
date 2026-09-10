@@ -931,7 +931,7 @@ static int command_i2c_scan(int argc, char **argv)
         return present ? ESP_OK : ESP_FAIL;
     }
 
-    /* Main-bus expectations (hardware/bring-up.md): FUSB303B answers at
+    /* Main-bus expectations: FUSB303B answers at
      * exactly one of 0x21/0x31 while BSP_POWER_TYPE_C_CONTROL is enabled;
      * it is expected to be silent after power_all_off. 0x31 means the
      * address strap mismatches the schematic and must be recorded. Devices
