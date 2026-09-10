@@ -140,7 +140,6 @@ tools/build-all.sh             # build every target
 
 ```text
 .
-├── docs/                      # System overview
 ├── cmake/                     # Shared standalone-project wiring
 ├── components/
 │   ├── candis_s31/            # Board runtime component (pins, power, display, audio, camera)
@@ -161,7 +160,6 @@ top-level application `CMakeLists.txt`.
 
 ## Documentation
 
-- [System overview](docs/system-overview.md)
 - Schematic, PCB and pinout files: published with the open-source hardware project on
   [OSHWHub](https://oshwhub.com/li-chuang-kai-fa-ban/project_spaoolal)
 - [Board runtime component](components/candis_s31/README.md) and its [API reference](components/candis_s31/API.md)
