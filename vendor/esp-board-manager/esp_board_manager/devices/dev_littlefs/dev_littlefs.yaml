@@ -1,0 +1,78 @@
+# Example board_devices.yaml configuration for LittleFS device.
+# LittleFS supports flash partition, SDMMC card, and SDSPI card backends.
+
+# Example LittleFS device mounted from flash partition.
+- name: littlefs                          # Device name, must be unique
+  type: littlefs                          # Device type, must be littlefs
+  version: 1.0.0                          # Schema version
+  sub_type: flash                         # Backend subtype: flash, sdmmc, or spi
+  config:
+    # vfs_config maps to the YAML-safe fields of esp_vfs_littlefs_conf_t
+    vfs_config:
+      base_path: "/littlefs"              # VFS mount point (default: /littlefs)
+      partition_label: "storage"          # Flash partition name in the partition table; flash mode only (default: storage)
+      format_if_mount_failed: false       # Format the filesystem if mount fails (default: false; cannot be used with read_only)
+      read_only: false                    # Mount as read-only (default: false; cannot be used with format_if_mount_failed or grow_on_mount)
+      dont_mount: false                   # Register the filesystem without mounting (default: false)
+      grow_on_mount: false                # Grow filesystem to match partition size on mount (default: false; cannot be used with read_only)
+
+# Example LittleFS device mounted from SDMMC card.
+# Enable CONFIG_LITTLEFS_SDMMC_SUPPORT=y in sdkconfig.defaults.board for SD backends.
+- name: littlefs                          # Device name, must be unique
+  type: littlefs                          # Device type, must be littlefs
+  version: 1.0.0                          # Schema version
+  sub_type: sdmmc                         # Backend subtype: flash, sdmmc, or spi
+  config:
+    vfs_config:
+      base_path: "/littlefs"              # VFS mount point (default: /littlefs)
+      format_if_mount_failed: false       # Format the SD card if mount fails (default: false; cannot be used with read_only)
+      read_only: false                    # Mount as read-only (default: false; cannot be used with format_if_mount_failed or grow_on_mount)
+      dont_mount: false                   # Register the filesystem without mounting (default: false)
+      grow_on_mount: false                # Grow filesystem to match card size on mount (default: false; cannot be used with read_only)
+      # partition_label is ignored for SD card backends (sdmmc/spi)
+    sub_config:
+      slot: SDMMC_HOST_SLOT_1             # SDMMC slot (default: SDMMC_HOST_SLOT_1):
+                                          #   SDMMC_HOST_SLOT_0 / SDMMC_HOST_SLOT_1 / SDMMC_HOST_SLOT_2
+      frequency: SDMMC_FREQ_HIGHSPEED     # SD clock frequency (default: SDMMC_FREQ_HIGHSPEED):
+                                          #   SDMMC_FREQ_DEFAULT   (20 MHz)
+                                          #   SDMMC_FREQ_HIGHSPEED (40 MHz)
+                                          #   SDMMC_FREQ_PROBING   (400 kHz)
+                                          #   SDMMC_FREQ_52M / SDMMC_FREQ_26M
+                                          #   SDMMC_FREQ_DDR50 / SDMMC_FREQ_SDR50
+      bus_width: 1                        # SDMMC bus width: 1, 4, or 8 bits (default: 1)
+      slot_flags: SDMMC_SLOT_FLAG_INTERNAL_PULLUP  # Slot flags (default: SDMMC_SLOT_FLAG_INTERNAL_PULLUP):
+                                          #   0 / SDMMC_SLOT_FLAG_INTERNAL_PULLUP /
+                                          #   SDMMC_SLOT_FLAG_WP_ACTIVE_HIGH / SDMMC_SLOT_FLAG_UHS1
+      pins:
+        clk: -1     # [IO] Clock pin (-1 if unused)
+        cmd: -1     # [IO] Command pin (-1 if unused)
+        d0: -1      # [IO] Data line 0 pin (-1 if unused)
+        d1: -1      # [IO] Data line 1 pin (-1 if unused)
+        d2: -1      # [IO] Data line 2 pin (-1 if unused)
+        d3: -1      # [IO] Data line 3 pin (-1 if unused)
+        d4: -1      # [IO] Data line 4 pin, 8-bit mode only (-1 if unused)
+        d5: -1      # [IO] Data line 5 pin, 8-bit mode only (-1 if unused)
+        d6: -1      # [IO] Data line 6 pin, 8-bit mode only (-1 if unused)
+        d7: -1      # [IO] Data line 7 pin, 8-bit mode only (-1 if unused)
+        cd: -1      # [IO] Card-detect pin (-1 if unused)
+        wp: -1      # [IO] Write-protect pin (-1 if unused)
+      ldo_chan_id: -1                     # On-chip LDO channel ID for SDMMC IO power (-1 when unused)
+
+# Example LittleFS device mounted from SDSPI card.
+# Enable CONFIG_LITTLEFS_SDMMC_SUPPORT=y in sdkconfig.defaults.board for SD backends.
+- name: littlefs                          # Device name, must be unique
+  type: littlefs                          # Device type, must be littlefs
+  version: 1.0.0                          # Schema version
+  sub_type: spi                           # Backend subtype: flash, sdmmc, or spi
+  config:
+    vfs_config:
+      base_path: "/littlefs"              # VFS mount point (default: /littlefs)
+      format_if_mount_failed: false       # Format the SD card if mount fails (default: false; cannot be used with read_only)
+      read_only: false                    # Mount as read-only (default: false; cannot be used with format_if_mount_failed or grow_on_mount)
+      dont_mount: false                   # Register the filesystem without mounting (default: false)
+      grow_on_mount: false                # Grow filesystem to match card size on mount (default: false; cannot be used with read_only)
+    sub_config:
+      cs_gpio_num: 15                     # [IO] SD card chip-select pin (default: 15)
+      frequency: SDMMC_FREQ_DEFAULT       # SD clock frequency (default: SDMMC_FREQ_DEFAULT); same enum values as the SDMMC frequency field
+  peripherals:
+    - name: spi_master                    # Referenced SPI master peripheral (type: spi, role: master)

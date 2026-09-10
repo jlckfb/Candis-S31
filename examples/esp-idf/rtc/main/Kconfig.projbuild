@@ -1,0 +1,11 @@
+menu "RTC example"
+
+    config EXAMPLE_RTC_SET_ON_BOOT
+        bool "Set the RTC to a fixed time on boot"
+        default n
+        help
+            When enabled, the example writes 2026-01-01 00:00:00 to the
+            RX8130CE before reading it back. Keep disabled to preserve the
+            battery-backed clock.
+
+endmenu

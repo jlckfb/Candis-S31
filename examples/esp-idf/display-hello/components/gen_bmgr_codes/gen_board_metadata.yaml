@@ -1,0 +1,184 @@
+version: 1
+board: candis_s31
+chip: esp32s31
+
+devices:
+  pmic:
+    type: custom
+    peripherals:
+    - i2c_low_power
+    - gpio_pmic_rtc_interrupt
+    dependencies:
+      espressif/tg28_sw: ^0.4.0
+
+  rtc:
+    type: custom
+    peripherals:
+    - i2c_low_power
+    - gpio_pmic_rtc_interrupt
+    dependencies:
+      espressif/rx8130ce: ^0.4.0
+
+  board_power_ctrl:
+    type: power_ctrl
+    sub_type: custom
+    peripherals:
+    - gpio_display_vbat
+    - gpio_display_vci
+    - gpio_sd_power
+    - gpio_pa_control
+
+  led_strip:
+    type: led_strip
+    sub_type: rmt
+
+  audio_dac:
+    type: audio_codec
+    peripherals:
+    - gpio_pa_control
+    - i2s_audio_out
+    - i2c_main
+
+  audio_adc:
+    type: audio_codec
+    peripherals:
+    - i2s_audio_in
+    - i2c_main
+
+  fs_sdcard:
+    type: fs_fat
+    sub_type: sdmmc
+    io:
+      clk: 24
+      cmd: 25
+      d0: 20
+      d1: 21
+      d2: 22
+      d3: 23
+      cd: 0
+
+  display_lcd:
+    type: display_lcd
+    sub_type: spi
+    peripherals:
+    - spi_display
+    dependencies:
+      espressif/esp_lcd_co5300: ^2.1.0
+    io:
+      reset_gpio_num: 15
+      cs_gpio_num: 10
+
+  lcd_touch:
+    type: lcd_touch
+    sub_type: i2c
+    peripherals:
+    - i2c_main
+    dependencies:
+      espressif/esp_lcd_touch_cst820: ^1.2.0
+    io:
+      rst_gpio_num: 17
+      int_gpio_num: 3
+
+  camera:
+    type: camera
+    sub_type: dvp
+    peripherals:
+    - i2c_main
+    io:
+      reset_io: 39
+      pwdn_io: 40
+      data_io_0: 46
+      data_io_1: 47
+      data_io_2: 48
+      data_io_3: 49
+      data_io_4: 50
+      data_io_5: 51
+      data_io_6: 52
+      data_io_7: 53
+      vsync_io: 56
+      de_io: 57
+      pclk_io: 54
+      xclk_io: 55
+
+peripherals:
+  i2c_main:
+    type: i2c
+    role: master
+    io:
+      sda_io_num: 34
+      scl_io_num: 33
+
+  i2c_low_power:
+    type: i2c
+    role: master
+    io:
+      sda_io_num: 7
+      scl_io_num: 6
+
+  i2s_audio_out:
+    type: i2s
+    role: master
+    format: std-out
+    io:
+      mclk: 35
+      bclk: 18
+      ws: 19
+      dout: 8
+      din: 44
+
+  i2s_audio_in:
+    type: i2s
+    role: master
+    format: std-in
+    io:
+      mclk: 35
+      bclk: 18
+      ws: 19
+      dout: 8
+      din: 44
+
+  spi_display:
+    type: spi
+    role: master
+    io:
+      mosi_io_num: 11
+      miso_io_num: 13
+      sclk_io_num: 12
+      quadwp_io_num: 14
+      quadhd_io_num: 9
+
+  gpio_display_vbat:
+    type: gpio
+    role: io
+    io:
+      pin: 5
+
+  gpio_display_vci:
+    type: gpio
+    role: io
+    io:
+      pin: 38
+
+  gpio_sd_power:
+    type: gpio
+    role: io
+    io:
+      pin: 36
+
+  gpio_pa_control:
+    type: gpio
+    role: io
+    io:
+      pin: 42
+
+  gpio_pmic_rtc_interrupt:
+    type: gpio
+    role: io
+    io:
+      pin: 2
+
+  gpio_display_te:
+    type: gpio
+    role: io
+    io:
+      pin: 16

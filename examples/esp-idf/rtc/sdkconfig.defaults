@@ -1,0 +1,8 @@
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# Report peripheral failures instead of aborting on them.
+CONFIG_BSP_ERROR_CHECK=n
+
+# The input helper polls BOOT at 5 ms; use a 1 ms scheduler tick.
+CONFIG_FREERTOS_HZ=1000

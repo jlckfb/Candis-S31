@@ -1,0 +1,7 @@
+# Candis-S31 factory diagnostics: single large application, no OTA.
+# The Wi-Fi/BLE/camera diagnostic build exceeds the 1 MB default, so the
+# factory partition gets 4 MB of the 16 MB flash.
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     ,        0x6000,
+phy_init, data, phy,     ,        0x1000,
+factory,  app,  factory, ,        4M,

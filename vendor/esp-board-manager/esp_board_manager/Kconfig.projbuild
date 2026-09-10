@@ -1,0 +1,5 @@
+menu "ESP Board Manager Configuration"
+
+    orsource "./gen_codes/Kconfig.in"
+
+endmenu

@@ -1,0 +1,86 @@
+# ESP-IDF
+**/build/
+**/build-*/
+**/build_esp32s31/
+sdkconfig
+/firmware/factory/sdkconfig.qio80_psram200
+/firmware/factory/sdkconfig.qio80_psram250
+sdkconfig.old
+**/managed_components/
+.manifest_sha
+# Component-library test apps resolve afresh against their local component.
+**/test_apps/dependencies.lock
+/build-logs/
+
+# Firmware images belong in release assets, not the source tree
+*.bin
+*.elf
+*.map
+# Working evidence for hardware bring-up (logs, frame dumps, calibration data)
+debug-artifacts/
+
+# Local factory release staging area (pack_factory_release.sh default output)
+firmware/factory/release/
+firmware/factory/release.zip
+firmware/factory/release.tar.gz
+
+# PlatformIO
+**/.pio/
+**/.pioenvs/
+**/.piolibdeps/
+
+# CMake and language tooling
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+.ninja_deps
+.ninja_log
+*.o
+.cache/
+.ccache/
+.clangd/
+
+# Tests and coverage
+.work/
+pytest-embedded/
+pytest_embedded_log/
+.pytest_cache/
+TEST_LOGS/
+XUNIT_RESULT*.xml
+app_info_*.txt
+size_info*.txt
+*.gcda
+*.gcno
+coverage.info
+coverage_report/
+.coverage
+htmlcov/
+
+# Python
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.settings/
+.project
+.cproject
+*.swp
+*.swo
+*~
+.#*
+\#*#
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/

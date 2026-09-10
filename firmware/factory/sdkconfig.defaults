@@ -1,0 +1,119 @@
+# Candis-S31 EVT1 factory diagnostic baseline.
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# Factory must report peripheral failures instead of aborting on them.
+CONFIG_BSP_ERROR_CHECK=n
+
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
+
+# Keep PSRAM optional at boot so a failed device can still reach the console.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+
+# Display: 48 MHz is the highest exact QSPI clock within the CO5300 50 MHz
+# write limit (BBPLL 480 MHz / 10). TE aligns the first write with the panel
+# scan; full-screen traffic still exceeds one 60 Hz frame and cannot be called
+# unconditionally tear-free. A 15 ms LVGL period lets small dirty updates use
+# every TE edge while touch and animation state are serviced at high cadence.
+CONFIG_BSP_LCD_PIXEL_CLOCK_MHZ=48
+# The board-specific esp_lvgl_port path keeps LVGL in PARTIAL mode and waits
+# for TE only before the first chunk of each refresh cycle.  This preserves
+# 60 Hz local updates without turning every invalidate into a full frame.
+CONFIG_BSP_LCD_TE_SYNC=y
+CONFIG_LV_DEF_REFR_PERIOD=15
+
+# Low-latency display pipeline: two 460x48 internal DMA buffers in LVGL
+# PARTIAL mode. Only the first chunk of a refresh cycle waits for TE; the
+# remaining chunks stream back-to-back while LVGL renders into the other
+# buffer. A full 460x460 transfer still needs at least 17.6 ms at 48 MHz and
+# is therefore paced by every second 60 Hz TE edge.
+# CONFIG_BSP_LCD_DIRECT_MODE is not set
+CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=48
+CONFIG_BSP_LCD_DRAW_BUF_DOUBLE=y
+
+# Drive the OV5640 XCLK from LEDC. The esp_video DVP clock path only supports
+# integer dividers and no S31 CAM controller clock source is an integer
+# multiple of the required 24 MHz (PLL_F160M 160 % 24 = 16, XTAL 40 % 24 = 16),
+# so the controller path hard-fails before sensor detection. The BSP skips it
+# when this is set (bsp/candis_s31 Kconfig default y; pinned here for
+# visibility because existing sdkconfig files mask Kconfig default changes).
+CONFIG_BSP_CAMERA_XCLK_USE_LEDC=y
+
+# Keep PSRAM at the validated 100 MHz baseline for this image.
+# Capacity is closed: the in-package device is 32 MB (2026-08-25 BOM;
+# factory mem_psram_verify probe reports TRUE_32MB). The 200 MHz
+# official grade is validated on this board (boot MEMTEST + display regression
+# + repeated reboots via sdkconfig.qio80_psram200.defaults); 250 MHz is
+# validated as a separate official grade (sdkconfig.qio80_psram250.defaults).
+CONFIG_SPIRAM_SPEED_100M=y
+CONFIG_SPIRAM_MEMTEST=y
+
+# 1 ms tick granularity so the LVGL task paces refresh cycles precisely
+# against the 16.67 ms TE period instead of the 10 ms quantization at HZ=100.
+CONFIG_FREERTOS_HZ=1000
+
+# Per-task CPU usage for the factory sys_tasks command (display pipeline
+# bottleneck analysis); the ESP timer keeps the counter at 1 MHz.
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
+CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER=y
+
+# Start the PARTIAL+TE path with one software draw unit so the display
+# transport is qualified independently of multi-draw scheduling.
+CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=1
+CONFIG_LV_DRAW_BUF_ALIGN=64
+CONFIG_LV_DRAW_SW_SUPPORT_RGB565_SWAPPED=y
+CONFIG_LV_OS_FREERTOS=y
+
+# OV5640 on the DVP interface. The upstream 800x600 table supplies the mode;
+# the board profile reapplies RGB565 big-endian output and 30.003 fps timing.
+CONFIG_CAMERA_OV5640=y
+# CONFIG_CAMERA_OV5640 only compiles the driver. Registering the sensor with
+# esp_video needs the auto-detect entry as well: the DVP detect function in
+# esp_cam_sensor's ov5640.c is wrapped in
+# #if CONFIG_CAMERA_OV5640_AUTO_DETECT_DVP_INTERFACE_SENSOR, and that option is
+# "default n" while the MIPI-CSI one is "default y". ESP32-S31 has
+# SOC_LCDCAM_CAM_SUPPORTED but no SOC_MIPI_CSI_SUPPORTED, so leaving this unset
+# links an empty detect table (__esp_cam_sensor_detect_fn_array_start ==
+# __esp_cam_sensor_detect_fn_array_end). esp_video_init() then iterates zero
+# times, never creates /dev/video2, and still returns ESP_OK - so camera_test
+# fails later at open() with ESP_ERR_NOT_FOUND and no sensor log line at all.
+CONFIG_CAMERA_OV5640_AUTO_DETECT_DVP_INTERFACE_SENSOR=y
+CONFIG_CAMERA_OV5640_DVP_RGB565_BE_800X600_10FPS=y
+CONFIG_CAMERA_OV5640_DVP_DEFAULT_FMT_RGB565_BE_800X600_10FPS=y
+# Keep the OV3660 detect entry compiled in as well so an ESP32-S31-Korvo-1
+# module still enumerates without a rebuild (its DVP auto-detect is already
+# "default y", unlike OV5640's). Two DVP detect entries are safe even though
+# both sensors answer at SCCB 0x3C: each detect reads the sensor PID and returns
+# NULL on mismatch, and esp_video treats that as non-fatal - it sets ret = ESP_OK
+# before unwinding and leaves device_inited at 0, so the detect loop simply tries
+# the next entry and the first matching PID claims the port.
+CONFIG_CAMERA_OV3660=y
+# The sensor is controlled over SCCB/I2C on this board, not SPI.
+CONFIG_CAM_CTRL_SPI_ENABLE=n
+
+# BLE controller smoke test (ble_smoke command). The factory firmware talks
+# to the controller directly, so no host stack is built.
+CONFIG_BT_ENABLED=y
+# The BLE observer scan needs a host stack; controller-only cannot scan.
+# CONFIG_BT_CONTROLLER_ONLY is not set
+CONFIG_BT_NIMBLE_ENABLED=y
+
+# Expose Espressif PHY certification TX/RX commands for controlled RF bench
+# measurements. These commands are manual-only and must be stopped with rf_stop.
+CONFIG_ESP_PHY_ENABLE_CERT_TEST=y
+# Match the ESP-IDF certification-test example: continuous RF tests can starve
+# the idle/interrupt watchdog paths.
+CONFIG_ESP_INT_WDT=n
+CONFIG_ESP_TASK_WDT_EN=n
+
+# The Wi-Fi/BLE/camera build does not fit the 1 MB default app partition.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"

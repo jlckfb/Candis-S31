@@ -1,0 +1,23 @@
+# Candis-S31 EVT1 speed-step overlay: Flash QIO 80 MHz + PSRAM Octal DDR 250 MHz.
+#
+# Incremental overlay on top of sdkconfig.defaults and
+# sdkconfig.qio80_psram200.defaults. Build with:
+#   idf.py -B build-qio80-psram250 \
+#     -DSDKCONFIG=$PWD/sdkconfig.qio80_psram250 \
+#     "-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.qio80_psram200.defaults;sdkconfig.qio80_psram250.defaults" \
+#     build
+# Later defaults files override earlier ones, so the symbol below replaces the
+# 200 MHz PSRAM choice; everything else (QIO 80 MHz flash included) is
+# inherited from the 200 MHz overlay.
+#
+# --- PSRAM: 200 MHz -> 250 MHz -----------------------------------------------
+# 250 MHz is an official ESP32-S31 Kconfig grade, not an overclock:
+#   .tools/esp-idf/components/esp_psram/esp32s31/Kconfig.spiram:25-26
+#   (config SPIRAM_SPEED_250M, "250MHz clock speed")
+# IDF ships a release test configuration for this exact grade:
+#   .tools/esp-idf/components/esp_psram/test_apps/psram/sdkconfig.ci.esp32s31_250m_release
+# The ESP32-S31 datasheet rates the PSRAM controller up to 250 MHz 8-bit DDR.
+# The in-package device is 32 MB (BOM + mem_psram_verify probe TRUE_32MB on
+# this board), and the 200 MHz grade passed boot MEMTEST, display motion
+# regression, and repeated reboots.
+CONFIG_SPIRAM_SPEED_250M=y

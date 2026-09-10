@@ -1,0 +1,11 @@
+version: 0.5.2
+description: Non-official board definitions for ESP Board Manager
+url: https://github.com/espressif/esp-board-manager
+documentation: https://github.com/espressif/esp-board-manager/blob/main/esp_friends_boards/README.md
+issues: https://github.com/espressif/esp-board-manager/issues
+
+tags:
+  - board_manager
+  - esp_board_manager
+  - esp_friends
+  - friends_boards

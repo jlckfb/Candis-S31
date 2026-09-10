@@ -1,0 +1,234 @@
+# Devices Configuration for Candis-S31
+# Type-C2 is intentionally absent: Board Manager cannot enforce the BSP's
+# atomic Source-before-boost sequence or its 500 mA-only source policy.
+# Applications that need Type-C2 USB Host must use the Candis-S31 BSP API.
+
+devices:
+  - name: pmic
+    chip: tg28_sw
+    type: custom
+    version: 1.0.0
+    dependencies:
+      espressif/tg28_sw: "^0.4.0"
+
+    config:
+      i2c_address: 0x34
+      frequency_hz: 400000
+    peripherals:
+      - name: i2c_low_power
+      - name: gpio_pmic_rtc_interrupt
+
+  - name: rtc
+    chip: rx8130ce
+    type: custom
+    version: 1.0.0
+    dependencies:
+      espressif/rx8130ce: "^0.4.0"
+
+    config:
+      i2c_address: 0x32
+      frequency_hz: 400000
+    peripherals:
+      - name: i2c_low_power
+      - name: gpio_pmic_rtc_interrupt
+
+
+  - name: board_power_ctrl
+    type: power_ctrl
+    sub_type: custom
+    depends_on: pmic
+    config:
+      camera_reset_gpio: 39
+      camera_pwdn_gpio: 40
+    peripherals:
+      - name: gpio_display_vbat
+      - name: gpio_display_vci
+      - name: gpio_sd_power
+      - name: gpio_pa_control
+
+
+  - name: led_strip
+    chip: ws2812
+    type: led_strip
+    sub_type: rmt
+    version: 1.0.0
+    power_ctrl_device: board_power_ctrl
+    config:
+      strip_gpio_num: 4
+      max_leds: 1
+      led_model: LED_MODEL_WS2812
+      color_component_format: LED_STRIP_COLOR_COMPONENT_FMT_GRB
+      invert_out: false
+      rmt:
+        clk_src: RMT_CLK_SRC_DEFAULT
+        resolution_hz: 10000000
+        mem_block_symbols: 0
+        with_dma: false
+
+  - name: audio_dac
+    chip: es8389
+    type: audio_codec
+    version: default
+    power_ctrl_device: board_power_ctrl
+    config:
+      adc_enabled: false
+      dac_enabled: true
+      dac_max_channel: 2
+      dac_channel_mask: "11"
+      dac_init_gain: 0
+      mclk_enabled: true
+    peripherals:
+      - name: gpio_pa_control
+        gain: 6
+        active_level: 1
+      - name: i2s_audio_out
+      - name: i2c_main
+        address: 0x20
+        frequency: 400000
+
+  - name: audio_adc
+    chip: es8389
+    type: audio_codec
+    version: default
+    power_ctrl_device: board_power_ctrl
+    config:
+      adc_enabled: true
+      dac_enabled: false
+      adc_max_channel: 2
+      adc_channel_mask: "11"
+      adc_channel_labels: [FR, FL]
+      adc_init_gain: 0
+      mclk_enabled: true
+    peripherals:
+      - name: i2s_audio_in
+      - name: i2c_main
+        address: 0x20
+        frequency: 400000
+
+  - name: fs_sdcard
+    type: fs_fat
+    sub_type: sdmmc
+    power_ctrl_device: board_power_ctrl
+    version: default
+    config:
+      mount_point: "/sdcard"
+      vfs_config:
+        format_if_mount_failed: false
+        max_files: 5
+        allocation_unit_size: 16384
+      sub_config:
+        slot: SDMMC_HOST_SLOT_0
+        frequency: SDMMC_FREQ_HIGHSPEED
+        bus_width: 4
+        slot_flags: SDMMC_SLOT_FLAG_INTERNAL_PULLUP
+        pins:
+          clk: 24
+          cmd: 25
+          d0: 20
+          d1: 21
+          d2: 22
+          d3: 23
+          cd: 0
+          wp: -1
+
+  - name: display_lcd
+    chip: co5300
+    type: display_lcd
+    sub_type: spi
+    power_ctrl_device: board_power_ctrl
+    version: default
+    dependencies:
+      espressif/esp_lcd_co5300: "^2.1.0"
+    config:
+      swap_xy: false
+      mirror_x: true
+      mirror_y: true
+      x_max: 460
+      y_max: 460
+
+      invert_color: false
+      need_reset: true
+      io_spi_config:
+        cs_gpio_num: 10
+        dc_gpio_num: -1
+        spi_mode: 0
+        pclk_hz: 48000000
+
+        trans_queue_depth: 10
+        lcd_cmd_bits: 32
+        lcd_param_bits: 8
+        flags:
+          quad_mode: true
+      lcd_panel_config:
+        reset_gpio_num: 15
+        rgb_ele_order: LCD_RGB_ELEMENT_ORDER_RGB
+        data_endian: LCD_RGB_DATA_ENDIAN_BIG
+        bits_per_pixel: 16
+        flags:
+          reset_active_high: false
+    peripherals:
+      - name: spi_display
+
+
+  - name: lcd_touch
+    chip: cst820
+    type: lcd_touch
+    sub_type: i2c
+    power_ctrl_device: board_power_ctrl
+    version: default
+    dependencies:
+      espressif/esp_lcd_touch_cst820: "^1.2.0"
+
+    config:
+      io_i2c_config:
+        lcd_cmd_bits: 8
+        scl_speed_hz: 400000
+      touch_config:
+        x_max: 459
+        y_max: 459
+
+        rst_gpio_num: 17
+        int_gpio_num: 3
+        levels:
+          reset: 0
+          interrupt: 0
+        flags:
+          swap_xy: false
+          mirror_x: true
+          mirror_y: true
+
+    peripherals:
+      - name: i2c_main
+        i2c_addr: [0x2A]  # Board Manager uses the 8-bit form of 7-bit address 0x15.
+
+  - name: camera
+    type: camera
+    sub_type: dvp
+    power_ctrl_device: board_power_ctrl
+    version: default
+    init_skip: true
+    # The generic DVP device cannot generate the exact 24 MHz OV5640 clock
+    # on ESP32-S31. Keep the pin map for metadata, but initialize this camera
+    # through the Candis-S31 BSP, which uses the validated LEDC XCLK path.
+    config:
+      dvp_config:
+        reset_io: 39
+        pwdn_io: 40
+        vsync_io: 56
+        data_width: CAM_CTLR_DATA_WIDTH_8
+        de_io: 57
+        pclk_io: 54
+        xclk_io: 55
+        xclk_freq: 24000000
+        data_io:
+          data_io_0: 46
+          data_io_1: 47
+          data_io_2: 48
+          data_io_3: 49
+          data_io_4: 50
+          data_io_5: 51
+          data_io_6: 52
+          data_io_7: 53
+    peripherals:
+      - name: i2c_main
+        frequency: 100000

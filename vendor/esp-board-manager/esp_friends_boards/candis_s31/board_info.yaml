@@ -1,0 +1,5 @@
+board: candis_s31
+chip: esp32s31
+version: 1.0.0
+description: "Candis-S31 AMOLED development board"
+manufacturer: "LCKFB"

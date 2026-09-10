@@ -1,0 +1,729 @@
+name: ESP-IDF build
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Update the tag and commit together after the new version passes validation.
+  IDF_REF: v6.1-rc1
+  IDF_COMMIT: 44f0c59f7c81a72a5868a52d5f6dfbbf88829704
+  # The board runtime is first-party under components/candis_s31. Reusable
+  # drivers and Board Manager sources are mirrored under vendor/ and are
+  # consumed through relative override_path entries.
+
+jobs:
+  getting-started:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ESP-IDF
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git "$RUNNER_TEMP/esp-idf"
+          test "$(git -C "$RUNNER_TEMP/esp-idf" rev-parse HEAD)" = "$IDF_COMMIT"
+          "$RUNNER_TEMP/esp-idf/install.sh" esp32s31
+
+      - name: Build getting started
+        run: |
+          . "$RUNNER_TEMP/esp-idf/export.sh"
+          idf.py --preview -C examples/esp-idf/getting-started \
+            -D IDF_TARGET=esp32s31 build
+
+  # The board component and four reusable drivers are part of this checkout.
+  # Their test apps are the acceptance gate for the code that firmware/factory
+  # depends on, so CI compiles them with the same flags as build-all.sh.
+  drivers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build board tests and reusable driver examples
+        run: |
+          . ~/esp-idf/export.sh
+          for app in \
+            components/candis_s31/test_apps \
+            vendor/idf-extra-components/tg28_sw/test_apps \
+            vendor/idf-extra-components/rx8130ce/test_apps \
+            vendor/idf-extra-components/fusb303b/test_apps \
+            vendor/idf-extra-components/esp_lcd_touch_cst820/test_apps \
+            vendor/idf-extra-components/tg28_sw/examples/get_started \
+            vendor/idf-extra-components/rx8130ce/examples/get_started \
+            vendor/idf-extra-components/fusb303b/examples/get_started \
+            vendor/idf-extra-components/esp_lcd_touch_cst820/examples/get_started; do
+            echo "::group::$app"
+            ( cd "$app" \
+              && idf.py --preview -B build_esp32s31 -D IDF_TARGET=esp32s31 build )
+            echo "::endgroup::"
+          done
+
+  low-power:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build low-power example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/low-power \
+            -D IDF_TARGET=esp32s31 build
+
+  factory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+
+      - name: Validate Factory host and Recovery tooling
+        run: |
+          python3 -m pip install -r firmware/factory/host_tools/requirements.txt
+          python3 firmware/factory/host_tools/run_evt.py --self-test
+          python3 -m unittest discover -s tools -p test_capture_camera_frame.py -v
+          python3 -m unittest discover -s tools -p test_build_all.py -v
+          bash -n tools/build-all.sh
+          bash -n firmware/recovery/flash_factory.sh
+          bash -n tools/release/pack_factory_release.sh
+
+      - name: Validate the player host helpers
+        run: |
+          cc -std=c11 -Wall -Wextra -o "$RUNNER_TEMP/player_utils_test" \
+            examples/esp-idf/player/tests/player_utils_test.c \
+            examples/esp-idf/player/main/player_utils.c \
+            -I examples/esp-idf/player/main
+          "$RUNNER_TEMP/player_utils_test"
+
+      - name: Build factory firmware
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C firmware/factory -D IDF_TARGET=esp32s31 build
+          idf.py --preview -C firmware/factory merge-bin \
+            --output candis_s31_factory_merged.bin --format raw
+
+      # Packaging dry-run only: this assembles the release staging directory
+      # and archive as CI artifacts. Publishing a GitHub Release stays a
+      # manual step performed after hardware validation.
+      - name: Pack factory release (dry-run)
+        run: |
+          RELEASE_NAME="ci-${GITHUB_SHA}" \
+          IDF_PATH=~/esp-idf \
+            tools/release/pack_factory_release.sh firmware/factory "$RUNNER_TEMP/factory-release"
+          python3 -c 'from pathlib import Path; p=Path("'"$RUNNER_TEMP"'/factory-release/launchpad.toml"); s=p.read_text(); assert "ci-${{ github.sha }}" in s and "@" not in s and "<tag>" not in s'
+
+      - name: Upload factory release dry-run
+        uses: actions/upload-artifact@v4
+        with:
+          name: candis-s31-factory-release-dryrun
+          path: ${{ runner.temp }}/factory-release.*
+          if-no-files-found: error
+
+  # Firmware fleet jobs build against the repository-owned board component.
+  # Registry dependencies are pinned by each committed dependencies.lock file;
+  # the runner downloads only those exact public packages when uncached.
+  camera-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build camera test firmware
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/camera-test -D IDF_TARGET=esp32s31 build
+
+      - name: Build the camera validation variant
+        working-directory: examples/esp-idf/camera-test
+        run: |
+          . ~/esp-idf/export.sh
+          # Compile the option-gated paths the default build never reaches:
+          # the manual 50 Hz banding value, the per-second sensor statistics
+          # line, and the CRC-checked console frame export.
+          printf 'CONFIG_CAMERA_TEST_FORCE_50HZ=y\nCONFIG_CAMERA_TEST_SENSOR_STATS=y\nCONFIG_CAMERA_TEST_SERIAL_FRAME_DUMP=y\n' > /tmp/camera-validation.defaults
+          idf.py --preview -B build-validation -D SDKCONFIG=build-validation/sdkconfig \
+            -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;/tmp/camera-validation.defaults" \
+            -D IDF_TARGET=esp32s31 build
+
+  powercycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build powercycle firmware
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/power-cycle -D IDF_TARGET=esp32s31 build
+
+  usb-cdc-device:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build USB CDC device firmware
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/usb-cdc-device -D IDF_TARGET=esp32s31 build
+
+  display-hello:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build Board Manager display example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/display-hello -D IDF_TARGET=esp32s31 build
+
+  player:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build player example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/player -D IDF_TARGET=esp32s31 build
+
+  buttons:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build buttons example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/buttons -D IDF_TARGET=esp32s31 build
+
+  led:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build RGB LED example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/led -D IDF_TARGET=esp32s31 build
+
+  rtc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build RTC example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/rtc -D IDF_TARGET=esp32s31 build
+
+  pmic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build PMIC example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/pmic -D IDF_TARGET=esp32s31 build
+
+  storage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build TF card storage example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/storage -D IDF_TARGET=esp32s31 build
+
+  display-touch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build display + touch example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/display-touch -D IDF_TARGET=esp32s31 build
+
+  display-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build display benchmark example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/display-benchmark -D IDF_TARGET=esp32s31 build
+
+  audio-recorder:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build audio recorder example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/audio-recorder -D IDF_TARGET=esp32s31 build
+
+  audio-player:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build audio player example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/audio-player -D IDF_TARGET=esp32s31 build
+
+  wifi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build WiFi example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/wifi -D IDF_TARGET=esp32s31 build
+
+  ble:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build BLE example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/ble -D IDF_TARGET=esp32s31 build
+
+  usb-host-msc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF
+        id: idf-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/esp-idf
+            ~/.espressif
+          key: esp-idf-${{ env.IDF_COMMIT }}-esp32s31-v1
+
+      - name: Install ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch "$IDF_REF" --depth 1 --recursive https://github.com/espressif/esp-idf.git ~/esp-idf
+          test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+          ~/esp-idf/install.sh esp32s31
+
+      - name: Verify cached ESP-IDF
+        if: steps.idf-cache.outputs.cache-hit == 'true'
+        run: test "$(git -C ~/esp-idf rev-parse HEAD)" = "$IDF_COMMIT"
+
+      - name: Build USB host MSC example
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py --preview -C examples/esp-idf/usb-host-msc -D IDF_TARGET=esp32s31 build

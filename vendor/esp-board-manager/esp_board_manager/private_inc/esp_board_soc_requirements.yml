@@ -1,0 +1,317 @@
+# This file contains macro definitions for chip capabilities corresponding to devices and peripherals.
+#
+# adcChannelMap (catalog export only, not configured here):
+#   export_soc_capability_catalog.py reads components/soc/{chip}/include/soc/adc_channel.h
+#   and writes chips.<chip>.adcChannelMap into each per-IDF profile snapshot.
+#   Runtime ADC metadata extraction reads the bundled catalog via configure_soc_capabilities().
+#
+# hardware_limits.*.applies_to[*] describes YAML-level numeric checks (catalog schema v3):
+#   check: value         path points to one or more numeric values. The validator accepts ints,
+#                        decimal strings, and enum strings whose final segment is "_N".
+#                        Examples: data_width, unit_id, channel_list[*], patterns[*].channel
+#   check: arrayLength   path points to an array as a whole; compare the array length.
+#                        Example: adc.pattern_length_max -> patterns length
+#   check: instanceCount count configured instances matching (kind, type) without a path.
+#                        Example: spi / uart instance_count. I2C and I2S use dedicated
+#                        validators because their port semantics are peripheral-specific.
+#   compare              optional relation between actual and limit: le (default), lt, ge, gt,
+#                        eq, or ne. Unknown values are treated as le by the validator.
+devices:
+  - audio_codec:
+      requires: [SOC_I2C_SUPPORTED, SOC_I2S_SUPPORTED]
+      match: { type: audio_codec }
+  - button_adc_single:
+      requires: SOC_ADC_SUPPORTED
+      match: { type: button, sub_type: adc_single }
+  - button_adc_multi:
+      requires: SOC_ADC_SUPPORTED
+      match: { type: button, sub_type: adc_multi }
+  - camera_csi:
+      requires: [SOC_MIPI_CSI_SUPPORTED, SOC_I2C_SUPPORTED]
+      match: { type: camera, sub_type: csi }
+  - camera_dvp:
+      requires: [SOC_LCDCAM_CAM_SUPPORTED, SOC_I2C_SUPPORTED]
+      match: { type: camera, sub_type: dvp }
+  - camera_spi:
+      requires: [SOC_I2C_SUPPORTED]
+      match: { type: camera, sub_type: spi }
+  - display_lcd_dsi:
+      requires: SOC_MIPI_DSI_SUPPORTED
+      match: { type: display_lcd, sub_type: dsi }
+  - display_lcd_rgb:
+      requires: SOC_LCDCAM_RGB_LCD_SUPPORTED
+      match: { type: display_lcd, sub_type: rgb }
+  - display_lcd_i80:
+      requires: SOC_LCDCAM_I80_LCD_SUPPORTED
+      match: { type: display_lcd, sub_type: i80 }
+  - display_lcd_spi:
+      requires: SOC_GPSPI_SUPPORTED
+      match: { type: display_lcd, sub_type: spi }
+  - display_lcd_parlio:
+      allOf:
+        - SOC_PARLIO_SUPPORTED
+      anyOf:
+        - SOC_PARLIO_LCD_SUPPORTED
+        - SOC_PARLIO_SUPPORT_SPI_LCD
+        - SOC_PARLIO_SUPPORT_I80_LCD
+      match: { type: display_lcd, sub_type: parlio }
+  - display_lcd_rgb_3wire_spi:
+      requires: SOC_LCDCAM_RGB_LCD_SUPPORTED
+      match: { type: display_lcd, sub_type: rgb_3wire_spi }
+  - fs_fat_sdmmc:
+      requires: SOC_SDMMC_HOST_SUPPORTED
+      match: { type: fs_fat, sub_type: sdmmc }
+  - fs_fat_spi:
+      requires: SOC_GPSPI_SUPPORTED
+      match: { type: fs_fat, sub_type: spi }
+  - gpio_expander:
+      requires: SOC_I2C_SUPPORTED
+      match: { type: gpio_expander }
+  - lcd_touch_i2c:
+      requires: SOC_I2C_SUPPORTED
+      match: { type: lcd_touch, sub_type: i2c }
+  - lcd_touch_spi:
+      requires: SOC_GPSPI_SUPPORTED
+      match: { type: lcd_touch, sub_type: spi }
+  - ledc_ctrl:
+      requires: SOC_LEDC_SUPPORTED
+      match: { type: ledc_ctrl }
+  - led_strip_rmt:
+      requires: SOC_RMT_SUPPORTED
+      match: { type: led_strip, sub_type: rmt }
+  - led_strip_spi:
+      requires: SOC_GPSPI_SUPPORTED
+      match: { type: led_strip, sub_type: spi }
+  - littlefs_sdmmc:
+      requires: SOC_SDMMC_HOST_SUPPORTED
+      match: { type: littlefs, sub_type: sdmmc }
+  - littlefs_spi:
+      requires: SOC_GPSPI_SUPPORTED
+      match: { type: littlefs, sub_type: spi }
+
+peripherals:
+  - adc_continuous:
+      requires: SOC_ADC_SUPPORTED
+      match: { type: adc, role: continuous }
+  - adc_oneshot:
+      requires: SOC_ADC_SUPPORTED
+      match: { type: adc, role: oneshot }
+  - anacmpr:
+      requires: SOC_ANA_CMPR_SUPPORTED
+      match: { type: anacmpr }
+  - dac:
+      requires: SOC_DAC_SUPPORTED
+      match: { type: dac }
+  - dsi:
+      requires: SOC_MIPI_DSI_SUPPORTED
+      match: { type: dsi }
+  - i2c:
+      requires: SOC_I2C_SUPPORTED
+      match: { type: i2c }
+  - i2s_master_pdm-in:
+      requires: SOC_I2S_SUPPORTS_PDM_RX
+      match: { type: i2s, format: [pdm-in] }
+  - i2s_master_pdm-out:
+      requires: SOC_I2S_SUPPORTS_PDM_TX
+      match: { type: i2s, format: [pdm-out] }
+  - i2s_master_std:
+      requires: SOC_I2S_SUPPORTED
+      match: { type: i2s, format: [std-out, std-in] }
+  - i2s_master_tdm:
+      requires: SOC_I2S_SUPPORTS_TDM
+      match: { type: i2s, format: [tdm-out, tdm-in] }
+  - ldo:
+      requires: SOC_GP_LDO_SUPPORTED
+      match: { type: ldo }
+  - ledc:
+      requires: SOC_LEDC_SUPPORTED
+      match: { type: ledc }
+  - mcpwm:
+      requires: SOC_MCPWM_SUPPORTED
+      match: { type: mcpwm }
+  - pcnt:
+      requires: SOC_PCNT_SUPPORTED
+      match: { type: pcnt }
+  - rmt:
+      requires: SOC_RMT_SUPPORTED
+      match: { type: rmt }
+  - sdm:
+      requires: SOC_SDM_SUPPORTED
+      match: { type: sdm }
+  - spi:
+      requires: SOC_GPSPI_SUPPORTED
+      match: { type: spi }
+  - uart:
+      requires: SOC_UART_SUPPORTED
+      match: { type: uart }
+
+capabilities:
+  i2c.lp_supported: SOC_LP_I2C_SUPPORTED
+  i2s.supports_pdm_rx_hp_filter: SOC_I2S_SUPPORTS_PDM_RX_HP_FILTER
+
+gpio:
+  valid_input_mask: SOC_GPIO_VALID_GPIO_MASK
+  valid_output_mask: SOC_GPIO_VALID_OUTPUT_GPIO_MASK
+  input_range_max: SOC_GPIO_IN_RANGE_MAX
+  output_range_max: SOC_GPIO_OUT_RANGE_MAX
+
+hardware_limits:
+  i2s.hw_version:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_I2S_HW_VERSION_2
+        value: 2
+      - kind: soc_caps_macro
+        symbol: SOC_I2S_HW_VERSION_1
+        value: 1
+  i2c.instance_count:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_I2C_NUM
+  i2c.hp_instance_count:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_HP_I2C_NUM
+  i2c.lp_instance_count:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_LP_I2C_NUM
+  i2s.instance_count:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_I2S_NUM
+      - kind: header_define
+        path: components/esp_hal_i2s/{chip}/include/hal/i2s_ll.h
+        symbol: I2S_LL_INST_NUM
+  i2s.pdm_max_tx_lines:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_I2S_PDM_MAX_TX_LINES
+  i2s.pdm_max_rx_lines:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_I2S_PDM_MAX_RX_LINES
+  uart.instance_count:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_UART_NUM
+    applies_to:
+      - { kind: peripheral, type: uart, check: instanceCount }
+  anacmpr.unit_count:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_ANA_CMPR_NUM
+    applies_to:
+      - { kind: peripheral, type: anacmpr, path: [unit], check: value, compare: lt }
+  ledc.channel_count:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_LEDC_CHANNEL_NUM
+    applies_to:
+      - { kind: peripheral, type: ledc, path: [channel], check: value, compare: lt }
+  dac.channel_count:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_DAC_CHAN_NUM
+    applies_to:
+      - { kind: peripheral, type: dac, role: [oneshot], path: [channel], check: value, compare: lt }
+      - { kind: peripheral, type: dac, role: [cosine], path: [channel], check: value, compare: lt }
+  spi.instance_count:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_SPI_PERIPH_NUM
+    applies_to:
+      - { kind: peripheral, type: spi, check: instanceCount }
+  sdmmc.slot_count:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_SDMMC_NUM_SLOTS
+    applies_to:
+      - { kind: device, type: fs_fat, sub_type: [sdmmc], path: [sub_config, slot], check: value, compare: lt }
+      - { kind: device, type: littlefs, sub_type: [sdmmc], path: [sub_config, slot], check: value, compare: lt }
+  adc.pattern_length_max:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_ADC_PATT_LEN_MAX
+    applies_to:
+      - { kind: peripheral, type: adc, role: [continuous], path: [patterns], check: arrayLength }
+      - { kind: peripheral, type: adc, role: [continuous], path: [channel_list], check: arrayLength }
+  adc.unit_count:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_ADC_PERIPH_NUM
+    applies_to:
+      - { kind: peripheral, type: adc, path: [unit_id], check: value }
+      - { kind: peripheral, type: adc, path: [patterns, unit], check: value }
+  adc.max_channel_count:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_ADC_MAX_CHANNEL_NUM
+      - kind: header_define
+        path: components/esp_hal_ana_conv/{chip}/include/hal/adc_ll.h
+        symbol: ADC_LL_MAX_CHANNEL_NUM
+    applies_to:
+      - { kind: peripheral, type: adc, role: [oneshot], path: [channel_id], check: value, compare: lt }
+      - { kind: peripheral, type: adc, role: [continuous], path: [channel_id], check: value, compare: lt }
+      - { kind: peripheral, type: adc, role: [continuous], path: [channel_list], check: value, compare: lt }
+      - { kind: peripheral, type: adc, role: [continuous], path: [patterns, channel], check: value, compare: lt }
+  pcnt.channels_per_unit:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_PCNT_CHANNELS_PER_UNIT
+      - kind: header_define
+        path: components/esp_hal_pcnt/{chip}/include/hal/pcnt_ll.h
+        symbol: PCNT_LL_CHANS_PER_UNIT
+    applies_to:
+      - { kind: peripheral, type: pcnt, path: [channel_count], check: value }
+      - { kind: peripheral, type: pcnt, path: [channel_list], check: arrayLength }
+  pcnt.watch_points_per_unit:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_PCNT_THRES_POINT_PER_UNIT
+      - kind: header_define
+        path: components/esp_hal_pcnt/{chip}/include/hal/pcnt_ll.h
+        symbol: PCNT_LL_THRES_POINT_PER_UNIT
+  mcpwm.group_count:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_MCPWM_GROUPS
+      - kind: header_define
+        path: components/esp_hal_mcpwm/{chip}/include/hal/mcpwm_ll.h
+        symbol: MCPWM_LL_GROUP_NUM
+    applies_to:
+      - { kind: peripheral, type: mcpwm, path: [timer_config, group_id], check: value, compare: lt }
+      - { kind: peripheral, type: mcpwm, path: [operator_config, group_id], check: value, compare: lt }
+  mcpwm.comparators_per_operator:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_MCPWM_COMPARATORS_PER_OPERATOR
+      - kind: header_define
+        path: components/esp_hal_mcpwm/{chip}/include/hal/mcpwm_ll.h
+        symbol: MCPWM_LL_COMPARATORS_PER_OPERATOR
+    applies_to:
+      - { kind: peripheral, type: mcpwm, path: [comparator_configs], check: arrayLength }
+  lcd.rgb_data_width:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_LCDCAM_RGB_DATA_WIDTH
+      - kind: header_define
+        path: components/esp_hal_lcd/{chip}/include/hal/lcd_ll.h
+        symbol: LCD_LL_RGB_BUS_WIDTH
+    applies_to:
+      - { kind: device, type: display_lcd, sub_type: [rgb], path: [data_width], check: value }
+  lcd.i80_bus_width:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_LCDCAM_I80_BUS_WIDTH
+      - kind: header_define
+        path: components/esp_hal_lcd/{chip}/include/hal/lcd_ll.h
+        symbol: LCD_LL_I80_BUS_WIDTH
+    applies_to:
+      - { kind: device, type: display_lcd, sub_type: [i80], path: [bus_width], check: value }
+  parlio.tx_unit_data_width_max:
+    sources:
+      - kind: soc_caps_macro
+        symbol: SOC_PARLIO_TX_UNIT_MAX_DATA_WIDTH
+    applies_to:
+      - { kind: device, type: display_lcd, sub_type: [parlio], path: [data_width], check: value }

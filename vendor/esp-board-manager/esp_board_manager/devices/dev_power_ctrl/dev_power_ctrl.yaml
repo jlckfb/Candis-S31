@@ -1,0 +1,45 @@
+# Example board_devices.yaml configuration for Power Control device
+# This shows how to integrate the Power Control device into a board configuration
+# All values shown are the actual default values from the device parser
+
+# Example Power Control device with GPIO sub type configuration
+- name: audio_power_ctrl          # The name of the device, must be unique
+  type: power_ctrl                # The type of the device, must be unique
+  sub_type: gpio                  # The sub type of the device, must be 'gpio'
+  peripherals:
+    - name: gpio                  # [TO_BE_CONFIRMED] GPIO peripheral name (must reference a GPIO peripheral)
+      active_level: 1             # [TO_BE_CONFIRMED] Active level (0-low, 1-high) when power is on
+
+# Example Power Control device with custom sub type configuration
+# Register the lifecycle operations in board code with:
+#   static const dev_power_ctrl_custom_ops_t s_board_power_ctrl_ops = {
+#       .init = board_power_ctrl_init, .deinit = board_power_ctrl_deinit, .set_power = board_power_ctrl_set_power,
+#   };
+#   DEVICE_EXTRA_FUNC_REGISTER(board_power_ctrl, &s_board_power_ctrl_ops);
+- name: board_power_ctrl          # The name of the device, must be unique
+  type: power_ctrl                # The type of the device, must be unique
+  sub_type: custom                # The sub type of the device, must be 'custom'
+  depends_on: pmic_device         # Optional device dependencies, initialized before the custom init function
+  peripherals:                    # Optional peripherals that the framework references before custom init
+    - name: i2c_pmic              # Fetch the dependent handle with esp_board_periph_get_handle()
+    - name: gpio_lcd_power        # Fetch the dependent handle with esp_board_periph_get_handle()
+  config:                         # Optional board-specific configuration, passed through sub_cfg.custom.user_cfg
+    startup_delay_ms: 10
+
+# Example usage in devices, add the power_ctrl_device attribute to the device configuration
+# - name: audio_dac
+#   chip: es8311
+#   type: audio_codec
+#   version: default
+#   power_ctrl_device: audio_power_ctrl  # Reference to power control device
+#   config:
+#     adc_enabled: false
+#     dac_enabled: true
+#     dac_max_channel: 1
+#     dac_channel_mask: "1"
+#     mclk_enabled: true
+#   peripherals:
+#     - name: i2s_audio_out
+#     - name: i2c_master
+#       address: 0x30
+#       frequency: 400000

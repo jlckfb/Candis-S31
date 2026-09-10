@@ -1,0 +1,67 @@
+version: "1.2.0"
+description: Candis-S31 board support component maintained by the Candis-S31 repository
+url: https://github.com/jlckfb/Candis-S31
+
+targets:
+  - esp32s31
+
+tags:
+  - board
+  - candis_s31
+
+dependencies:
+  idf: ">=6.1"
+
+  # These four reusable drivers are kept in this repository. The paths are
+  # relative to this component, so a clone never depends on a developer's
+  # absolute path.
+  espressif/fusb303b:
+    version: "^0.3.0"
+    public: false
+    override_path: "../../vendor/idf-extra-components/fusb303b"
+
+  espressif/rx8130ce:
+    version: "^0.4.0"
+    public: true
+    override_path: "../../vendor/idf-extra-components/rx8130ce"
+
+  espressif/tg28_sw:
+    version: "^0.4.0"
+    public: false
+    override_path: "../../vendor/idf-extra-components/tg28_sw"
+
+  esp_codec_dev:
+    version: "^1.6.2"
+    public: true
+
+  # This repository-local compatibility port is derived from Espressif's
+  # 2.9.0 component and adds a non-owning TE edge observer API.
+  espressif/esp_lvgl_port:
+    version: "^2.9.0"
+    public: true
+    override_path: "../esp_lvgl_port"
+
+  lvgl/lvgl:
+    version: "^9"
+    public: true
+
+  espressif/esp_lcd_co5300:
+    version: "^2.1.0"
+    public: false
+
+  espressif/esp_lcd_touch_cst820:
+    version: "^1.2.0"
+    public: false
+    override_path: "../../vendor/idf-extra-components/esp_lcd_touch_cst820"
+
+  esp_video:
+    version: "~2.2"
+    public: true
+
+  led_indicator:
+    version: "^2"
+    public: true
+
+  usb:
+    version: "^1"
+    public: true

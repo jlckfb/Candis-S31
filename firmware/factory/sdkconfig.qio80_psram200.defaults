@@ -1,0 +1,34 @@
+# Candis-S31 EVT1 speed-step trial: Flash QIO 80 MHz + PSRAM Octal DDR 200 MHz.
+#
+# Incremental overlay on top of sdkconfig.defaults (DIO 40 MHz / PSRAM 100 MHz
+# validated baseline). Build with:
+#   idf.py -B build-qio80-psram200 \
+#     -DSDKCONFIG=$PWD/sdkconfig.qio80_psram200 \
+#     "-DSDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.qio80_psram200.defaults" \
+#     build
+# Later defaults files override earlier ones, so the three symbols below
+# replace the baseline DIO/40M/100M choices; everything else is inherited.
+#
+# --- Flash: DIO -> QIO -------------------------------------------------------
+# W25Q128 IO0-IO3 are wired to SPIQ/SPID/SPIWP/SPIHD on EVT1 (schematic
+# netlist), so quad mode is physically available. QIO is a legal non-octal mode:
+#   .tools/esp-idf/components/esptool_py/Kconfig.projbuild:47-49
+#   (config ESPTOOLPY_FLASHMODE_QIO, depends on !ESPTOOLPY_OCT_FLASH)
+# Note: the image header still records "dio" on purpose - esptool flashes the
+# bootloader in dio and the bootloader upgrades itself to quad mode during
+# initialisation (Kconfig.projbuild:76-81). Judge QIO by
+# CONFIG_ESPTOOLPY_FLASHMODE_QIO=y and by the boot log, not by the header byte.
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+
+# --- Flash: 40 MHz -> 80 MHz -------------------------------------------------
+# 80 MHz is the highest grade in the official ESP32-S31 menu (the choice only
+# offers 80/40/20 MHz):
+#   .tools/esp-idf/components/spi_flash/esp32s31/Kconfig.flash_freq:1-16
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# --- PSRAM: 100 MHz -> 200 MHz -----------------------------------------------
+# 200 MHz is the Kconfig default grade for S31 (not an overclock):
+#   .tools/esp-idf/components/esp_psram/esp32s31/Kconfig.spiram:19-43
+#   (choice SPIRAM_SPEED, line 21: default SPIRAM_SPEED_200M)
+# 250 MHz uses the separate overlay sdkconfig.qio80_psram250.defaults.
+CONFIG_SPIRAM_SPEED_200M=y

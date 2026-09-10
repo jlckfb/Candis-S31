@@ -1,0 +1,304 @@
+menu "Board Support Package (Candis-S31)"
+
+    config BSP_ERROR_CHECK
+        bool "Enable error check in BSP"
+        default y
+        help
+            Abort on BSP initialization errors. Disable this option when the
+            application needs to handle and report initialization failures.
+
+    menu "I2C"
+        config BSP_I2C_NUM
+            int "Main I2C controller"
+            default 0
+            range 0 2
+            help
+                Controller used by the main bus on GPIO33 and GPIO34.
+
+        config BSP_LP_I2C_NUM
+            int "Low-power I2C controller"
+            default 1
+            range 0 2
+            help
+                Controller used by TG28_SW and RX8130CE on GPIO6 and GPIO7.
+
+        config BSP_I2C_INTERNAL_PULLUPS
+            bool "Enable internal I2C pull-ups"
+            default n
+            help
+                Uses the SoC's internal pull-ups on both I2C buses. They stay
+                disabled by default because the board fits external pull-ups;
+                enable this only for a board spin or a bench setup that has
+                none.
+    endmenu
+
+    menu "Display"
+        config BSP_LCD_PIXEL_CLOCK_MHZ
+            int "CO5300 QSPI clock (MHz)"
+            default 48
+            range 10 50
+            help
+                CO5300 datasheet limits the 4-wire QSPI write clock to 50 MHz.
+                48 MHz is the highest frequency the ESP32-S31 SPI clock
+                generator produces exactly (BBPLL 480 MHz / 10) within that
+                limit. Values above 40 MHz route over the GPIO matrix on
+                this pinout.
+
+        config BSP_LCD_TE_SYNC
+            bool "Synchronize LVGL flushes with the panel TE signal"
+            default y
+            help
+                Registers the CO5300 tearing-effect edge (GPIO16) with
+                esp_lvgl_port. In the default LVGL PARTIAL path only the first
+                flush of each refresh cycle waits for TE; later chunks are
+                pipelined without another frame-period wait. Disabling this
+                removes TE gating while retaining PARTIAL rendering.
+
+        config BSP_LCD_DRAW_BUF_HEIGHT
+            int "Display transfer buffer height (lines)"
+            default 48
+            range 10 460
+            help
+                Height of each internal-DMA LVGL PARTIAL draw buffer and the
+                matching QSPI maximum transfer. The 48-line default is the
+                measured 60 Hz local / 30 Hz full-screen baseline and fits
+                the internal-RAM budget.
+
+        config BSP_LCD_DRAW_BUF_DOUBLE
+            bool "Use two LVGL draw buffers"
+            default y
+            help
+                Allocate two internal-DMA PARTIAL buffers so LVGL rendering
+                can overlap the QSPI transfer. Disable it when internal RAM
+                is constrained.
+
+        config BSP_LCD_DIRECT_MODE
+            bool "Full-frame PSRAM DIRECT rendering with per-cycle TE-gated flush"
+            default n
+            help
+                Optional esp_lvgl_port full-frame path for applications that
+                require a persistent framebuffer. The default is PARTIAL
+                double buffering, which has lower local-update latency and
+                pipelines rendering with QSPI DMA.
+        config BSP_DISPLAY_ROTATE_180
+            bool "Rotate panel scan and touch by 180 degrees"
+            default y
+            help
+                EVT1 mounts the AMOLED module upside down. When enabled the
+                CO5300 MADCTL (0x36) MX|MY bits flip the panel scan direction
+                with no rendering cost; LVGL PARTIAL, TE sync and the QSPI
+                DMA pipeline are unchanged. CST820 raw coordinates are
+                mirrored in software so touches match the rotated view.
+                Disable only for a board spin that mounts the panel upright.
+
+    endmenu
+
+    menu "Storage"
+        config BSP_SD_FORMAT_ON_MOUNT_FAIL
+            bool "Format SD card when mounting fails"
+            default n
+
+        config BSP_SD_MOUNT_POINT
+            string "SD card mount point"
+            default "/sdcard"
+
+        config BSP_SPIFFS_FORMAT_ON_MOUNT_FAIL
+            bool "Format SPIFFS when mounting fails"
+            default n
+
+        config BSP_SPIFFS_MOUNT_POINT
+            string "SPIFFS mount point"
+            default "/spiffs"
+
+        config BSP_SPIFFS_PARTITION_LABEL
+            string "Partition label of SPIFFS"
+            default "storage"
+
+        config BSP_SPIFFS_MAX_FILES
+            int "Max files supported for SPIFFS VFS"
+            default 5
+    endmenu
+
+    menu "Audio"
+        config BSP_I2S_NUM
+            int "I2S controller"
+            default 0
+            range 0 2
+            help
+                Controller used by the ES8389 codec interface.
+    endmenu
+
+    menu "Camera"
+        config BSP_CAMERA_XCLK_USE_LEDC
+            bool "Generate the camera XCLK with LEDC"
+            default y
+            help
+                Keep this enabled for the validated EVT1 path. The BSP drives
+                an exact 20 MHz, 50 percent duty-cycle XCLK from XTAL-backed
+                LEDC and prevents esp_video from claiming the same pin.
+
+                The post-format board profile compensates the selected
+                OV5640 table for this 20 MHz input through the sensor PLL.
+                Disable only to exercise esp_video's controller-driven
+                20 MHz clock, which is also an integer divisor of PLL_F160M.
+
+        config BSP_CAMERA_XCLK_LEDC_CH
+            int "LEDC channel used for camera XCLK"
+            default 2
+            range 0 7
+            help
+                Only used when BSP_CAMERA_XCLK_USE_LEDC is enabled.
+        config BSP_CAMERA_USE_INTERNAL_DVDD
+            bool "Use the OV5640 internal DVDD regulator"
+            default n
+            help
+                Selects the internal OV5640 DVDD regulator instead of the
+                board's external 1.5 V camera core rail: it clears OV5640
+                SC_PWC bit 3 and leaves TG28 DCDC2 off. Enable it when
+                validating a module whose AVDD/DVDD wiring differs from the
+                EVT1 module, and only with AVDD/DOVDD present. The OV5640
+                datasheet warns that internal regulation with 2.8 V I/O can
+                increase sensor heat.
+
+        config BSP_CAMERA_AVDD_MV
+            int "Camera AVDD voltage (mV)"
+            default 2800
+            range 2600 3000
+            help
+                AVDD rail voltage for the fitted OV5640 module. TG28 ALDO4
+                accepts 100 mV steps in this range; the EVT1 module uses the
+                2800 mV default. Keep DOVDD at 2800 mV for the direct DVP
+                connections.
+
+        config BSP_CAMERA_CORE_120MHZ
+            bool "Use the 120 MHz LCDCAM core clock for DVP capture"
+            depends on IDF_TARGET_ESP32S31
+            default y
+            help
+                The IDF startup selects the BBPLL 120 MHz LCDCAM source but
+                divides it by two. DVP clocks above that 60 MHz core can
+                truncate frames. Keep the same source and use divide-by-one
+                during camera operation; restore the divider on shutdown.
+                The board's QSPI panel does not use the LCDCAM LCD engine.
+
+        config BSP_CAMERA_SENSOR_DATA_REMAP
+            bool "Swap D0/D1 and D3/D4 for a nonstandard camera adapter"
+            default n
+            help
+                Swaps D0/D1 and D3/D4 in the DVP data map for a nonstandard
+                camera adapter. The EVT1 module uses schematic-order D0-D7.
+                Enable it only after verifying the adapter's physical wiring:
+                an unnecessary bit swap makes pixel values non-monotonic and
+                causes severe color banding.
+
+        config BSP_CAMERA_TIMING_60MHZ
+            bool "Use the OV5640 60 MHz / HTS 2000 preview timing"
+            depends on IDF_TARGET_ESP32S31
+            default n
+            help
+                Keeps 800x600 output and VTS 984 while reducing PLL1 from
+                800 to 600 MHz and PCLK from 80 to 60 MHz. HTS 2000 gives a
+                nominal 30.488 fps and preserves the complete binned readout;
+                50/60 Hz band steps follow the selected PCLK and HTS. XCLK,
+                ADC PLL2, power rails and ISP tuning are unchanged. Select it
+                when the DVP receiver needs more clock margin than the default
+                PCLK 80 MHz / HTS 2060 profile provides.
+
+        config BSP_CAMERA_TIMING_MATCHED80
+            bool "Use the OV5640 80 MHz / HTS 2666 matched-line timing"
+            depends on IDF_TARGET_ESP32S31 && !BSP_CAMERA_TIMING_60MHZ
+            default n
+            help
+                Keeps PCLK 80 MHz and VTS 984 but extends HTS to 2666.
+                This gives 30.495 fps and almost the same line period as
+                the 60 MHz / HTS 2000 profile (33.325 vs 33.333 us).
+                Select it to compare the two matched-line variants; the
+                default build uses PCLK 80 MHz / HTS 2060.
+
+        config BSP_CAMERA_TIMING_15FPS
+            bool "Use the OV5640 15 fps preview timing"
+            depends on IDF_TARGET_ESP32S31 && !BSP_CAMERA_TIMING_60MHZ
+            depends on !BSP_CAMERA_TIMING_MATCHED80
+            default n
+            help
+                Keeps the 20 MHz XCLK, 80 MHz PCLK, HTS 2060 and RGB565X
+                output, but extends VTS to 2460 and the AEC ceiling to 2456.
+                The nominal frame rate becomes 15.8 fps so automatic exposure
+                can use a longer integration time instead of high analog gain.
+                Select it to inspect gain-dependent row noise; the default
+                profile keeps 30 fps.
+
+        config BSP_CAMERA_STANDARD_CLOCK_ROOTS
+            bool "Use the OV5640 recommended clock-root dividers"
+            depends on IDF_TARGET_ESP32S31
+            default n
+            help
+                Uses PLL root divide-by-two (0x3037=0x12) and the datasheet's
+                recommended downstream roots (0x3108=0x01) together.
+                The paired change preserves SCLK, SCLK2x and DVP PCLK while
+                halving the clock entering the downstream root dividers.
+                PLL VCO, HTS/VTS, exposure steps, ADC PLL2 and ISP settings
+                are unchanged. Select it to compare image quality against the
+                default clock roots.
+
+        config BSP_CAMERA_CMX_COLOR_TRIM
+            bool "Apply the measured module white-balance trim in the colour matrix"
+            depends on IDF_TARGET_ESP32S31
+            default y
+            help
+                Scale the red and blue input columns of the OV5640 colour
+                matrix (magnitudes 0x5381..0x5389; signs unchanged).
+                Automatic white balance remains enabled; no manual gains
+                are written. Skipped when BSP_CAMERA_SKIP_ISP_PROFILE is set.
+
+                Defaults R 112 % / B 109 % were checked on this EVT1 module
+                against an indoor neutral patch (centre RGB about 112/113/113).
+                This is not multi-illuminant or multi-module calibration.
+                Integer coefficients, clipping and downstream ISP processing
+                mean these percentages are not exact output RGB gains.
+                Set both to 100 % to restore the unscaled board matrix.
+
+        config BSP_CAMERA_CMX_RED_PERCENT
+            int "Colour-matrix red column scale (percent)"
+            depends on BSP_CAMERA_CMX_COLOR_TRIM
+            range 100 200
+            default 112
+            help
+                Input red column of the colour matrix, in percent.
+
+        config BSP_CAMERA_CMX_BLUE_PERCENT
+            int "Colour-matrix blue column scale (percent)"
+            depends on BSP_CAMERA_CMX_COLOR_TRIM
+            range 100 200
+            default 109
+            help
+                Input blue column of the colour matrix, in percent.
+
+        config BSP_CAMERA_SKIP_ISP_PROFILE
+            bool "Skip the Candis OV5640 ISP color profile"
+            depends on IDF_TARGET_ESP32S31
+            default n
+            help
+                Keeps the board PLL, external DVDD, timing and RGB565X output
+                overrides but does not rewrite the Candis ISP/AWB/CCM profile
+                after the official esp_cam_sensor table. Select it to separate
+                sensor ISP tuning from the DVP transport and analog timing
+                paths; the default applies the Candis profile.
+
+
+    endmenu
+
+    menu "RGB LED"
+        choice BSP_LED_RGB_BACKEND
+            prompt "LED strip backend"
+            default BSP_LED_RGB_BACKEND_RMT
+
+            config BSP_LED_RGB_BACKEND_RMT
+                bool "RMT"
+
+            config BSP_LED_RGB_BACKEND_SPI
+                bool "SPI"
+        endchoice
+    endmenu
+
+endmenu

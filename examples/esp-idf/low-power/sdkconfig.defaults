@@ -1,0 +1,15 @@
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# The LP housekeeper runs on the LP core (rv32imac).
+CONFIG_ULP_COPROC_ENABLED=y
+CONFIG_ULP_COPROC_TYPE_LP_CORE=y
+CONFIG_ULP_COPROC_RESERVE_MEM=4096
+
+# Report peripheral failures instead of aborting: a board with a missing or
+# detached touch panel must still reach the state machine.
+CONFIG_BSP_ERROR_CHECK=n
+
+# No PSRAM. This example drives the panel through bsp_display_new() and never
+# starts LVGL, so it needs no large draw buffers, and leaving PSRAM out keeps
+# the light-sleep floor lower.

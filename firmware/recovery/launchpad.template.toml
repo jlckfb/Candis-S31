@@ -1,0 +1,15 @@
+# Template consumed by tools/release/pack_factory_release.sh. Publish only the
+# generated launchpad.toml from a matching release package.
+# SHA-256: @BIN_SHA256@
+esp_toml_version = 1.0
+supported_apps = ["Candis-S31-Factory"]
+multipart = true
+chip = "esp32s31"
+
+[Candis-S31-Factory]
+image.esp32s31.parts = [
+  # Generated tag must match the GitHub Release that carries the image.
+  "https://github.com/jlckfb/Candis-S31/releases/download/@RELEASE_NAME@/candis_s31_factory_merged.bin",
+]
+image.esp32s31.addresses = ["0x0"]
+console_baudrate = 115200
