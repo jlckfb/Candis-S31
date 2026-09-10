@@ -1,26 +1,44 @@
-# Candis-S31
+<p align="center">
+  <img src="img/board-hero.png" alt="Candis-S31 development board" width="380">
+</p>
 
-[简体中文](README_ZH.md)
+<h1 align="center">Candis-S31</h1>
 
-Candis-S31 is an open reference design for the ESP32-S31, built around a 2.0-inch 460 x 460 square AMOLED.
-It integrates touch, audio, a DVP camera connector, a TF card slot, two USB Type-C ports and TG28 power
-management on a single board, providing a reusable hardware and firmware baseline for ESP32-S31 products.
+<p align="center">
+  <b>2.0&Prime; 460 × 460 AMOLED · ESP32-S31 dual-core RISC-V · 16 / 32 MB PSRAM · Wi-Fi 6 · Bluetooth 5.4</b><br>
+  Open hardware and firmware reference design for the ESP32-S31
+</p>
 
-<img src="img/board-hero.png" alt="Candis-S31 development board" width="360">
+<p align="center">
+  <img src="https://img.shields.io/badge/target-ESP32--S31-E7352C" alt="Target: ESP32-S31">
+  <img src="https://img.shields.io/badge/ESP--IDF-v6.1--rc1-3C3C3C" alt="ESP-IDF v6.1-rc1">
+  <img src="https://img.shields.io/badge/hardware-v0.5--Beta1%20%2F%20EVT1-2F6FEB" alt="Hardware revision v0.5-Beta1 / EVT1">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-2F6FEB" alt="Apache-2.0">
+</p>
 
-**2.0" AMOLED (460 x 460) · Dual-core RISC-V · 16 MB / 32 MB PSRAM**
+<p align="center">
+  <a href="README_ZH.md">简体中文</a> ·
+  <a href="QUICKSTART.md">Quick start</a> ·
+  <a href="#examples">Examples</a> ·
+  <a href="#specifications">Specifications</a>
+</p>
+
+---
+
+Candis-S31 integrates a square AMOLED display and touch, audio, a DVP camera connector, a TF card slot,
+two USB Type-C ports and TG28 power management on one board, providing a reusable hardware and firmware
+baseline for ESP32-S31 products.
 
 ## Hardware at a glance
 
-The board carries the complete interactive set: AMOLED display and touch, audio input and output, a DVP
-camera interface, two USB Type-C ports, a TF card slot, power management and an RTC.
+<p align="center">
+  <img src="img/board-overview.png" alt="Candis-S31 front and back with component callouts" width="760">
+</p>
 
-<img src="img/board-overview.png" alt="Candis-S31 front and back with component callouts" width="720">
-
-| | Block | Description |
+| # | Block | Description |
 |---|---|---|
 | 01 | **ESP32-S31** | Dual-core RISC-V, targeting graphics, multimedia and wireless interaction |
-| 02 | **CO5300 AMOLED** | 2.0-inch square panel, 460 x 460, QSPI interface |
+| 02 | **CO5300 AMOLED** | 2.0-inch square panel, 460 × 460, QSPI interface |
 | 03 | **CST820** | On-board capacitive touch controller, completing the display interaction path |
 | 04 | **TG28 PMIC** | Multiple power rails, battery charging and RTC supply |
 | 05 | **ES8389** | Audio codec, dual analog microphones and a speaker amplifier |
@@ -28,23 +46,21 @@ camera interface, two USB Type-C ports, a TF card slot, power management and an 
 
 ## ESP32-S31 platform
 
-The primary controller is the Espressif ESP32-S31, which combines multi-protocol connectivity with
-advanced HMI capabilities.
+<p align="center">
+  <img src="img/esp32-s31.png" alt="Espressif ESP32-S31" width="560">
+</p>
 
-<img src="img/esp32-s31.png" alt="Espressif ESP32-S31" width="560">
-
-| | |
+| Capability | Detail |
 |---|---|
-| **320 MHz** | Dual-core high-performance 32-bit RISC-V main processor |
-| **16 MB / 32 MB** | In-package Octal PSRAM, providing space for graphics resources |
-| **16 MB** | On-board W25Q128 QSPI flash |
-| **PPA** | JPEG codec and 2D DMA graphics hardware |
-| **Wi-Fi 6** | 2.4 GHz wireless LAN connectivity |
-| **Multi-protocol** | Bluetooth 5.4 and IEEE 802.15.4 |
+| **Processor** | Dual-core high-performance 32-bit RISC-V, up to 320 MHz |
+| **Memory** | 512 KB SRAM, 16 MB / 32 MB in-package Octal PSRAM |
+| **Flash** | 16 MB W25Q128 QSPI flash |
+| **Graphics** | JPEG codec and 2D DMA ("PPA") hardware |
+| **Wireless** | 2.4 GHz Wi-Fi 6, Bluetooth 5.4, IEEE 802.15.4 |
 
 ## Power and interfaces
 
-| | Interface | Description |
+| Port | Interface | Description |
 |---|---|---|
 | C1 | Debug Type-C | CH343P USB-to-serial bridge: download, serial console and power input |
 | C2 | USB OTG | Native ESP32-S31 USB with FUSB303B role control and ISL9113 5 V boost |
@@ -63,7 +79,7 @@ advanced HMI capabilities.
 | PSRAM | 16 MB / 32 MB in-package Octal PSRAM |
 | Flash | 16 MB W25Q128 QSPI flash, 3.3 V |
 | Wireless | 2.4 GHz Wi-Fi 6, Bluetooth 5.4, IEEE 802.15.4 |
-| Display | 2.0-inch 460 x 460 AMOLED, CO5300 QSPI controller |
+| Display | 2.0-inch 460 × 460 AMOLED, CO5300 QSPI controller |
 | Touch | CST820 capacitive touch controller |
 | Audio | ES8389 codec, dual analog microphones, NS4150B differential speaker amplifier |
 | Camera | 24-pin FPC, 8-bit DVP data interface |
@@ -77,20 +93,28 @@ advanced HMI capabilities.
 | Hardware revision | v0.5-Beta1 / EVT1 |
 
 > **Notes**
-> The board ships without a battery or an enclosure. USB Type-C 2 is limited to 5 V / 500 mA when used as
-> a power output; the switched 3.3 V supply on the EXT header is limited to 300 mA. A camera module must
-> match the 24-pin FPC pinout. The speaker output is differential — neither side may be grounded.
 >
-> The flash supply (VDD_SPI) is 3.3 V on this board because the external W25Q128 is a 3.3 V part; R6 holds
-> GPIO36 high at reset accordingly. Keep R6 fitted.
+> - The board ships without a battery or an enclosure.
+> - USB Type-C 2 is limited to 5 V / 500 mA when used as a power output; the switched 3.3 V supply on the
+>   EXT header is limited to 300 mA.
+> - A camera module must match the 24-pin FPC pinout.
+> - The speaker output is differential — neither side may be grounded.
+> - The flash supply (VDD_SPI) is 3.3 V because the external W25Q128 is a 3.3 V part; R6 holds GPIO36 high
+>   at reset accordingly. Keep R6 fitted.
 
 ## Gallery
 
-<img src="img/gallery-1.jpg" alt="Candis-S31 with battery" width="300"> <img src="img/gallery-2.jpg" alt="Candis-S31 AMOLED display" width="300"> <img src="img/gallery-3.jpg" alt="Candis-S31 board detail" width="300">
+<p align="center">
+  <img src="img/gallery-1.jpg" alt="Candis-S31 powered from a battery" width="290">
+  <img src="img/gallery-2.jpg" alt="Candis-S31 AMOLED in use" width="290">
+  <img src="img/gallery-3.jpg" alt="Candis-S31 connectors and buttons" width="290">
+</p>
+
+---
 
 ## Getting started
 
-The repository root is not a build project. Each example is a standalone ESP-IDF project:
+The repository root is not a build project; every example is a standalone ESP-IDF project.
 
 ```bash
 cd examples/esp-idf/getting-started
@@ -98,10 +122,6 @@ idf.py --preview set-target esp32s31
 idf.py --preview build
 idf.py --preview -p PORT flash monitor
 ```
-
-The validated baseline is ESP-IDF `v6.1-rc1`. Espressif Installation Manager (EIM), the official VS Code
-extension and the command line all drive the same project; read the
-[example guide](examples/esp-idf/getting-started/README.md) before building.
 
 `tools/build-all.sh` compiles the whole matrix serially, which is the recommended first check after a
 clone:
@@ -111,15 +131,19 @@ tools/build-all.sh --list      # targets and their source directories
 tools/build-all.sh             # build every target
 ```
 
+The validated baseline is ESP-IDF `v6.1-rc1` (preview target `esp32s31`). Espressif Installation Manager,
+the official VS Code extension and the command line all drive the same project. Environment setup,
+flashing and the board caveats are covered in **[QUICKSTART.md](QUICKSTART.md)**.
+
 ## Examples
 
 | Example | Purpose |
 |---|---|
 | [`getting-started`](examples/esp-idf/getting-started) | Toolchain and target smoke test |
-| [`display-hello`](examples/esp-idf/display-hello) | AMOLED bring-up through the declarative Board Manager path |
+| [`display-hello`](examples/esp-idf/display-hello) | Minimal AMOLED startup through the Board Manager definition |
 | [`display-touch`](examples/esp-idf/display-touch) | AMOLED cross marker with live touch coordinates |
-| [`display-benchmark`](examples/esp-idf/display-benchmark) | Full-screen and partial refresh frame rates |
-| [`camera-test`](examples/esp-idf/camera-test) | OV5640 DVP capture with a live 460 x 460 AMOLED preview |
+| [`display-benchmark`](examples/esp-idf/display-benchmark) | Full-screen and partial refresh throughput |
+| [`camera-test`](examples/esp-idf/camera-test) | OV5640 DVP capture with a live 460 × 460 AMOLED preview |
 | [`player`](examples/esp-idf/player) | TF-card audio and video player on the ESP-GMF pipeline |
 | [`audio-recorder`](examples/esp-idf/audio-recorder) | Microphone capture to a WAV file on the TF card |
 | [`audio-player`](examples/esp-idf/audio-player) | Sine tone generation and WAV playback |
@@ -134,7 +158,9 @@ tools/build-all.sh             # build every target
 | [`low-power`](examples/esp-idf/low-power) | Light sleep, deep sleep and screen-off state machine |
 | [`wifi`](examples/esp-idf/wifi) | Wi-Fi station scan and connection |
 | [`ble`](examples/esp-idf/ble) | NimBLE advertising and scanning |
-| [`factory`](firmware/factory) | Board bring-up console used for production checks |
+| [`factory`](firmware/factory) | Production console for board checks |
+
+The full index with per-project notes is in [`examples/README.md`](examples/README.md).
 
 ## Repository layout
 
@@ -148,6 +174,7 @@ tools/build-all.sh             # build every target
 ├── firmware/
 │   ├── factory/               # Factory console and release contract
 │   └── recovery/              # Recovery procedure
+├── img/                       # Images used by the documentation
 ├── tools/                     # Build matrix and release scripts
 ├── vendor/
 │   ├── esp-board-manager/     # Board Manager and friends-board snapshot
@@ -160,18 +187,15 @@ top-level application `CMakeLists.txt`.
 
 ## Documentation
 
-- Schematic, PCB and pinout files: published with the open-source hardware project on
-  [OSHWHub](https://oshwhub.com/li-chuang-kai-fa-ban/project_spaoolal)
-- [Board runtime component](components/candis_s31/README.md) and its [API reference](components/candis_s31/API.md)
-- [Factory firmware](firmware/factory/README.md)
-- [Recovery procedure](firmware/recovery/README.md)
-- [Upstream ownership and contribution map](UPSTREAM.md)
-
-## Toolchain
-
-The repository targets the ESP-IDF `v6.1-rc1` preview target `esp32s31`. The board runtime component, the
-declarative Board Manager definition and every example build from a plain clone with no extra environment
-variables. See [QUICKSTART.md](QUICKSTART.md) for the environment and flashing steps.
+| Document | Content |
+|---|---|
+| [QUICKSTART.md](QUICKSTART.md) | Toolchain setup, flashing, serial ports, hardware notes |
+| [examples/README.md](examples/README.md) | Example index |
+| [components/candis_s31](components/candis_s31/README.md) | Board runtime component and [API reference](components/candis_s31/API.md) |
+| [firmware/factory](firmware/factory/README.md) | Factory console and its release contract |
+| [firmware/recovery](firmware/recovery/README.md) | Recovery procedure |
+| [UPSTREAM.md](UPSTREAM.md) | Driver ownership and the upstream contribution map |
+| [OSHWHub project page](https://oshwhub.com/li-chuang-kai-fa-ban/project_spaoolal) | Schematic, PCB and pinout files |
 
 ## Board support
 
