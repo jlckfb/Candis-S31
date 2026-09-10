@@ -1,7 +1,6 @@
 <h1 align="center">立创 · Candis-S31</h1>
 
 <p align="center">
-  <b>2.0&Prime; 460 × 460 AMOLED · ESP32-S31 双核 RISC-V · 16 / 32 MB PSRAM · Wi-Fi 6 · Bluetooth 5.4</b><br>
   面向 ESP32-S31 的开源硬件与固件参考设计
 </p>
 

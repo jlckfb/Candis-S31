@@ -1,7 +1,6 @@
 <h1 align="center">Candis-S31</h1>
 
 <p align="center">
-  <b>2.0&Prime; 460 × 460 AMOLED · ESP32-S31 dual-core RISC-V · 16 / 32 MB PSRAM · Wi-Fi 6 · Bluetooth 5.4</b><br>
   Open hardware and firmware reference design for the ESP32-S31
 </p>
 
