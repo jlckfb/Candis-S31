@@ -1,0 +1,35 @@
+menu "Candis-S31 Camera Preview"
+
+    config CAMERA_TEST_FORCE_50HZ
+        bool "Force 50 Hz power-line compensation instead of auto detection"
+        default n
+        help
+            OV5640 DVP application note 2.13 section 4.7.8 requires the
+            auto-detection settings to match the input clock; this board runs
+            XCLK at 20 MHz instead of the 24 MHz the sensor's defaults assume.
+            Enable where the local mains frequency is 50 Hz and banding under
+            mains-powered lighting is visible. 60 Hz installations should
+            leave the sensor's automatic detection in charge.
+
+    config CAMERA_TEST_SENSOR_STATS
+        bool "Log the sensor exposure, gain, limits and AWB gains once a second"
+        default n
+        help
+            Print one CAMERA_SENSOR_STATS line per second with the OV5640's
+            exposure, AGC gain, AEC/AWB limits, current AWB R/G/B gains and
+            ISP control registers. Use it when tuning the board sensor profile
+            for a different module or illuminant; a steady preview is silent
+            without it.
+
+    config CAMERA_TEST_SERIAL_FRAME_DUMP
+        bool "Export one source frame and displayed crop over the console"
+        default n
+        help
+            After three seconds of steady preview, write one source frame
+            followed by its displayed RGB565 crop as length-delimited,
+            CRC32-checked binary console data, then resume normal preview.
+            tools/capture_camera_frame.py receives it; the console temporarily
+            switches to 460800 baud. Use it to verify the DVP path and the
+            displayed colours without looking at the panel.
+
+endmenu

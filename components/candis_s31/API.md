@@ -500,7 +500,7 @@ esp_codec_dev_handle_t spk_codec_dev = bsp_audio_codec_speaker_init();
 esp_codec_dev_handle_t mic_codec_dev = bsp_audio_codec_microphone_init();
 ```
 
-After initialization, the [esp_codec_dev](https://components.espressif.com/components/espressif/esp_codec_dev) API can be used to control playback and recording.
+Open BSP-owned handles with `bsp_audio_codec_open()`; it returns `ESP_CODEC_DEV_*` codes and supports reopening after close. Use the remaining [esp_codec_dev](https://components.espressif.com/components/espressif/esp_codec_dev) APIs for volume, gain, PCM I/O and stream close.
 
 > [!NOTE]
 > Some BSPs may only support playback (speaker) or only input (microphone). Use the capability macros (`BSP_CAPS_AUDIO`, `BSP_CAPS_AUDIO_SPEAKER`, `BSP_CAPS_AUDIO_MIC`) to check supported features.
@@ -522,7 +522,7 @@ esp_codec_dev_sample_info_t fs = {
     .bits_per_sample = wav_header.bits_per_sample,
 };
 /* Open speaker stream */
-esp_codec_dev_open(spk_codec_dev, &fs);
+bsp_audio_codec_open(spk_codec_dev, &fs);
 
 ...
 /* Play audio data */
@@ -551,7 +551,7 @@ esp_codec_dev_sample_info_t fs = {
     .bits_per_sample = 16,
 };
 /* Open microphone stream */
-esp_codec_dev_open(mic_codec_dev, &fs);
+bsp_audio_codec_open(mic_codec_dev, &fs);
 
 /* Read recorded data */
 esp_codec_dev_read(mic_codec_dev, recording_buffer, BUFFER_SIZE)
@@ -571,6 +571,7 @@ esp_codec_dev_close(mic_codec_dev);
 | ---: | :--- |
 |  esp\_err\_t | [**bsp\_audio\_codec\_deinit**](#function-bsp_audio_codec_deinit) (esp\_codec\_dev\_handle\_t device) <br> |
 |  esp\_codec\_dev\_handle\_t | [**bsp\_audio\_codec\_microphone\_init**](#function-bsp_audio_codec_microphone_init) (void) <br> |
+| int | [**bsp_audio_codec_open**](#function-bsp_audio_codec_open) (esp_codec_dev_handle_t device, esp_codec_dev_sample_info_t *format) |
 |  esp\_codec\_dev\_handle\_t | [**bsp\_audio\_codec\_speaker\_init**](#function-bsp_audio_codec_speaker_init) (void) <br> |
 |  esp\_err\_t | [**bsp\_audio\_deinit**](#function-bsp_audio_deinit) (void) <br> |
 |  const audio\_codec\_data\_if\_t \* | [**bsp\_audio\_get\_codec\_itf**](#function-bsp_audio_get_codec_itf) (void) <br> |
@@ -600,6 +601,20 @@ esp_codec_dev_close(mic_codec_dev);
 
 ## Functions Documentation
 
+### function `bsp_audio_codec_open`
+
+```c
+int bsp_audio_codec_open(esp_codec_dev_handle_t device,
+                         esp_codec_dev_sample_info_t *format);
+```
+
+Open a BSP-owned speaker or microphone handle. Returns `ESP_CODEC_DEV_*`,
+not `esp_err_t`. Restores the official codec format-change precondition
+after close, including the microphone's shared TX clock, and closes a
+partially opened device on failure. Serialise open, PCM I/O, close and
+deinitialization for each device.
+
+
 ### function `bsp_audio_codec_deinit`
 
 ```c
@@ -607,6 +622,11 @@ esp_err_t bsp_audio_codec_deinit (
     esp_codec_dev_handle_t device
 ) 
 ```
+
+Closes and destroys the requested BSP-owned codec instance. Do not use its
+handle afterward. Speaker destruction leaves the PA inactive and releases
+the pin reservation for the next codec instance. `bsp_audio_deinit()` also
+releases the shared I2S resources and audio supply.
 
 ### function `bsp_audio_codec_microphone_init`
 
@@ -2061,12 +2081,13 @@ Install or clear (callback == NULL) the application shutdown callback. Configure
 
 ## :camera: Camera
 
-The BSP initializes the DVP pipeline, applies the EVT1 sensor timing / image
-profile, and exposes the OV5640 embedded single-shot autofocus flow.
+The BSP initializes the DVP pipeline and applies the EVT1 sensor timing and
+image profile. The sensor's embedded autofocus is not exposed: this board has
+no populated voice-coil motor supply path.
 
 ### Example Usage
 
-For a complete board diagnostic, refer to [`firmware/camera_test`](../../firmware/camera_test). Generic sensor and DVP examples are provided by [`esp_video`](https://github.com/espressif/esp-video-components).
+For a complete board diagnostic, refer to [`examples/esp-idf/camera-test`](../../examples/esp-idf/camera-test). Generic sensor and DVP examples are provided by [`esp_video`](https://github.com/espressif/esp-video-components).
 
 > [!NOTE]
 > Please, do not forget select right camera sensor in `menuconfig`
@@ -2084,7 +2105,6 @@ For a complete board diagnostic, refer to [`firmware/camera_test`](../../firmwar
 | Type | Name |
 | ---: | :--- |
 |  esp\_err\_t | [**bsp\_camera\_apply\_workaround**](#function-bsp_camera_apply_workaround) (uint32\_t v4l2\_pixel\_format) <br> |
-|  esp\_err\_t | [**bsp\_camera\_autofocus\_once**](#function-bsp_camera_autofocus_once) (uint32\_t timeout\_ms) <br> |
 |  esp\_err\_t | [**bsp\_camera\_start**](#function-bsp_camera_start) (const [**bsp\_camera\_cfg\_t**](#struct-bsp_camera_cfg_t) \*cfg) <br> |
 |  esp\_err\_t | [**bsp\_camera\_stop**](#function-bsp_camera_stop) (void) <br> |
 
@@ -2132,18 +2152,6 @@ esp_err_t bsp_camera_apply_workaround (
 ```
 
 Reapply the board sensor override after esp\_video\_open() reloads its table.
-
-### function `bsp_camera_autofocus_once`
-
-```c
-esp_err_t bsp_camera_autofocus_once (
-    uint32_t timeout_ms
-)
-```
-
-Run the OV5640 embedded single-shot autofocus sequence after DVP streaming
-starts. The firmware is downloaded once per camera power cycle; a successful
-call requires focused firmware status and at least one focused zone.
 
 ### function `bsp_camera_start`
 
@@ -2199,6 +2207,7 @@ esp_err_t bsp_camera_stop (
 |  esp\_err\_t | [**bsp\_rtc\_init**](#function-bsp_rtc_init) (void) <br> |
 |  esp\_err\_t | [**bsp\_rtc\_set\_alarm**](#function-bsp_rtc_set_alarm) (const [**bsp\_rtc\_alarm\_t**](#typedef-bsp_rtc_alarm_t) \*alarm) <br> |
 |  esp\_err\_t | [**bsp\_rtc\_set\_time**](#function-bsp_rtc_set_time) (const [**bsp\_rtc\_time\_t**](#struct-bsp_rtc_time_t) \*time) <br> |
+| esp_err_t | [**bsp_shared_irq_init**](#function-bsp_shared_irq_init) (void) |
 |  esp\_err\_t | [**bsp\_shared\_irq\_register\_callback**](#function-bsp_shared_irq_register_callback) ([**bsp\_shared\_irq\_callback\_t**](#typedef-bsp_shared_irq_callback_t) cb, void \*arg) <br> |
 |  esp\_err\_t | [**bsp\_shared\_irq\_service**](#function-bsp_shared_irq_service) ([**bsp\_shared\_irq\_status\_t**](#struct-bsp_shared_irq_status_t) \*status) <br> |
 
@@ -2388,6 +2397,16 @@ esp_err_t bsp_rtc_set_time (
     const bsp_rtc_time_t *time
 ) 
 ```
+
+### function `bsp_shared_irq_init`
+
+```c
+esp_err_t bsp_shared_irq_init(void);
+```
+
+Initialize the GPIO ISR service once. BSP display setup and shared-line
+callback registration call this automatically before registering their
+handlers. The service remains available across display stop/start cycles.
 
 ### function `bsp_shared_irq_register_callback`
 

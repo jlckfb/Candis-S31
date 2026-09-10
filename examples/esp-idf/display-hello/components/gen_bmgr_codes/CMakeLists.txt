@@ -14,7 +14,7 @@ configure_file("${CANDIS_BOARD_DIR}/setup_device.c"
 idf_component_register(
     SRC_DIRS "." "${CMAKE_CURRENT_BINARY_DIR}"
     INCLUDE_DIRS "."
-    REQUIRES esp_board_manager esp_friends_boards
+    REQUIRES esp_board_manager esp_friends_boards esp_timer
 )
 
 # This is equivalent to adding WHOLE_ARCHIVE option to the idf_component_register call above:

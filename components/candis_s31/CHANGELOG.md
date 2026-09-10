@@ -4,9 +4,18 @@
 
 ### Fixed
 
+* Audio: add `bsp_audio_codec_open()` for the upstream I2S running-state precondition on reopen; close partial opens on failure, stop only enabled channels, and preserve failed-to-release handles for retry
+* Power: leave PA GPIO reservation to the codec and release stopped peripheral pin reservations before parking them, avoiding false GPIO ownership conflicts without muting driver diagnostics
+* Interrupts: share one GPIO ISR service between LVGL TE/touch and PMIC/RTC callbacks; later input registration no longer reinstalls the service
+* Camera: roll the overcorrecting 136 % red / 108 % blue colour-matrix defaults back to 112 % / 109 %, measured on a full-frame grey card over the displayed window (R/G 0.990, B/G 1.025); automatic white balance remains enabled
+* Audio: disable the pull-up restored by GPIO reset before re-enabling the inactive PA output during codec destruction
 * USB Host: quiesce the root port with `usb_host_lib_set_root_port_power(false)` and a 50 ms drain before stopping the event task and uninstalling the host library. The upstream USB 1.5.0 teardown can leave a deferred HCD port callback; powering the root port down while the library object is still alive lets the event task drain it before `usb_host_uninstall()` clears the global object
 * Camera: drive the OV5640 XCLK from LEDC instead of the CAM controller. The esp_video DVP clock path (`esp_cam_ctlr_dvp_output_clock()`) only supports integer dividers and no ESP32-S31 CAM controller clock source is an integer multiple of the required 24 MHz (PLL_F160M 160 % 24 = 16, XTAL 40 % 24 = 16), so `esp_video_init_with_flags()` hard-failed with "calculated frequency divider is not integer" before any sensor detection; `CONFIG_BSP_CAMERA_XCLK_USE_LEDC` is now enabled by default and the BSP passes `xclk_io=GPIO_NUM_NC` / `xclk_freq=0` to esp_video so the controller clock path is skipped entirely. This supersedes the v1.2.0 "XCLK is no longer driven twice" entry, which was written against a fractional-divider assumption that does not hold on the S31 silicon/driver
 * Display: apply the EVT1 upside-down 180-degree MX|MY orientation in the shared panel initialization path, keep runtime LVGL rotations intact across deep-standby reset, and require `esp_lcd_co5300` `^2.1.0` for the mirror callback
+
+### Removed
+
+* Camera: drop the OV5640 embedded autofocus support (`bsp_camera_autofocus_once()`, the AF firmware blob and the AF command path). The EVT1 lens has no populated VCM supply path, so `CAM_AF_VCC` is unpowered and the module keeps a fixed focus; the demo no longer exposes or starts focus control.
 
 ## v1.2.0 - 2026-08-22
 

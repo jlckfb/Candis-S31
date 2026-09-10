@@ -6,6 +6,7 @@ idf_component_register(
         candis_s31
         esp_driver_gpio
         esp_lcd_touch_cst820
+        esp_timer
         rx8130ce
         ulp
 )

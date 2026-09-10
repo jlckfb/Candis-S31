@@ -11,8 +11,10 @@ carry the Candis-S31 board definition, staged for submission to
 
 Source of truth during upstream preparation:
 `LeenixP/esp-board-manager`, branch `feat/candis-s31`.
-The submission pull request is intentionally not opened yet; refresh this
-snapshot after board-definition changes land there:
+There is no open submission pull request; the earlier
+[`esp-board-manager#7`](https://github.com/espressif/esp-board-manager/pull/7)
+was closed without maintainer acceptance. Refresh this snapshot after
+board-definition changes land there:
 
 ```bash
 tools/sync_upstream.sh            # or: EBM_ROOT=/path/to/esp-board-manager tools/sync_upstream.sh

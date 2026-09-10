@@ -11,8 +11,10 @@ device drivers staged for submission to
 
 Source of truth during upstream preparation:
 `LeenixP/idf-extra-components`, branch `feat/candis-s31-drivers`.
-The submission pull requests are intentionally not opened yet; refresh this
-snapshot after driver changes land there:
+There is no open submission pull request; the earlier
+[`idf-extra-components#824`](https://github.com/espressif/idf-extra-components/pull/824)
+was closed without maintainer acceptance. Refresh this snapshot after
+driver changes land there:
 
 ```bash
 tools/sync_upstream.sh            # or: IEC_ROOT=/path/to/idf-extra-components tools/sync_upstream.sh

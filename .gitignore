@@ -15,6 +15,9 @@ sdkconfig.old
 *.bin
 *.elf
 *.map
+# Working evidence for hardware bring-up (logs, frame dumps, calibration data)
+debug-artifacts/
+
 # Local factory release staging area (pack_factory_release.sh default output)
 firmware/factory/release/
 firmware/factory/release.zip

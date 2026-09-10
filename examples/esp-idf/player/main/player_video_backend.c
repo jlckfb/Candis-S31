@@ -48,8 +48,6 @@ typedef struct {
     esp_video_render_pos_t last_position;
     int64_t next_present_us;
     uint32_t next_sequence;
-    uint32_t presented;
-    uint32_t dropped;
     int8_t current_index;
     bool direct_enabled;
     uint16_t content_width;
@@ -280,7 +278,6 @@ static bool should_queue_frame(player_backend_t *backend, int64_t now_us)
         backend->next_present_us = now_us + PRESENT_PERIOD_US;
         return true;
     }
-    ++backend->dropped;
     return false;
 }
 
@@ -340,7 +337,6 @@ static esp_video_render_err_t backend_write_fb(
     }
     taskEXIT_CRITICAL(&backend->buffer_mux);
     if (write_index < 0) {
-        ++backend->dropped;
         return ESP_VIDEO_RENDER_ERR_OK;
     }
 
@@ -384,12 +380,6 @@ static esp_video_render_err_t backend_write_fb(
     }
     backend->buffer_states[write_index] = BUFFER_READY;
     taskEXIT_CRITICAL(&backend->buffer_mux);
-    ++backend->presented;
-
-    if ((backend->presented % 300U) == 0U) {
-        ESP_LOGI(TAG, "presented=%" PRIu32 " dropped=%" PRIu32,
-                 backend->presented, backend->dropped);
-    }
     return ESP_VIDEO_RENDER_ERR_OK;
 }
 
@@ -462,20 +452,6 @@ void player_video_backend_set_source_size(uint16_t width, uint16_t height)
              (unsigned)((panel_height - fit_height) / 2U));
 }
 
-const esp_video_render_backend_ops_t *player_video_backend_get_ops(void)
-{
-    static const esp_video_render_backend_ops_t operations = {
-        .init = backend_init,
-        .with_gram = backend_with_gram,
-        .get_display_info = backend_get_display_info,
-        .get_fb = backend_get_fb,
-        .lock_fb = backend_lock_fb,
-        .write_fb = backend_write_fb,
-        .deinit = backend_deinit,
-    };
-    return &operations;
-}
-
 esp_err_t player_video_backend_init(void)
 {
     if (s_backend != NULL) {
@@ -489,27 +465,6 @@ esp_err_t player_video_backend_init(void)
     };
     esp_video_render_backend_handle_t handle = NULL;
     const esp_video_render_err_t error = backend_init(&config, sizeof(config), &handle);
-    return error == ESP_VIDEO_RENDER_ERR_OK ? ESP_OK : ESP_FAIL;
-}
-
-esp_err_t player_video_backend_submit_rgb565(const uint8_t *data,
-                                              uint16_t stride_width,
-                                              uint16_t frame_height)
-{
-    if (s_backend == NULL || data == NULL || stride_width == 0 || frame_height == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    esp_video_render_fb_t frame = {
-        .info = {
-            .format = ESP_VIDEO_RENDER_FORMAT_RGB565_BE,
-            .width = stride_width,
-            .height = frame_height,
-        },
-        .data = (uint8_t *)data,
-        .size = (uint32_t)stride_width * frame_height * 2U,
-    };
-    const esp_video_render_err_t error =
-        backend_write_fb(s_backend, &frame, NULL, NULL);
     return error == ESP_VIDEO_RENDER_ERR_OK ? ESP_OK : ESP_FAIL;
 }
 
@@ -588,7 +543,6 @@ esp_err_t player_video_backend_submit_rgb888(const uint8_t *data,
     backend->buffer_sequences[write_index] = ++backend->next_sequence;
     backend->buffer_states[write_index] = BUFFER_READY;
     taskEXIT_CRITICAL(&backend->buffer_mux);
-    ++backend->presented;
     return ESP_OK;
 }
 
@@ -681,6 +635,5 @@ esp_err_t player_video_backend_submit_yuv420(const uint8_t *data,
     backend->buffer_sequences[write_index] = ++backend->next_sequence;
     backend->buffer_states[write_index] = BUFFER_READY;
     taskEXIT_CRITICAL(&backend->buffer_mux);
-    ++backend->presented;
     return ESP_OK;
 }

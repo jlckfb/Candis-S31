@@ -1,0 +1,11 @@
+menu "WiFi example"
+
+    config EXAMPLE_WIFI_SSID
+        string "WiFi SSID to connect to (empty = scan only)"
+        default ""
+
+    config EXAMPLE_WIFI_PASSWORD
+        string "WiFi password"
+        default ""
+
+endmenu

@@ -9,7 +9,7 @@ This project checks the ESP32-S31 build, flash, and serial path without enabling
 | Flash configuration | 16 MB |
 | Managed components | None |
 | Compile status | Verified |
-| Hardware status | **NOT RUN** |
+| Hardware status | **Verified** — EVT1 (2026-09-10): boots and prints the target, flash size and free heap |
 
 ## What it prints
 
@@ -76,7 +76,11 @@ flash=16 MiB
 board peripherals are not initialized by this example
 ```
 
-The ROM and bootloader print additional lines before the application starts. Flashing and monitoring have not been tested on EVT1 hardware.
+The ROM and bootloader print additional lines before the application starts.
+Capture **5 s** from reset and require the target, flash size, free heap and
+final `board peripherals are not initialized by this example` line.
+This startup path was observed on EVT1 on 2026-09-10; no peripheral acceptance
+is implied.
 
 ## Clean rebuild
 

@@ -13,7 +13,6 @@ extern "C" {
 #endif
 
 esp_err_t audio_start(void);
-void *audio_render_stream(void);
 esp_err_t audio_prepare_playback(int volume);
 esp_err_t audio_configure_playback(uint32_t sample_rate);
 esp_err_t audio_write_pcm(uint8_t *pcm, uint32_t length);

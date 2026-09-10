@@ -25,7 +25,6 @@ void ui_player_refresh_files(void);
 void ui_player_show_overlay(bool show);
 
 /** Update progress text/position. */
-void ui_player_set_progress(int percent);
 
 #ifdef __cplusplus
 }

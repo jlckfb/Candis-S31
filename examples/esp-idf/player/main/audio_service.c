@@ -177,11 +177,6 @@ esp_err_t audio_start(void)
     return ESP_OK;
 }
 
-void *audio_render_stream(void)
-{
-    return s_stream;
-}
-
 esp_err_t audio_prepare_playback(int volume)
 {
     if (!s_started || s_speaker == NULL) {
@@ -233,7 +228,7 @@ esp_err_t audio_configure_playback(uint32_t sample_rate)
             .bits_per_sample = OUTPUT_BITS,
             .mclk_multiple = 256,
         };
-        error = esp_codec_dev_open(s_speaker, &codec_format);
+        error = bsp_audio_codec_open(s_speaker, &codec_format);
     }
     if (error == ESP_CODEC_DEV_OK) {
         s_codec_open = true;

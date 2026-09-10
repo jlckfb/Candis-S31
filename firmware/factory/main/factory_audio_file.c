@@ -389,7 +389,7 @@ static esp_err_t capture_stereo(esp_codec_dev_handle_t microphone,
                                 stereo_capture_stats_t *stats)
 {
     esp_codec_dev_sample_info_t format = sample_format(AUDIO_DEMO_SAMPLE_RATE);
-    int result = esp_codec_dev_open(microphone, &format);
+    int result = bsp_audio_codec_open(microphone, &format);
     if (result == ESP_CODEC_DEV_OK) {
         result = esp_codec_dev_set_in_gain(microphone, (float)gain_db);
     }
@@ -450,7 +450,7 @@ static esp_err_t capture_stereo_manual(esp_codec_dev_handle_t microphone,
 {
     *captured_size = 0;
     esp_codec_dev_sample_info_t format = sample_format(AUDIO_DEMO_SAMPLE_RATE);
-    int result = esp_codec_dev_open(microphone, &format);
+    int result = bsp_audio_codec_open(microphone, &format);
     if (result == ESP_CODEC_DEV_OK) {
         result = esp_codec_dev_set_in_gain(microphone, (float)gain_db);
     }
@@ -548,7 +548,7 @@ static esp_err_t wav_play_file(esp_codec_dev_handle_t speaker,
            frames, duration_ms, play_mode_name(mode));
 
     esp_codec_dev_sample_info_t format = sample_format(info.sample_rate);
-    int codec_result = esp_codec_dev_open(speaker, &format);
+    int codec_result = bsp_audio_codec_open(speaker, &format);
     const bool open_attempted = true;
     if (codec_result == ESP_CODEC_DEV_OK) {
         codec_result = esp_codec_dev_set_out_vol(speaker, volume);

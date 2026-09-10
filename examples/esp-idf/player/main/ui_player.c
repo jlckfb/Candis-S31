@@ -69,7 +69,6 @@ static lv_obj_t *s_progress;
 static lv_obj_t *s_progress_text;
 static lv_obj_t *s_play_label;
 static lv_obj_t *s_loop_button;
-static lv_obj_t *s_speed_label;
 static lv_obj_t *s_volume;
 static lv_obj_t *s_brightness;
 static lv_timer_t *s_hide_timer;
@@ -80,7 +79,6 @@ static int s_file_count;
 static bool s_loop;
 static bool s_seeking;
 static bool s_ready;
-static float s_speed = 1.0f;
 static char s_current_path[FILE_PATH_LEN];
 static lv_font_t *s_media_font;
 
@@ -183,7 +181,6 @@ static void start_playback_locked(const char *path)
         .video_path = s_current_path,
         .volume = player_settings()->volume,
         .loop = s_loop,
-        .speed = s_speed,
         .cb = on_player_event,
     };
     const esp_err_t error = video_player_play(&request);
@@ -231,23 +228,6 @@ static void event_loop_clicked(lv_event_t *event)
     video_player_set_loop(s_loop);
     lv_obj_set_style_bg_color(s_loop_button,
                               s_loop ? lv_color_hex(0x238636) : lv_color_hex(0x30363D), 0);
-    overlay_show_locked();
-}
-
-static void event_speed_clicked(lv_event_t *event)
-{
-    (void)event;
-    static const float speeds[] = {0.5f, 1.0f, 1.5f, 2.0f};
-    size_t next = 0;
-    for (size_t i = 0; i < sizeof(speeds) / sizeof(speeds[0]); ++i) {
-        if (fabsf(s_speed - speeds[i]) < 0.01f) {
-            next = (i + 1) % (sizeof(speeds) / sizeof(speeds[0]));
-            break;
-        }
-    }
-    s_speed = speeds[next];
-    video_player_set_speed(s_speed);
-    lv_label_set_text_fmt(s_speed_label, "%.1fx", s_speed);
     overlay_show_locked();
 }
 
@@ -407,7 +387,6 @@ static void build_overlay_locked(void)
     make_button(s_overlay, 112, 100, LV_SYMBOL_STOP, event_stop_clicked, NULL);
     s_loop_button = make_button(s_overlay, 220, 100, LV_SYMBOL_LOOP,
                                 event_loop_clicked, NULL);
-    make_button(s_overlay, 328, 100, "1.0x", event_speed_clicked, &s_speed_label);
 
     lv_obj_t *volume_icon = lv_label_create(s_overlay);
     lv_label_set_text(volume_icon, LV_SYMBOL_VOLUME_MAX);
@@ -623,7 +602,3 @@ void ui_player_show_overlay(bool show)
     ui_post(show ? UI_EV_SHOW_OVERLAY : UI_EV_HIDE_OVERLAY, 0);
 }
 
-void ui_player_set_progress(int percent)
-{
-    ui_post(UI_EV_PROGRESS, player_clamp_percent(percent) * 10);
-}

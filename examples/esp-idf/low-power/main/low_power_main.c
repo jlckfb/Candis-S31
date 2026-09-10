@@ -45,6 +45,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -75,7 +76,7 @@ extern const uint8_t lp_core_main_bin_end[] asm("_binary_lp_core_main_bin_end");
 #define S0_SLEEP_SLICE_US       (2 * 1000 * 1000ULL)
 /** Light-sleep slice used inside S1 (RTC-timer wake source). */
 #define S1_SLEEP_SLICE_US       (10 * 1000 * 1000ULL)
-/** Number of S1 light-sleep slices before escalating to S2. */
+/** Idle duration in S1, measured in 10-second slices before deep sleep. */
 #define S1_SLICES_BEFORE_S2     3
 /** Minutes from now to the RX8130CE alarm armed in S2. */
 #define S2_ALARM_MINUTES        5
@@ -694,11 +695,17 @@ static esp_err_t enter_run(void)
  */
 static void run_state_run(void)
 {
-    const int slices = (S0_DWELL_SECONDS * 1000000) / (int)S0_SLEEP_SLICE_US;
-    for (int slice = 0; slice < slices; ++slice) {
-        if (esp_sleep_enable_timer_wakeup(S0_SLEEP_SLICE_US) != ESP_OK) {
+    const int64_t deadline = esp_timer_get_time() + S0_DWELL_SECONDS * INT64_C(1000000);
+    for (;;) {
+        const int64_t remaining_us = deadline - esp_timer_get_time();
+        if (remaining_us <= 0) {
+            break;
+        }
+        const uint64_t sleep_us = (uint64_t)remaining_us < S0_SLEEP_SLICE_US ?
+                                  (uint64_t)remaining_us : S0_SLEEP_SLICE_US;
+        if (esp_sleep_enable_timer_wakeup(sleep_us) != ESP_OK) {
             ESP_LOGE(TAG, "timer wake-up arm failed, staying awake");
-            vTaskDelay(pdMS_TO_TICKS(S0_SLEEP_SLICE_US / 1000));
+            vTaskDelay(pdMS_TO_TICKS(sleep_us / 1000));
         } else if (esp_light_sleep_start() != ESP_OK) {
             ESP_LOGW(TAG, "light sleep rejected in S0");
             vTaskDelay(pdMS_TO_TICKS(100));
@@ -743,8 +750,16 @@ static esp_err_t enter_screen_off(void)
 static bool run_state_screen_off(void)
 {
     bool user_requested_wake = false;
-    for (int slice = 0; slice < S1_SLICES_BEFORE_S2; ++slice) {
-        if (esp_sleep_enable_timer_wakeup(S1_SLEEP_SLICE_US) != ESP_OK) {
+    const int64_t deadline =
+        esp_timer_get_time() + S1_SLICES_BEFORE_S2 * S1_SLEEP_SLICE_US;
+    for (;;) {
+        const int64_t remaining_us = deadline - esp_timer_get_time();
+        if (remaining_us <= 0) {
+            break;
+        }
+        const uint64_t sleep_us = (uint64_t)remaining_us < S1_SLEEP_SLICE_US ?
+                                  (uint64_t)remaining_us : S1_SLEEP_SLICE_US;
+        if (esp_sleep_enable_timer_wakeup(sleep_us) != ESP_OK) {
             ESP_LOGE(TAG, "timer wake-up arm failed in S1");
             break;
         }
@@ -986,13 +1001,15 @@ static esp_err_t enter_shutdown(void)
      * against the Linux reference implementation). Without this guard the
      * machine would loop: S2 → reboot → cold boot (counter reset) → S0 → S1 →
      * deep sleep → S2 → reboot … never actually turning off. Refuse the
-     * power-off so the caller can idle with the rails safely down. The alarm
-     * is still armed so the board wakes on schedule once USB is removed. */
+     * power-off so the caller can idle with the rails safely down. No alarm is
+     * armed in this path; restart on battery power to exercise full shutdown. */
     bsp_pmic_status_t pmic_status = {0};
-    if (bsp_pmic_get_status(&pmic_status) == ESP_OK && pmic_status.vbus_present) {
+    ESP_RETURN_ON_ERROR(bsp_pmic_get_status(&pmic_status), TAG,
+                        "cannot check VBUS before shutdown");
+    if (pmic_status.vbus_present) {
         ESP_LOGW(TAG, "VBUS present: deferring PMIC power-off to avoid reboot "
                  "loop; the board stays powered with all peripheral rails off. "
-                 "Remove USB to complete shutdown or reset to restart.");
+                 "Restart on battery power to exercise shutdown.");
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -1089,13 +1106,6 @@ void app_main(void)
         return;
     }
 
-    /* Route the boot. Waking from deep sleep reboots the chip with a real
-     * wake cause (timer, EXT1, ...); every other boot - power-on, reset, or
-     * the cold start after S2 cut the power - reports UNDEFINED and starts a
-     * fresh cycle with the counter zeroed. For a deep-sleep wake the counter
-     * in RTC memory decides between another S0 pass and the escalation to S2.
-     * This does not disturb report_boot_reason(): an S2 restart still shows
-     * up as UNDEFINED there, because the ESP was unpowered, not deep-sleeping. */
     /* Route the boot. Waking from deep sleep reboots the chip with a real
      * wake cause (timer, EXT1, ...); every other boot - power-on, reset, or
      * the cold start after S2 cut the power - reports UNDEFINED and starts a

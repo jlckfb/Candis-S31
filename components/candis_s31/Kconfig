@@ -156,14 +156,128 @@ menu "Board Support Package (Candis-S31)"
                 the OV5640 datasheet warns that internal regulation with
                 2.8 V I/O can increase sensor heat.
 
-        config BSP_CAMERA_SENSOR_DATA_REMAP
-            bool "Remap the fitted camera DVP data lines"
+        config BSP_CAMERA_AVDD_MV
+            int "Camera AVDD voltage (mV)"
+            default 2800
+            range 2600 3000
+            help
+                Experimental OV5640 AVDD setting. TG28 ALDO4 accepts
+                100 mV steps in this range; the default remains 2800 mV.
+                Keep DOVDD at 2800 mV for the direct DVP connections.
+
+        config BSP_CAMERA_CORE_120MHZ
+            bool "Use the 120 MHz LCDCAM core clock for DVP capture"
+            depends on IDF_TARGET_ESP32S31
             default y
             help
-                Keep the board-local D0/D1 and D3/D4 remap identified by
-                the EVT1 pattern measurements. Disable for an A/B check
-                against the schematic-order wiring without changing the
-                sensor format or display path.
+                The IDF startup selects the BBPLL 120 MHz LCDCAM source but
+                divides it by two. DVP clocks above that 60 MHz core can
+                truncate frames. Keep the same source and use divide-by-one
+                during camera operation; restore the divider on shutdown.
+                The board's QSPI panel does not use the LCDCAM LCD engine.
+
+        config BSP_CAMERA_SENSOR_DATA_REMAP
+            bool "Swap D0/D1 and D3/D4 for a nonstandard camera adapter"
+            default n
+            help
+                Diagnostic compatibility option only. The normal module uses
+                schematic-order D0-D7. An unnecessary bit swap makes pixel
+                values non-monotonic and causes severe color banding.
+                Enable only after verifying the adapter's physical wiring.
+
+        config BSP_CAMERA_TIMING_60MHZ
+            bool "Use experimental OV5640 60 MHz / HTS 2000 timing"
+            depends on IDF_TARGET_ESP32S31
+            default n
+            help
+                Keep 800x600 output and VTS 984, reduce PLL1 from 800 to
+                600 MHz and PCLK from 80 to 60 MHz. HTS 2000 gives a nominal
+                30.488 fps and preserves the complete binned readout.
+                Recalculate 50/60 Hz exposure steps for the new line time.
+                XCLK, ADC PLL2, power rails and ISP tuning are unchanged.
+                Diagnostic profile, not a claim of improved image quality.
+
+        config BSP_CAMERA_TIMING_MATCHED80
+            bool "Use experimental 80 MHz / HTS 2666 matched-line timing"
+            depends on IDF_TARGET_ESP32S31 && !BSP_CAMERA_TIMING_60MHZ
+            default n
+            help
+                Keep PCLK 80 MHz and VTS 984 but extend HTS to 2666.
+                This gives 30.495 fps and almost the same line period as
+                the 60 MHz / HTS 2000 profile (33.325 vs 33.333 us).
+                Diagnostic intermediate profile, not a product default.
+
+        config BSP_CAMERA_TIMING_15FPS
+            bool "Use experimental 15 fps timing for gain/noise diagnosis"
+            depends on IDF_TARGET_ESP32S31 && !BSP_CAMERA_TIMING_60MHZ
+            depends on !BSP_CAMERA_TIMING_MATCHED80
+            default n
+            help
+                Keep the 20 MHz XCLK, 80 MHz PCLK, HTS 2060 and RGB565X
+                output, but extend VTS to 2460 and the AEC ceiling to 2456.
+                The nominal frame rate becomes 15.8 fps so automatic exposure
+                can use a longer integration time instead of high analog gain.
+                This is a diagnostic profile for the gain-dependent row-noise
+                hypothesis, not a product frame-rate claim.
+
+        config BSP_CAMERA_STANDARD_CLOCK_ROOTS
+            bool "Compare the OV5640 recommended clock-root dividers"
+            depends on IDF_TARGET_ESP32S31
+            default n
+            help
+                Use PLL root divide-by-two (0x3037=0x12) and the datasheet's
+                recommended downstream roots (0x3108=0x01) together.
+                The paired change preserves SCLK, SCLK2x and DVP PCLK while
+                halving the clock entering the downstream root dividers.
+                Keep PLL VCO, HTS/VTS, exposure steps, ADC PLL2 and ISP
+                settings unchanged. Experimental image-quality comparison.
+
+        config BSP_CAMERA_CMX_COLOR_TRIM
+            bool "Apply the measured module white-balance trim in the colour matrix"
+            depends on IDF_TARGET_ESP32S31
+            default y
+            help
+                Scale the red and blue input columns of the OV5640 colour
+                matrix (magnitudes 0x5381..0x5389; signs unchanged).
+                Automatic white balance remains enabled; no manual gains
+                are written. Skipped when BSP_CAMERA_SKIP_ISP_PROFILE is set.
+
+                Defaults R 112 % / B 109 % were checked on this EVT1 module
+                against an indoor neutral patch (centre RGB about 112/113/113),
+                replacing the older scene-average estimate that overcorrected
+                red. This is not multi-illuminant or multi-module calibration.
+                Integer coefficients, clipping and downstream ISP processing
+                mean these percentages are not exact output RGB gains.
+                Verify neutral patches and a colour chart when lighting changes.
+                Set both to 100 % to restore the unscaled board matrix.
+
+        config BSP_CAMERA_CMX_RED_PERCENT
+            int "Colour-matrix red column scale (percent)"
+            depends on BSP_CAMERA_CMX_COLOR_TRIM
+            range 100 200
+            default 112
+            help
+                Input red column of the colour matrix, in percent.
+
+        config BSP_CAMERA_CMX_BLUE_PERCENT
+            int "Colour-matrix blue column scale (percent)"
+            depends on BSP_CAMERA_CMX_COLOR_TRIM
+            range 100 200
+            default 109
+            help
+                Input blue column of the colour matrix, in percent.
+
+        config BSP_CAMERA_SKIP_ISP_PROFILE
+            bool "Skip the Candis OV5640 ISP color profile"
+            depends on IDF_TARGET_ESP32S31
+            default n
+            help
+                Diagnostic A/B only. Keep the board PLL, external DVDD,
+                timing and RGB565X output overrides, but do not rewrite the
+                Candis ISP/AWB/CCM profile after the official esp_cam_sensor
+                table. Enable only to separate sensor ISP tuning from the
+                DVP transport and analog timing paths.
+
 
     endmenu
 

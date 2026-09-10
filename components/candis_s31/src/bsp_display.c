@@ -90,6 +90,8 @@ static esp_err_t pins_floating(const gpio_num_t *pins, size_t count)
 {
     uint64_t mask = 0;
     for (size_t index = 0; index < count; ++index) {
+        ESP_RETURN_ON_ERROR(gpio_reset_pin(pins[index]), TAG,
+                            "display GPIO release failed");
         mask |= BIT64(pins[index]);
     }
     const gpio_config_t config = {
@@ -126,7 +128,9 @@ static esp_err_t display_pins_floating(void)
 static const co5300_lcd_init_cmd_t s_panel_init[] = {
     {0xFE, (uint8_t[]){0x00}, 1, 0},
     {0xC4, (uint8_t[]){0x80}, 1, 0},
-    {0x3A, (uint8_t[]){0x55}, 1, 0},
+    /* The supplier sequence repeats COLMOD here, but esp_lcd_co5300 sends
+     * 0x3A from bits_per_pixel before this table and warns about the
+     * duplicate. Leave the pixel format to the driver. */
     {0x53, (uint8_t[]){0x20}, 1, 0},
     /* Keep Display-On optically dark until LVGL has replaced unknown GRAM.
      * Brightness 0 % was verified on EVT1 to leave the 60 Hz TE waveform
@@ -644,6 +648,11 @@ static void co5300_rounder_cb(lv_area_t *area)
 
 static lv_display_t *display_lvgl_init(const bsp_display_cfg_t *config)
 {
+    /* One BSP owner installs the shared GPIO service before LVGL registers
+     * TE/touch handlers; later PMIC/RTC registration reuses that service. */
+    if (bsp_shared_irq_init() != ESP_OK) {
+        return NULL;
+    }
     const bsp_display_config_t panel_config = {
         .max_transfer_sz = (int)(config->buffer_size * sizeof(uint16_t)),
     };
@@ -784,7 +793,14 @@ lv_display_t *bsp_display_start_with_config(const bsp_display_cfg_t *config)
             .disp = s_lvgl_display,
             .handle = s_touch,
         };
+        /* Registering the touch interrupt installs the process-wide GPIO ISR
+         * service, which the display TE line may already have installed. The
+         * GPIO driver logs that expected duplicate at error level, so silence
+         * only that diagnostic; the returned handle still proves success. */
+        const esp_log_level_t gpio_log_level = esp_log_level_get("gpio");
+        esp_log_level_set("gpio", ESP_LOG_NONE);
         s_lvgl_touch = lvgl_port_add_touch(&touch_config);
+        esp_log_level_set("gpio", gpio_log_level);
         if (s_lvgl_touch == NULL) {
             ESP_LOGW(TAG, "touch registration failed, continuing without touch");
         } else {

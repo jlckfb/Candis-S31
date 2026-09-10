@@ -6,6 +6,7 @@
 
 #include <assert.h>
 
+#include "driver/gpio.h"
 #include "esp_check.h"
 #include "esp_codec_dev_defaults.h"
 
@@ -49,6 +50,9 @@ esp_err_t bsp_audio_init(const i2s_std_config_t *i2s_config)
     if (s_tx_channel != NULL && s_rx_channel != NULL && s_data_if != NULL) {
         return ESP_OK;
     }
+    ESP_RETURN_ON_FALSE(s_tx_channel == NULL && s_rx_channel == NULL &&
+                        s_data_if == NULL, ESP_ERR_INVALID_STATE, TAG,
+                        "finish audio deinit before initializing again");
     ESP_RETURN_ON_ERROR(bsp_peripheral_power_set(BSP_PERIPHERAL_AUDIO, true),
                         TAG, "audio power-up failed");
 
@@ -61,29 +65,7 @@ esp_err_t bsp_audio_init(const i2s_std_config_t *i2s_config)
         goto fail;
     }
 
-    /* Interface mode note: the Korvo-1 documentation requires the ES8389 to
-     * run in TDM mode ("DAC 与 ADC 信号均须以 TDM 格式发送至 SoC",
-     * esp-dev-kits-zh_CN), but this BSP (like the official esp32_s31_korvo_1
-     * BSP) uses I2S STD/Philips mode and the es8389 driver stays in its
-     * hard-coded default I2S data format. Kept as-is until the Sunking
-     * datasheet confirms the TDM frame layout.
-     *
-     * TDM pre-study (esp_codec_dev ~1.5, ESP-IDF 6.1): the driver exposes no
-     * TDM option - es8389_codec_cfg_t has no format/slot field, and
-     * es8389_set_fs() unconditionally calls es8389_config_fmt(ES_I2S_NORMAL)
-     * (regs 0x20/0x40 DAIFMT bits, reg 0x0C bits[7:5]=0); the only codec
-     * formats are I2S/LJ/RJ/DSP-A/DSP-B (es_common.h es_i2s_fmt_t).
-     * audio_codec_new_i2s_data() merely wraps the already-initialized I2S
-     * channels, so the peripheral mode is fixed by i2s_channel_init_*_mode().
-     * Switching to TDM therefore needs both sides together:
-     * X: here, replace the two i2s_channel_init_std_mode() calls below with
-     *    i2s_channel_init_tdm_mode() + an i2s_tdm_config_t (slot_mask,
-     *    total_slot, ws_width, ...) for the frame the vendor datasheet
-     *    specifies, keeping MCLK = 256*fs and master role;
-     * Y: on the codec side, either patch the es8389 driver to program the
-     *    DSP/TDM bits in regs 0x0C/0x20/0x40 via a new config field, or write
-     *    those registers after open through audio_codec_if_t::set_reg() -
-     *    note that set_fs() re-forces ES_I2S_NORMAL on every stream start. */
+    /* Keep the board-validated Philips stereo format and ES8389 BCLK policy. */
     const i2s_std_config_t default_config = {
         /* BSP_I2S_SAMPLE_RATE must stay a rate the es8389 coefficient table
          * knows (see the macro comment in bsp/candis_s31.h). */
@@ -128,6 +110,21 @@ fail:
     return error;
 }
 
+/* esp_codec_dev closes its data interface before the board tears the codec
+ * down, so a channel can already be disabled when this runs. i2s_channel_disable
+ * logs an error for that case, so query the state first and only act on an
+ * enabled channel. */
+static esp_err_t disable_channel_if_enabled(i2s_chan_handle_t channel)
+{
+    i2s_chan_info_t info = {0};
+    ESP_RETURN_ON_ERROR(i2s_channel_get_info(channel, &info), TAG,
+                        "cannot query I2S channel state");
+    if (!info.is_enabled) {
+        return ESP_OK;
+    }
+    return i2s_channel_disable(channel);
+}
+
 esp_err_t bsp_audio_deinit(void)
 {
     esp_err_t result = ESP_OK;
@@ -144,25 +141,17 @@ esp_err_t bsp_audio_deinit(void)
         s_data_if = NULL;
     }
     if (s_tx_channel != NULL) {
-        esp_err_t error = i2s_channel_disable(s_tx_channel);
-        if (error != ESP_OK && error != ESP_ERR_INVALID_STATE) {
-            result = error;
-        }
-        error = i2s_del_channel(s_tx_channel);
-        if (error != ESP_OK) {
-            result = error;
-        }
+        ESP_RETURN_ON_ERROR(disable_channel_if_enabled(s_tx_channel), TAG,
+                            "cannot stop TX channel");
+        ESP_RETURN_ON_ERROR(i2s_del_channel(s_tx_channel), TAG,
+                            "cannot delete TX channel");
         s_tx_channel = NULL;
     }
     if (s_rx_channel != NULL) {
-        esp_err_t error = i2s_channel_disable(s_rx_channel);
-        if (error != ESP_OK && error != ESP_ERR_INVALID_STATE) {
-            result = error;
-        }
-        error = i2s_del_channel(s_rx_channel);
-        if (error != ESP_OK) {
-            result = error;
-        }
+        ESP_RETURN_ON_ERROR(disable_channel_if_enabled(s_rx_channel), TAG,
+                            "cannot stop RX channel");
+        ESP_RETURN_ON_ERROR(i2s_del_channel(s_rx_channel), TAG,
+                            "cannot delete RX channel");
         s_rx_channel = NULL;
     }
     if (bsp_power_domain_set(BSP_POWER_AUDIO_PA, false) != ESP_OK &&
@@ -222,6 +211,25 @@ static esp_err_t delete_codec_instance(codec_instance_t *instance)
             result = ESP_FAIL;
         }
         instance->gpio = NULL;
+    }
+    if (instance == &s_speaker) {
+        /* The stateless upstream GPIO interface does not release its pin.
+         * Keep the PA off, then relinquish the reservation for the next
+         * codec instance without reserving the BSP's safe output again. */
+        esp_err_t pin_error = bsp_power_domain_set(BSP_POWER_AUDIO_PA, false);
+        if (pin_error == ESP_OK) {
+            pin_error = gpio_reset_pin(BSP_AUDIO_PA_EN);
+        }
+        if (pin_error == ESP_OK) {
+            /* gpio_reset_pin enables a pull-up; do not bias the inactive output. */
+            pin_error = gpio_pullup_dis(BSP_AUDIO_PA_EN);
+        }
+        if (pin_error == ESP_OK) {
+            pin_error = gpio_set_direction(BSP_AUDIO_PA_EN, GPIO_MODE_OUTPUT);
+        }
+        if (result == ESP_OK) {
+            result = pin_error;
+        }
     }
     return result;
 }
@@ -331,6 +339,44 @@ esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void)
         delete_codec_instance(&s_microphone);
     }
     return s_microphone.device;
+}
+
+int bsp_audio_codec_open(esp_codec_dev_handle_t device,
+                         esp_codec_dev_sample_info_t *format)
+{
+    if (device == NULL || format == NULL ||
+            (device != s_speaker.device && device != s_microphone.device)) {
+        return ESP_CODEC_DEV_INVALID_ARG;
+    }
+
+    /* esp_codec_dev's I2S set_fmt stops the channel before reconfiguration.
+     * Its close leaves that channel stopped, so restore this precondition on
+     * reopen. RX also needs TX running: TX owns the shared full-duplex clock,
+     * and the codec data driver reconfigures TX when opening RX alone. */
+    i2s_chan_handle_t channels[] = {s_tx_channel,
+        device == s_microphone.device ? s_rx_channel : NULL};
+    for (size_t index = 0; index < sizeof(channels) / sizeof(channels[0]); ++index) {
+        if (channels[index] == NULL) {
+            continue;
+        }
+        i2s_chan_info_t info = {0};
+        esp_err_t error = i2s_channel_get_info(channels[index], &info);
+        if (error == ESP_OK && !info.is_enabled) {
+            error = i2s_channel_enable(channels[index]);
+        }
+        if (error != ESP_OK) {
+            ESP_LOGE(TAG, "cannot prepare codec I2S channel: %s",
+                     esp_err_to_name(error));
+            return ESP_CODEC_DEV_DRV_ERR;
+        }
+    }
+    const int result = esp_codec_dev_open(device, format);
+    if (result != ESP_CODEC_DEV_OK) {
+        /* The official open may mark the device open before codec setup fails.
+         * Close that partial attempt so a later open really retries setup. */
+        esp_codec_dev_close(device);
+    }
+    return result;
 }
 
 esp_err_t bsp_audio_codec_deinit(esp_codec_dev_handle_t device)

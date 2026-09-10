@@ -33,9 +33,9 @@ idf.py --preview -p PORT flash monitor
 
 Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会加入。单独的 variant 或 board JSON 不能带来一个新 SoC 的支持。本仓库不提供私有 ESP-IDF 分叉或修改版框架；仓内组件镜像均在 `components/`、`vendor/` 和 [UPSTREAM.md](UPSTREAM.md) 中明确标注来源与归属。
 
-### 构建验证 — 2026-09-04
+### 构建验证 — 2026-09-07
 
-基线：ESP-IDF `v6.1-rc1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 14 个默认目标；矩阵设计为普通克隆即可运行。构建日志属于本地产物，按设计不随仓库发布；可直接运行 `tools/build-all.sh` 重现并查看末尾汇总。`display-hello` 目标额外验证仓内 Board Manager 生成文件和相对路径覆盖。
+基线：ESP-IDF `v6.1-rc1`，目标芯片 `esp32s31`（preview）。`tools/build-all.sh` 串行编译下列 25 个默认目标；矩阵设计为普通克隆即可运行。该矩阵于 2026-09-07 从干净源码副本（无 `.git`、build、`managed_components` 和本地 `sdkconfig`）验证通过；2026-09-04 的首次串行矩阵为 14 个目标。构建日志属于本地产物，按设计不随仓库发布；可直接运行 `tools/build-all.sh` 重现并查看末尾汇总。`display-hello` 目标额外验证仓内 Board Manager 生成文件和相对路径覆盖。
 
 | 目标（`tools/build-all.sh --list`） | 源码位置 | 状态 |
 |---|---|---|
@@ -44,10 +44,21 @@ Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会
 | `low-power` | `examples/esp-idf/low-power` | 编译通过 |
 | `player` | `examples/esp-idf/player` | 编译通过 |
 | `display-hello` | `examples/esp-idf/display-hello` | 编译通过；Board Manager 本地路径 |
-| `demo` | `firmware/demo` | 编译通过 |
-| `camera-test` | `firmware/camera_test` | 编译通过 |
-| `powercycle` | `firmware/powercycle` | 编译通过 |
-| `usb-cdc-device` | `firmware/usb_cdc_device` | 编译通过 |
+| `camera-test` | `examples/esp-idf/camera-test` | 编译通过 |
+| `power-cycle` | `examples/esp-idf/power-cycle` | 编译通过 |
+| `usb-cdc-device` | `examples/esp-idf/usb-cdc-device` | 编译通过 |
+| `buttons` | `examples/esp-idf/buttons` | 编译通过 |
+| `led` | `examples/esp-idf/led` | 编译通过 |
+| `rtc` | `examples/esp-idf/rtc` | 编译通过 |
+| `pmic` | `examples/esp-idf/pmic` | 编译通过 |
+| `storage` | `examples/esp-idf/storage` | 编译通过 |
+| `display-touch` | `examples/esp-idf/display-touch` | 编译通过 |
+| `display-benchmark` | `examples/esp-idf/display-benchmark` | 编译通过 |
+| `audio-recorder` | `examples/esp-idf/audio-recorder` | 编译通过 |
+| `audio-player` | `examples/esp-idf/audio-player` | 编译通过 |
+| `wifi` | `examples/esp-idf/wifi` | 编译通过 |
+| `ble` | `examples/esp-idf/ble` | 编译通过 |
+| `usb-host-msc` | `examples/esp-idf/usb-host-msc` | 编译通过 |
 | `testapp:candis_s31` | `components/candis_s31/test_apps` | 编译通过 |
 | `testapp:tg28_sw` | `vendor/idf-extra-components/tg28_sw/test_apps` | 编译通过 |
 | `testapp:rx8130ce` | `vendor/idf-extra-components/rx8130ce/test_apps` | 编译通过 |
@@ -71,14 +82,26 @@ Arduino 和 PlatformIO 只有在公开的标准工具能够正常构建后才会
 │       ├── getting-started/   # 工具链最小验证
 │       ├── display-hello/     # Board Manager + LVGL 屏幕示例
 │       ├── low-power/         # S0/S1/深睡/S2 状态机原型
-│       └── player/            # TF 卡音视频播放器（基于 ESP-GMF）
+│       ├── player/            # TF 卡音视频播放器（基于 ESP-GMF）
+│       ├── camera-test/       # 相机/DVP 自动诊断与带屏实时预览
+│       ├── power-cycle/       # 功耗测量辅助固件
+│       ├── usb-cdc-device/    # Type-C2 USB CDC 设备诊断
+│       ├── buttons/           # BOOT/PWR/RTC 闹钟按键事件
+│       ├── led/               # WS2812B RGB 灯效
+│       ├── rtc/               # RX8130CE 时间与闹钟
+│       ├── pmic/              # TG28 只读转储与 PA 切换
+│       ├── storage/           # TF 卡挂载与文件探测
+│       ├── display-touch/     # AMOLED 十字标记与触摸坐标
+│       ├── display-benchmark/ # 全屏/局部刷新帧率
+│       ├── audio-recorder/    # 麦克风录音到 WAV
+│       ├── audio-player/      # 正弦音与 WAV 播放
+│       ├── wifi/              # STA 扫描与连接
+│       ├── ble/               # NimBLE 广播与扫描
+│       └── usb-host-msc/      # Type-C2 Host MSC 挂载
 ├── firmware/
-│   ├── camera_test/           # 相机/DVP 自动诊断与带屏实时预览
 │   ├── demo/                  # 手表形态综合 LVGL 演示
 │   ├── factory/               # Factory Bring-up 源码和发布约定
-│   ├── powercycle/            # 功耗测量辅助固件
-│   ├── recovery/              # 恢复流程
-│   └── usb_cdc_device/        # Type-C2 USB CDC 设备诊断
+│   └── recovery/              # 恢复流程
 ├── tools/                     # 构建验证和发布脚本
 ├── vendor/
 │   ├── esp-board-manager/     # Board Manager 与 friends-board 快照

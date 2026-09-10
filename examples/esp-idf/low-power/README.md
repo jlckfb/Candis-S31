@@ -6,9 +6,9 @@ Candis-S31 低功耗状态机原型。四档功耗状态 + LP core 管家，演�
 |---|---|
 | 目标芯片 | ESP32-S31（preview target） |
 | 测试 ESP-IDF | `v6.1-rc1` |
-| 主路径 | **light sleep → deep sleep → TG28 软关机**（代码路径已编译，完整闭环待实板验证） |
-| 编译状态 | **compile-tested**（`tools/build-all.sh` 回归包含本工程；API 经编译器验证） |
-| 硬件状态 | **部分验证**（通用 deep-sleep 唤醒已有记录；本工程完整状态机、触摸唤醒和 S2 关机仍 NOT RUN） |
+| 主路径 | **light sleep → deep sleep → TG28 软关机**（USB 实测已覆盖两轮睡眠；真正软关机需仅电池供电） |
+| 编译状态 | **已验证**（2026-09-10，ESP-IDF v6.1-rc1，新生成配置） |
+| 硬件状态 | **部分验证**：两轮 S0 实测约 15.6 秒、S1 约 30.1/30.2 秒，均完成 20 秒 timer deep-sleep；第二次唤醒进入 S2 分支后因 VBUS 在场安全拒绝关机 |
 
 > 本原型尚无完整低功耗闭环实测；预算表区分数据手册估算、组件标称值和历史整机输入测量，不能把任一项直接当作产品指标。
 
@@ -30,21 +30,20 @@ DEEP_SLEEP 是 S1 与 S2 之间的深睡档：S1 超时后停止面板和触摸�
 |---|---|---|---|
 | 冷启动 | S0 | 上电/复位（cause=UNDEFINED） | `bsp_board_init` → LP I2C → PMIC → RTC → 排空共享 IRQ 线（契约 D3）→ 报告启动原因 → **深睡计数归零** |
 | S0 | S1 | 停留满 `S0_DWELL_SECONDS`(15s) | 屏 sleep → 触摸 monitor → 停 LP core → 交还 GPIO2 → 武装 light sleep 唤醒源 |
-| S1 | S0 | **触摸** INT 拉低 | 撤唤醒源 → 触摸退 monitor → 屏 sleep-out → 重启 LP core |
-| S1 | S1 | 共享 IRQ 拉低（PMIC/RTC 事件） | 服务共享线（清标志至线释放），**不离开 S1** |
-| S1 | DEEP_SLEEP | 连续 `S1_SLICES_BEFORE_S2`(3) 个 10s 切片无触摸 | 撤 light sleep 唤醒源 → 关闭面板/触摸协议所有者 → `bsp_power_safe_state()` 关闭可控轨并置高阻 → 重新开启 TOUCH ALDO2、重建 CST820 并进入 monitor → GPIO2/GPIO3 配 RTC 输入 + 内部上拉 → 武装深睡唤醒源（RTC 定时 + EXT1）→ 计数 +1 → `esp_deep_sleep_start()` |
-| DEEP_SLEEP | S0 | 定时/EXT1(GPIO2/GPIO3) 唤醒且计数 < `DEEP_SLEEP_MAX_CYCLES`(2) | 重启式唤醒：cause≠UNDEFINED → 回 S0，再走 S0→S1→深睡循环 |
-| DEEP_SLEEP | S2 | 定时/EXT1(GPIO2/GPIO3) 唤醒且计数 ≥ `DEEP_SLEEP_MAX_CYCLES`(2) | 重启式唤醒 → 直接走下方 S2 顺序 |
+| S1 | S0 | **触摸** INT 拉低或 PMIC 电源键事件 | 撤唤醒源 → 触摸退 monitor → 屏 sleep-out → 重启 LP core |
+| S1 | S1 | 共享 IRQ 拉低（非电源键的 PMIC/RTC 事件） | 服务共享线（清标志至线释放），**不离开 S1**，也不缩短空闲预算 |
+| S1 | DEEP_SLEEP | 无用户唤醒达 `S1_SLICES_BEFORE_S2 × S1_SLEEP_SLICE_US`(30s) | 撤 light sleep 唤醒源 → 关闭面板/触摸协议所有者 → `bsp_power_safe_state()` 关闭可控轨并置高阻 → 重新开启 TOUCH ALDO2、重建 CST820 并进入 monitor → GPIO2/GPIO3 配 RTC 输入 + 内部上拉 → 武装深睡唤醒源（RTC 定时 + EXT1）→ 计数 +1 → `esp_deep_sleep_start()` |
+| DEEP_SLEEP | S0 | 定时唤醒且计数 < `DEEP_SLEEP_MAX_CYCLES`(2)；或任意 EXT1 唤醒 | 定时唤醒保留计数；EXT1 外部事件优先并清零计数，回 S0 |
+| DEEP_SLEEP | S2 | 仅定时唤醒且计数 ≥ `DEEP_SLEEP_MAX_CYCLES`(2) | 重启式唤醒 → 直接走下方 S2 顺序 |
 | S2 | 冷启动 | TG28 重新上电（RTC 闹钟到点 / 插 USB / 按电源键） | 走"冷启动"行（cause=UNDEFINED，计数归零） |
 
 ### S2 的关闭顺序（顺序不可交换）
 
-1. 停 LP core、撤所有唤醒源；
-2. 逐块关外设轨（`bsp_peripheral_power_set`）：CAMERA → AUDIO → SDCARD → EXTERNAL_3V3 → TOUCH → DISPLAY。每块内部由 BSP 按板级时序断电，先 Hi-Z 数据脚再撤压，避免倒灌；
-3. 打开 DC1SW 负载开关（WS2812B 供电；TG28 OTP 把 DLDO1 脚配置为 SWITCH 模式、输入为 DCDC1，必须用 `bsp_pmic_switch_enable(BSP_PMIC_SWITCH_DC1SW, false)` 操作，不能用 regulator API；复位后本就是 OFF，这里显式补一刀）；
-4. **仍有 I2C 时**用 `rx8130ce_alarm_from_time()` 设绝对时刻闹钟 → `bsp_rtc_alarm_irq_enable(true)` → 清残留标志 → 确认 GPIO2 已释放为高；
-5. 使能 GPIO2 唤醒；
-6. **最后**调用 `bsp_pmic_power_off()`（TG28 REG10 bit0 软关机，写后整机掉电）→ ESP 断电。若该调用意外返回（未掉电），打印错误并空转等复位。
+1. 停 LP core、撤 light-sleep 唤醒源；
+2. 释放面板/触摸协议所有者，调用 `bsp_power_safe_state()` 关闭可控外设轨及负载开关并停放 GPIO；
+3. 读取 PMIC VBUS 状态；读取失败或 USB 仍供电时拒绝软关机，保持安全态；
+4. 仅电池供电时，读有效 RTC 日历，用 `rx8130ce_alarm_from_time()` 设绝对时刻闹钟 → `bsp_rtc_alarm_irq_enable(true)` → 清残留标志 → 确认 GPIO2 已释放为高；
+5. **最后**调用 `bsp_pmic_power_off()`（TG28 REG10 bit0 软关机，写后整机掉电）。若调用意外返回，打印错误并等待复位。
 
 ### S2 的"唤醒"语义（重要）
 
@@ -56,6 +55,14 @@ DEEP_SLEEP 是 S1 与 S2 之间的深睡档：S1 超时后停止面板和触摸�
 - 跨 S2 需要保留的状态必须落 NVS 或 RTC 寄存器域之外的存储，本原型没有演示这一点。
 
 **与 DEEP_SLEEP 唤醒的区分（启动分流依据）**：深睡唤醒同样是“app_main 重跑”，但 RTC 域全程未断电，`esp_sleep_get_wakeup_causes()` 的位图包含真实唤醒源（TIMER/EXT1…）；S2 再上电是真正掉电后的冷启动，位图包含 `BIT(ESP_SLEEP_WAKEUP_UNDEFINED)`。`app_main` 据此分流：包含 `UNDEFINED` → 深睡计数归零、回 S0；否则按计数决定回 S0 还是进 S2。两者不会混淆。
+
+## 无交互验收窗口
+
+- 保持触摸和按键不动，采集 **180 s**：每轮 S0 停留 15 s、S1 空闲 30 s、深睡定时 20 s，共两轮名义 130 s，另加初始化/轨道切换时间。S0/S1 使用经过 light-sleep 补偿的 `esp_timer` 单调时间计时，LP mailbox 或共享 IRQ 提前唤醒不再把一次唤醒误算作完整切片。
+- 必须看到 `deep sleep: cycle 1/2`、定时唤醒的 `cycle 1/2, returning to S0`、`deep sleep: cycle 2/2`、`deep-sleep budget exhausted (2 cycles), going to S2`。仅看到 LP 心跳或进入 S1 不算状态机完成；LP 心跳是本例的 mailbox 功能证据，保留。
+- **连接 Type-C1/Type-C2 USB 供电时，S2 必然停在 VBUS guard**：`VBUS present: deferring PMIC power-off` → `still powered after S2; idling`。此分支未设置闹钟，之后拔 USB 不会自动重试；不得把它标为软关机或 RTC 冷启动通过。
+- 完整 S2→RTC 冷启动需提前在**仅电池供电**下重新开始，RTC `time_valid=1`，共享 IRQ 可释放；采集工具必须不经 VBUS 给板供电（例如独立 UART RX/GND）。预留 **8 min**：进入 S2 后闹钟比较目标分钟，等待约 241–300 s，再检查 `requesting PMIC power-off` 后的实际断电及新一轮 `PMIC power-on source` / `RTC flags ... alarm=1` 冷启动证据。电流值还需电表；串口静默本身不是断电证明。
+- 触摸/电源键唤醒是另一条真实硬件交互路径，需人工动作或物理治具；不能由上述无交互定时路径代替。
 
 ## 唤醒源表
 
@@ -183,6 +190,7 @@ low-power/
     ├── low_power_main.c            # 状态机、唤醒源、pad 归属、RTC 闹钟
     └── lp_core/
         └── main.c                  # LP 管家固件（rv32imac）
+```
 
 ## 构建
 
@@ -190,9 +198,14 @@ low-power/
 `components/candis_s31/`；四个可复用驱动映射到
 `vendor/idf-extra-components/`，无需任何外部检出。
 
+本工程当前位于 `examples/esp-idf/low-power/`，下列命令均在该目录内执行；
+烧录与监视走 Type-C1（CH343P 桥）的串口；按主机修改 `/dev/ttyACM0`，Windows 使用对应 COM 口。
+
 ```bash
 idf.py --preview set-target esp32s31
 idf.py --preview build
+idf.py --preview -p /dev/ttyACM0 -b 4000000 flash
+idf.py --preview -p /dev/ttyACM0 monitor
 ```
 
 Board Manager 的声明式定义位于 `vendor/esp-board-manager/`，由

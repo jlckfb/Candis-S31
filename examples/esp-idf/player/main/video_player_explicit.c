@@ -53,14 +53,12 @@ typedef enum {
     CMD_SEEK,
     CMD_BRIGHTNESS,
     CMD_VOLUME,
-    CMD_SPEED,
     CMD_LOOP,
 } command_type_t;
 
 typedef struct {
     command_type_t type;
     int value;
-    float speed;
     video_play_request_t request;
     char path[PLAYER_PATH_MAX];
 } command_t;
@@ -81,7 +79,6 @@ typedef struct {
     bool loop;
     int volume;
     int brightness;
-    float speed;
 } player_state_t;
 
 typedef struct {
@@ -499,9 +496,6 @@ static void handle_command(playback_t *playback, const command_t *command)
         s.volume = command->value;
         audio_set_volume(command->value);
         break;
-    case CMD_SPEED:
-        s.speed = 1.0f;
-        break;
     case CMD_LOOP:
         s.loop = command->value != 0;
         playback->loop = s.loop;
@@ -628,6 +622,7 @@ static esp_err_t play_once(playback_t *playback)
     playback->have_video_decode_pts = false;
     playback->last_progress = -1;
     emit(playback, PLAYER_EV_STARTED, 0);
+    ESP_LOGI(TAG, "playback started: %s", playback->path);
 
     for (;;) {
         poll_controls(playback);
@@ -718,9 +713,12 @@ static void run_session(const command_t *command)
     player_video_backend_set_direct(false);
     set_state(false, false);
     if (error == ESP_OK) {
+        ESP_LOGI(TAG, "playback ended: %s reason=%s", playback.path,
+                 playback.stop ? "stopped" : "eof");
         emit(&playback, PLAYER_EV_FINISHED,
              playback.stop ? playback.last_progress : 100);
     } else {
+        ESP_LOGE(TAG, "playback failed: %s error=%s", playback.path, esp_err_to_name(error));
         emit(&playback, PLAYER_EV_ERROR, error);
     }
 }
@@ -774,7 +772,6 @@ esp_err_t video_player_init(void)
     ESP_RETURN_ON_ERROR(player_video_backend_init(), TAG, "video backend failed");
     s.volume = 20;
     s.brightness = 60;
-    s.speed = 1.0f;
     s.initialized = true;
     if (xTaskCreate(control_task, "explicit_player", CONTROL_TASK_STACK, NULL,
                     CONTROL_TASK_PRIO, &s.task) != pdPASS) {
@@ -848,15 +845,6 @@ esp_err_t video_player_set_volume(int volume)
         .type = CMD_VOLUME,
         .value = player_clamp_percent(volume),
     };
-    return post(&command);
-}
-
-esp_err_t video_player_set_speed(float speed)
-{
-    if (speed != 1.0f) {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
-    const command_t command = {.type = CMD_SPEED, .speed = speed};
     return post(&command);
 }
 

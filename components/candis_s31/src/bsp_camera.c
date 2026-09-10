@@ -4,28 +4,71 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <inttypes.h>
-
 #include "esp_check.h"
 #include "driver/ledc.h"
 #include "soc/ledc_struct.h"
 #include "esp_video_init.h"
 #include "driver/i2c_master.h"
 #include "linux/videodev2.h"
-#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#if CONFIG_BSP_CAMERA_CORE_120MHZ
+#include "soc/hp_sys_clkrst_struct.h"
+#include "esp_private/periph_ctrl.h"
+#endif
 
 #include "bsp/candis_s31.h"
-#include "ov5640_af_firmware.h"
 
 static const char *TAG = "candis_camera";
 static bool s_started;
-static bool s_autofocus_firmware_loaded;
+#ifndef CONFIG_BSP_CAMERA_SKIP_ISP_PROFILE
+#define CONFIG_BSP_CAMERA_SKIP_ISP_PROFILE 0
+#endif
+
+/* Human-readable DVDD source for the startup summary line. */
+#if CONFIG_BSP_CAMERA_USE_INTERNAL_DVDD
+#define BSP_CAMERA_DVDD_MODE_NAME "internal"
+#else
+#define BSP_CAMERA_DVDD_MODE_NAME "external"
+#endif
+
+#if CONFIG_BSP_CAMERA_CORE_120MHZ
+static uint32_t s_core_clock_divider;
+static bool s_core_clock_saved;
+
+static esp_err_t camera_core_clock_enable(void)
+{
+    bool supported = false;
+    /* IDF esp32s31 clk_gate_ll.h selects source 1: BBPLL 120 MHz / 2.
+     * Change only its integer divider; never reinterpret an unknown source. */
+    PERIPH_RCC_ATOMIC() {
+        if (HP_SYS_CLKRST.lcdcam_lcdcam_ctrl0.reg_lcdcam_clk_src_sel == 1 &&
+                HP_SYS_CLKRST.lcdcam_lcdcam_ctrl0.reg_lcdcam_clk_div_numerator == 0) {
+            s_core_clock_divider = HP_SYS_CLKRST.lcdcam_lcdcam_ctrl0.reg_lcdcam_clk_div_num;
+            s_core_clock_saved = true;
+            HP_SYS_CLKRST.lcdcam_lcdcam_ctrl0.reg_lcdcam_clk_div_num = 0;
+            supported = true;
+        }
+    }
+    ESP_LOGD(TAG, "LCDCAM core clock: %s source=BBPLL120 divider=%u->1",
+             supported ? "120MHz" : "unsupported", (unsigned)s_core_clock_divider + 1U);
+    return supported ? ESP_OK : ESP_ERR_NOT_SUPPORTED;
+}
+
+static void camera_core_clock_restore(void)
+{
+    if (s_core_clock_saved) {
+        PERIPH_RCC_ATOMIC() {
+            HP_SYS_CLKRST.lcdcam_lcdcam_ctrl0.reg_lcdcam_clk_div_num = s_core_clock_divider;
+        }
+        s_core_clock_saved = false;
+    }
+}
+#endif
 
 /* EVT1's measured-good source clock is an exact 20 MHz, 50 percent
  * duty-cycle signal generated from XTAL-backed LEDC. The post-format sensor
- * profile derives 95 MHz DVP byte clock / 47.5 Mpixel/s from that input.
+ * profile derives a 80 MHz DVP byte clock from that input.
  * Keeping XCLK outside esp_video also gives the BSP sole ownership of the
  * shared pin. */
 static esp_err_t xclk_ledc_start(void)
@@ -67,18 +110,36 @@ static esp_err_t xclk_ledc_stop(void)
 }
 
 #define OV5640_SCCB_ADDRESS         0x3CU
-#define OV5640_AF_CMD_MAIN          0x3022U
-#define OV5640_AF_CMD_ACK           0x3023U
-#define OV5640_AF_CMD_PARA0         0x3024U
-#define OV5640_AF_FW_STATUS         0x3029U
-#define OV5640_AF_CMD_TRIGGER       0x03U
-#define OV5640_AF_CMD_GET_RESULT    0x07U
-#define OV5640_AF_CMD_RELAUNCH_ZONE 0x12U
-#define OV5640_AF_STATUS_IDLE       0x70U
-#define OV5640_AF_STATUS_FOCUSED    0x10U
-#define OV5640_PREVIEW_HTS          0x0768U
-#define OV5640_PREVIEW_VTS          0x0343U
-#define OV5640_PREVIEW_AEC_MAX      0x033FU
+#if CONFIG_BSP_CAMERA_TIMING_60MHZ
+#define OV5640_PREVIEW_HTS          2000U
+#define OV5640_PREVIEW_PCLK_HZ      60000000U
+#define OV5640_PREVIEW_PLL_MULT     60U
+#elif CONFIG_BSP_CAMERA_TIMING_MATCHED80
+#define OV5640_PREVIEW_HTS          2666U
+#define OV5640_PREVIEW_PCLK_HZ      80000000U
+#define OV5640_PREVIEW_PLL_MULT     80U
+#elif CONFIG_BSP_CAMERA_TIMING_15FPS
+#define OV5640_PREVIEW_HTS          2060U
+#define OV5640_PREVIEW_PCLK_HZ      80000000U
+#define OV5640_PREVIEW_PLL_MULT     80U
+#else
+#define OV5640_PREVIEW_HTS          2060U
+#define OV5640_PREVIEW_PCLK_HZ      80000000U
+#define OV5640_PREVIEW_PLL_MULT     80U
+#endif
+#if CONFIG_BSP_CAMERA_TIMING_15FPS
+#define OV5640_PREVIEW_VTS          2460U
+#define OV5640_PREVIEW_AEC_MAX      2456U
+#else
+#define OV5640_PREVIEW_VTS          0x03D8U
+#define OV5640_PREVIEW_AEC_MAX      0x03D4U
+#endif
+#define OV5640_PREVIEW_BAND50       (OV5640_PREVIEW_PCLK_HZ / (OV5640_PREVIEW_HTS * 100U))
+#define OV5640_PREVIEW_BAND60       (OV5640_PREVIEW_PCLK_HZ / (OV5640_PREVIEW_HTS * 120U))
+#if !CONFIG_BSP_CAMERA_TIMING_15FPS
+_Static_assert(OV5640_PREVIEW_PCLK_HZ >= 30U * OV5640_PREVIEW_HTS * OV5640_PREVIEW_VTS,
+               "OV5640 preview timing must target at least 30 fps");
+#endif
 
 static esp_err_t camera_sccb_open(i2c_master_dev_handle_t *device)
 {
@@ -113,106 +174,7 @@ static esp_err_t camera_sensor_read8(i2c_master_dev_handle_t device,
                                        value, 1, 100);
 }
 
-static esp_err_t camera_sensor_wait8(i2c_master_dev_handle_t device,
-                                     uint16_t reg, uint8_t expected,
-                                     uint32_t timeout_ms, uint8_t *last)
-{
-    const int64_t deadline =
-        esp_timer_get_time() + (int64_t)timeout_ms * 1000;
-    uint8_t value = 0xff;
-    do {
-        const esp_err_t error = camera_sensor_read8(device, reg, &value);
-        if (error != ESP_OK) {
-            return error;
-        }
-        if (last != NULL) {
-            *last = value;
-        }
-        if (value == expected) {
-            return ESP_OK;
-        }
-        vTaskDelay(pdMS_TO_TICKS(5));
-    } while (esp_timer_get_time() <= deadline);
-    return ESP_ERR_TIMEOUT;
-}
-
-static esp_err_t camera_autofocus_command(i2c_master_dev_handle_t device,
-                                          uint8_t command,
-                                          uint32_t timeout_ms)
-{
-    ESP_RETURN_ON_ERROR(
-        camera_sensor_write8(device, OV5640_AF_CMD_ACK, 0x01), TAG,
-        "autofocus ACK arm failed");
-    ESP_RETURN_ON_ERROR(
-        camera_sensor_write8(device, OV5640_AF_CMD_MAIN, command), TAG,
-        "autofocus command 0x%02x failed", command);
-    return camera_sensor_wait8(device, OV5640_AF_CMD_ACK, 0x00,
-                               timeout_ms, NULL);
-}
-
-static esp_err_t camera_autofocus_load(i2c_master_dev_handle_t device,
-                                       uint32_t timeout_ms)
-{
-    if (s_autofocus_firmware_loaded) {
-        return ESP_OK;
-    }
-
-    const int64_t started_us = esp_timer_get_time();
-    esp_err_t error = camera_sensor_write8(device, 0x3000, 0x20);
-    for (size_t i = 0;
-            error == ESP_OK && i < sizeof(s_ov5640_af_firmware); ++i) {
-        error = camera_sensor_write8(
-            device, (uint16_t)(0x8000U + i), s_ov5640_af_firmware[i]);
-    }
-
-    uint8_t first = 0xff;
-    uint8_t last = 0xff;
-    if (error == ESP_OK) {
-        error = camera_sensor_read8(device, 0x8000, &first);
-    }
-    if (error == ESP_OK) {
-        error = camera_sensor_read8(
-            device,
-            (uint16_t)(0x8000U + sizeof(s_ov5640_af_firmware) - 1U),
-            &last);
-    }
-    if (error == ESP_OK &&
-            (first != s_ov5640_af_firmware[0] ||
-             last != s_ov5640_af_firmware[
-                         sizeof(s_ov5640_af_firmware) - 1U])) {
-        error = ESP_ERR_INVALID_RESPONSE;
-    }
-
-    for (uint16_t reg = OV5640_AF_CMD_MAIN;
-            error == ESP_OK && reg <= OV5640_AF_CMD_PARA0 + 4U; ++reg) {
-        error = camera_sensor_write8(device, reg, 0x00);
-    }
-    if (error == ESP_OK) {
-        error = camera_sensor_write8(
-            device, OV5640_AF_FW_STATUS, 0x7f);
-    }
-    if (error == ESP_OK) {
-        error = camera_sensor_write8(device, 0x3000, 0x00);
-    }
-    uint8_t firmware_status = 0xff;
-    if (error == ESP_OK) {
-        error = camera_sensor_wait8(
-            device, OV5640_AF_FW_STATUS, OV5640_AF_STATUS_IDLE,
-            timeout_ms, &firmware_status);
-    }
-    if (error == ESP_OK) {
-        s_autofocus_firmware_loaded = true;
-    }
-    ESP_LOGI(TAG,
-             "autofocus firmware status=%s bytes=%u verify=%02x/%02x "
-             "fw_status=0x%02x elapsed_ms=%" PRId64,
-             error == ESP_OK ? "PASS" : "FAIL",
-             (unsigned)sizeof(s_ov5640_af_firmware), first, last,
-             firmware_status, (esp_timer_get_time() - started_us) / 1000);
-    return error;
-}
-
-/* Board-level profile for the OV5640 autofocus module on the EVT1 FPC.
+/* Board-level profile for the OV5640 module on the EVT1 FPC.
  * It is applied before and after the first video-device open:
  * esp_video_open() lazily runs dvp_video_init(), whose format-table write
  * resets these registers after the pre-open pass. Three facts established on
@@ -224,20 +186,18 @@ static esp_err_t camera_autofocus_load(i2c_master_dev_handle_t device,
  *    BE. Do not change the verified 0x61 override back to 0x6F based only
  *    on the esp_cam_sensor symbol name.
  *
- *    With that table's 0x6F value the module streams raw Bayer - its ISP
- *    demosaic and color engine never run (RGB output is a mosaic; YUV422
- *    U/V sit at 128 +/- 3). espressif/esp32-camera's proven sequence
- *    0x4300 = 0x61 makes the same module stream processed color. Serial
- *    frame dumps prove that its first captured byte carries RGB565 bits
- *    [15:8] and the second carries [7:0], i.e. V4L2 RGB565X byte order.
- * 2. The esp32-camera AWB/CMX values restore correct color. For live view,
+ *    These are RGB565 byte-order encodings, not a Bayer/ISP selector.
+ *    FORMAT_MUX 0x501F selects the processing output; the profile uses
+ *    0x01 for RGB. Historical mosaic observations must not be attributed
+ *    to 0x6F alone. Verified source frames carry RGB565 bits [15:8]
+ *    first and [7:0] second, matching V4L2 RGB565X byte order.
+ * 2. Keep the board's measured AWB/CMX baseline and module trim. For live view,
  *    the upstream esp_cam_sensor automatic CIP/gamma/SDE profile replaces
  *    forced manual edge enhancement and non-vendor thresholds that can erase
  *    fine texture before the host receives a frame.
- * 3. The old 20 MHz table timing produced about 11.9 fps and allowed
- *    44-72 ms exposures. The calculated 30 fps profile below keeps HTS
- *    unchanged, reduces VTS, raises the sensor PLL within its datasheet
- *    limit, and caps banded exposure at one frame.
+ * 3. Use the SVGA blanking and clock dividers validated on this board.
+ *    A frame must include the binned source readout, not only the 600
+ *    output rows; the former VTS=835 profile truncated that interval.
  *
  * The capture buffer therefore matches both V4L2_PIX_FMT_RGB565X and
  * the LV_COLOR_FORMAT_RGB565_SWAPPED image source used by the app.
@@ -251,12 +211,20 @@ static esp_err_t camera_sensor_workaround(uint32_t v4l2_pixel_format)
 {
     static const uint16_t isp_block[][2] = {
         {0x5000, 0xa7}, {0x5001, 0xa3}, {0x5003, 0x08},
+        {0x5000, 0xa7}, {0x5001, 0xa3}, {0x5003, 0x08},
+        {0x5180, 0xff}, {0x5181, 0xf2}, {0x5182, 0x00},
         {0x5180, 0xff}, {0x5181, 0xf2}, {0x5182, 0x00},
         {0x5183, 0x14}, {0x5184, 0x25}, {0x5185, 0x24},
+        {0x5183, 0x14}, {0x5184, 0x25}, {0x5185, 0x24},
+        {0x5186, 0x09}, {0x5187, 0x09}, {0x5188, 0x09},
         {0x5186, 0x09}, {0x5187, 0x09}, {0x5188, 0x09},
         {0x5189, 0x75}, {0x518a, 0x54}, {0x518b, 0xe0},
+        {0x5189, 0x75}, {0x518a, 0x54}, {0x518b, 0xe0},
+        {0x518c, 0xb2}, {0x518d, 0x42}, {0x518e, 0x3d},
         {0x518c, 0xb2}, {0x518d, 0x42}, {0x518e, 0x3d},
         {0x518f, 0x56}, {0x5190, 0x46}, {0x5191, 0xf8},
+        {0x518f, 0x56}, {0x5190, 0x46}, {0x5191, 0xf8},
+        {0x5192, 0x04}, {0x5193, 0x70}, {0x5194, 0xf0},
         {0x5192, 0x04}, {0x5193, 0x70}, {0x5194, 0xf0},
         {0x5195, 0xf0}, {0x5196, 0x03}, {0x5197, 0x01},
         {0x5198, 0x04}, {0x5199, 0x12}, {0x519a, 0x04},
@@ -288,20 +256,11 @@ static esp_err_t camera_sensor_workaround(uint32_t v4l2_pixel_format)
         {0x501d, 0x40},
     };
     /*
-     * Motion-preview timing. The 8-bit DVP sends two byte clocks per RGB565
-     * pixel. The earlier measured 29.9 fps profile used 0x3034=0x1a,
-     * 0x3035=0x21, 0x3036=0xb0 and 0x3037=0x13. It proved the board path,
-     * but its 117.3 MHz PCLK exceeded the OV5640's 96 MHz maximum and drove
-     * PLL1 to about 1.17 GHz.
-     *
-     *   PLL1         = 20 MHz / 2 * 76         = 760 MHz
-     *   DVP PCLK     = PLL1 / 2 / 2 / 2        = 95 MHz
-     *   RGB565 rate  = 95 MHz / 2 bytes         = 47.5 MHz
-     *   fps          = 47.5 MHz / (1896 * 835) = 30.003
-     *
-     * B50=251 lines with max=3 limits 50 Hz exposure to 30.06 ms;
-     * B60=209 with max=3 limits 60 Hz exposure to 25.03 ms. AEC=VTS-4
-     * preserves readout margin and replaces the measured 44-72 ms range.
+     * Both profiles keep the 20 MHz XCLK, 10-bit PLL mode, manual PCLK
+     * divider and VTS=984 for the complete 972-line binned readout.
+     * The normal profile is PCLK80/HTS2060; the optional PCLK60/HTS2000
+     * profile targets 30.488 fps with additional receiver clock margin.
+     * Exposure band steps follow the selected line time, not the table name.
      */
     static const uint8_t timing_regs[][2] = {
         {0x38, 0x0c}, {0x38, 0x0d},
@@ -311,19 +270,35 @@ static esp_err_t camera_sensor_workaround(uint32_t v4l2_pixel_format)
         {0x3a, 0x08}, {0x3a, 0x09},
         {0x3a, 0x0a}, {0x3a, 0x0b},
         {0x3a, 0x0d}, {0x3a, 0x0e},
+        {0x30, 0x39}, {0x38, 0x24}, {0x46, 0x0c},
     };
     static const uint8_t timing_vals[] = {
-        0x07, 0x68, 0x03, 0x43, 0x03, 0x3f, 0x03, 0x3f,
-        0x00, 0xfb, 0x00, 0xd1, 0x03, 0x03,
+        OV5640_PREVIEW_HTS >> 8, OV5640_PREVIEW_HTS & 0xff,
+        OV5640_PREVIEW_VTS >> 8, OV5640_PREVIEW_VTS & 0xff,
+        OV5640_PREVIEW_AEC_MAX >> 8, OV5640_PREVIEW_AEC_MAX & 0xff,
+        OV5640_PREVIEW_AEC_MAX >> 8, OV5640_PREVIEW_AEC_MAX & 0xff,
+        OV5640_PREVIEW_BAND50 >> 8, OV5640_PREVIEW_BAND50 & 0xff,
+        OV5640_PREVIEW_BAND60 >> 8, OV5640_PREVIEW_BAND60 & 0xff,
+        OV5640_PREVIEW_AEC_MAX / OV5640_PREVIEW_BAND60,
+        OV5640_PREVIEW_AEC_MAX / OV5640_PREVIEW_BAND50,
+        0x00, 0x02, 0x22,
     };
     _Static_assert(sizeof(timing_vals) ==
                    sizeof(timing_regs) / sizeof(timing_regs[0]),
                    "OV5640 timing register/value count mismatch");
-    static const uint8_t pll_bit_divider = 0x18;
-    static const uint8_t pll_system_divider = 0x21;
-    static const uint8_t pll_multiplier = 0x4c;
+    static const uint8_t pll_bit_divider = 0x1a;
+    static const uint8_t pll_system_divider = 0x11;
+    static const uint8_t pll_multiplier = OV5640_PREVIEW_PLL_MULT;
+#if CONFIG_BSP_CAMERA_STANDARD_CLOCK_ROOTS
+    /* OV5640 v2.33 Figure 2-3 / Table 2-3 recommends 0x3108=0x01.
+     * Halve PLL root output and halve all three downstream divisors as a
+     * pair: SCLK, SCLK2x and PCLK retain their existing frequencies. */
     static const uint8_t pll_pre_root_divider = 0x12;
     static const uint8_t system_root_dividers = 0x01;
+#else
+    static const uint8_t pll_pre_root_divider = 0x02;
+    static const uint8_t system_root_dividers = 0x16;
+#endif
     i2c_master_dev_handle_t sccb = NULL;
     esp_err_t error = camera_sccb_open(&sccb);
     if (error != ESP_OK) {
@@ -353,9 +328,6 @@ static esp_err_t camera_sensor_workaround(uint32_t v4l2_pixel_format)
         i2c_master_bus_rm_device(sccb);
         return ESP_OK;
     }
-    /* VIDIOC_S_FMT can reset the sensor MCU and always invalidates a
-     * previously downloaded autofocus image. */
-    s_autofocus_firmware_loaded = false;
     uint8_t output_format;
     uint8_t output_mux;
     switch (v4l2_pixel_format) {
@@ -409,6 +381,39 @@ static esp_err_t camera_sensor_workaround(uint32_t v4l2_pixel_format)
         i2c_master_bus_rm_device(sccb);
         return error != ESP_OK ? error : ESP_FAIL;
     }
+    /* The reset PLL2 defaults produce 200 MHz from a 24 MHz XVCLK, but
+     * only 166.7 MHz from this board's 20 MHz source. OV5640 v2.33
+     * Figure 2-3 specifies 190-230 MHz for PLLADCLK. Keep the known
+     * divider path and raise only the PLL2 multiplier from 25 to 30. */
+    uint8_t pll2[4] = {0xff, 0xff, 0xff, 0xff};
+    for (unsigned i = 0; error == ESP_OK && i < sizeof(pll2); ++i) {
+        error = camera_sensor_read8(sccb, 0x303a + i, &pll2[i]);
+    }
+    ESP_LOGD(TAG, "sensor ADC PLL2 before=%02x/%02x/%02x/%02x",
+             pll2[0], pll2[1], pll2[2], pll2[3]);
+    if (error == ESP_OK && ((pll2[0] & 0x80U) != 0 ||
+            (pll2[2] & 0x0fU) != 1 || (pll2[3] & 0x37U) != 0x30)) {
+        error = ESP_ERR_NOT_SUPPORTED;
+    }
+    const uint8_t adc_multiplier = (pll2[1] & 0xe0U) | 30U;
+    if (error == ESP_OK) {
+        error = camera_sensor_write8(sccb, 0x303b, adc_multiplier);
+    }
+    uint8_t adc_multiplier_check = 0xff;
+    if (error == ESP_OK) {
+        error = camera_sensor_read8(sccb, 0x303b, &adc_multiplier_check);
+        if (error == ESP_OK && adc_multiplier_check != adc_multiplier) {
+            error = ESP_ERR_INVALID_RESPONSE;
+        }
+    }
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "sensor ADC clock setup failed: %s", esp_err_to_name(error));
+        i2c_master_bus_rm_device(sccb);
+        return error;
+    }
+    ESP_LOGD(TAG, "sensor ADC clock=200MHz PLL2 multiplier=%u->%u",
+             pll2[1] & 0x1fU, adc_multiplier_check & 0x1fU);
+#if !CONFIG_BSP_CAMERA_SKIP_ISP_PROFILE
     for (size_t i = 0; i < sizeof(isp_block) / sizeof(isp_block[0]); ++i) {
         error = i2c_master_transmit(sccb, (const uint8_t[]){
             (uint8_t)(isp_block[i][0] >> 8), (uint8_t)isp_block[i][0],
@@ -421,6 +426,35 @@ static esp_err_t camera_sensor_workaround(uint32_t v4l2_pixel_format)
             return error;
         }
     }
+#if CONFIG_BSP_CAMERA_CMX_COLOR_TRIM
+    /* Empirical module trim: scale the magnitudes in the red/blue input
+     * columns without writing manual AWB gains or disabling automatic AWB.
+     * Integer coefficients, clipping and subsequent ISP processing mean
+     * this is not an exact end-to-end RGB gain or an absolute calibration.
+     * Signs stay in 0x538A/0x538B and are not touched here. */
+    static const uint8_t cmx_base[9] = {
+        0x1e, 0x5b, 0x08, 0x0a, 0x7e, 0x88, 0x7c, 0x6c, 0x10,
+    };
+    static const uint16_t cmx_percent[9] = {
+        CONFIG_BSP_CAMERA_CMX_RED_PERCENT, 100, CONFIG_BSP_CAMERA_CMX_BLUE_PERCENT,
+        CONFIG_BSP_CAMERA_CMX_RED_PERCENT, 100, CONFIG_BSP_CAMERA_CMX_BLUE_PERCENT,
+        CONFIG_BSP_CAMERA_CMX_RED_PERCENT, 100, CONFIG_BSP_CAMERA_CMX_BLUE_PERCENT,
+    };
+    for (size_t i = 0; error == ESP_OK && i < 9U; ++i) {
+        uint32_t value = (uint32_t)cmx_base[i] * cmx_percent[i] / 100U;
+        error = i2c_master_transmit(sccb, (const uint8_t[]){
+            (uint8_t)((0x5381U + i) >> 8), (uint8_t)(0x5381U + i),
+            (uint8_t)(value > 0xffU ? 0xffU : value),
+        }, 3, 100);
+    }
+    if (error != ESP_OK) {
+        ESP_LOGW(TAG, "sensor workaround: colour-matrix trim failed: %s",
+                 esp_err_to_name(error));
+        i2c_master_bus_rm_device(sccb);
+        return error;
+    }
+#endif
+#endif
     /* The module's working RGB565 sequence emits RGB565X byte order. */
     error = i2c_master_transmit(sccb,
         (const uint8_t[]){0x50, 0x1f, output_mux}, 3, 100);
@@ -491,6 +525,37 @@ static esp_err_t camera_sensor_workaround(uint32_t v4l2_pixel_format)
         i2c_master_bus_rm_device(sccb);
         return error;
     }
+    /* OV5640 v2.33 documents only bit 1 here as the system clock selector.
+     * Retain the official table's other bits instead of forcing legacy 0x13. */
+    uint8_t clock_select_before = 0;
+    uint8_t clock_select_after = 0;
+    error = camera_sensor_read8(sccb, 0x3103, &clock_select_before);
+    if (error == ESP_OK) {
+        error = camera_sensor_write8(sccb, 0x3103, clock_select_before | 0x02U);
+    }
+    if (error == ESP_OK) {
+        error = camera_sensor_read8(sccb, 0x3103, &clock_select_after);
+        if (error == ESP_OK && clock_select_after != (clock_select_before | 0x02U)) {
+            error = ESP_ERR_INVALID_RESPONSE;
+        }
+    }
+    ESP_LOGD(TAG, "sensor clock select reg=3103 before=%02x after=%02x error=%s",
+             clock_select_before, clock_select_after, esp_err_to_name(error));
+    if (error != ESP_OK) {
+        i2c_master_bus_rm_device(sccb);
+        return error;
+    }
+    for (size_t i = 0; i < sizeof(timing_vals); ++i) {
+        const uint16_t reg = (uint16_t)timing_regs[i][0] << 8 | timing_regs[i][1];
+        uint8_t actual = 0xff;
+        error = camera_sensor_read8(sccb, reg, &actual);
+        if (error != ESP_OK || actual != timing_vals[i]) {
+            ESP_LOGE(TAG, "sensor timing readback failed reg=%04x expected=%02x actual=%02x error=%s",
+                     reg, timing_vals[i], actual, esp_err_to_name(error));
+            i2c_master_bus_rm_device(sccb);
+            return error != ESP_OK ? error : ESP_ERR_INVALID_RESPONSE;
+        }
+    }
     uint8_t check = 0;
     uint8_t mux_check = 0;
     uint8_t pll_bit_divider_check = 0;
@@ -505,7 +570,26 @@ static esp_err_t camera_sensor_workaround(uint32_t v4l2_pixel_format)
     uint8_t aec_high = 0;
     uint8_t aec_low = 0;
     uint8_t cip_control = 0;
-    error = camera_sensor_read8(sccb, 0x4300, &check);
+#if !CONFIG_BSP_CAMERA_SKIP_ISP_PROFILE && CONFIG_BSP_CAMERA_CMX_COLOR_TRIM
+    if (error == ESP_OK) {
+        uint8_t cmx_read = 0;
+        for (size_t i = 0; error == ESP_OK && i < 9U; ++i) {
+            uint32_t expected = (uint32_t)cmx_base[i] * cmx_percent[i] / 100U;
+            error = camera_sensor_read8(sccb, (uint16_t)(0x5381U + i),
+                                        &cmx_read);
+            if (error == ESP_OK &&
+                    cmx_read != (uint8_t)(expected > 0xffU ? 0xffU : expected)) {
+                ESP_LOGW(TAG, "sensor workaround: CMX 0x%04x readback %02x "
+                         "expected %02x", (unsigned)(0x5381U + i), cmx_read,
+                         (unsigned)expected);
+                error = ESP_FAIL;
+            }
+        }
+    }
+#endif
+    if (error == ESP_OK) {
+        error = camera_sensor_read8(sccb, 0x4300, &check);
+    }
     if (error == ESP_OK) {
         error = camera_sensor_read8(sccb, 0x501f, &mux_check);
     }
@@ -562,7 +646,7 @@ static esp_err_t camera_sensor_workaround(uint32_t v4l2_pixel_format)
             hts_check != OV5640_PREVIEW_HTS ||
             vts_check != OV5640_PREVIEW_VTS ||
             aec_check != OV5640_PREVIEW_AEC_MAX ||
-            cip_control != 0x25) {
+            (!CONFIG_BSP_CAMERA_SKIP_ISP_PROFILE && cip_control != 0x25)) {
         ESP_LOGW(TAG,
                  "sensor workaround: readback failed output=0x%02x/0x%02x "
                  "pll=0x%02x/0x%02x/0x%02x/0x%02x/0x%02x "
@@ -575,17 +659,25 @@ static esp_err_t camera_sensor_workaround(uint32_t v4l2_pixel_format)
         i2c_master_bus_rm_device(sccb);
         return error != ESP_OK ? error : ESP_FAIL;
     }
-    ESP_LOGI(TAG,
+    ESP_LOGD(TAG, "camera profile: 800x600 pclk=%uMHz hts=%u vts=%u "
+             "%.3ffps rgb565x 0x%02x/0x%02x dvdd=%s",
+             OV5640_PREVIEW_PCLK_HZ / 1000000U, OV5640_PREVIEW_HTS,
+             OV5640_PREVIEW_VTS,
+             (double)OV5640_PREVIEW_PCLK_HZ /
+             (double)(OV5640_PREVIEW_HTS * OV5640_PREVIEW_VTS),
+             check, mux_check, expected_mode);
+    ESP_LOGD(TAG,
              "sensor workaround applied: 0x3031=0x%02x output=0x%02x/0x%02x "
              "pll=0x%02x/0x%02x/0x%02x/0x%02x/0x%02x "
              "hts=0x%04x vts=0x%04x aec=0x%04x cip=0x%02x "
-             "isp_regs=%u dvdd=%s",
+             "isp_profile=%s isp_regs=%u",
              power_control_check, check, mux_check, pll_bit_divider_check,
              pll_system_divider_check, pll_multiplier_check,
              pll_pre_root_divider_check, system_root_dividers_check,
              hts_check, vts_check, aec_check, cip_control,
-             (unsigned)(sizeof(isp_block) / sizeof(isp_block[0])),
-             expected_mode);
+             CONFIG_BSP_CAMERA_SKIP_ISP_PROFILE ? "official" : "candis",
+             (unsigned)(CONFIG_BSP_CAMERA_SKIP_ISP_PROFILE ? 0 :
+                        sizeof(isp_block) / sizeof(isp_block[0])));
     i2c_master_bus_rm_device(sccb);
     return ESP_OK;
 }
@@ -598,71 +690,12 @@ esp_err_t bsp_camera_apply_workaround(uint32_t v4l2_pixel_format)
     return camera_sensor_workaround(v4l2_pixel_format);
 }
 
-esp_err_t bsp_camera_autofocus_once(uint32_t timeout_ms)
-{
-    if (!s_started) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    if (timeout_ms == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    i2c_master_dev_handle_t device = NULL;
-    esp_err_t error = camera_sccb_open(&device);
-    if (error != ESP_OK) {
-        return error;
-    }
-
-    const int64_t started_us = esp_timer_get_time();
-    uint8_t firmware_status = 0xff;
-    uint8_t zones[5] = {0xff, 0xff, 0xff, 0xff, 0xff};
-    error = camera_autofocus_load(device, timeout_ms);
-    if (error == ESP_OK) {
-        error = camera_autofocus_command(
-            device, OV5640_AF_CMD_RELAUNCH_ZONE, timeout_ms);
-    }
-    if (error == ESP_OK) {
-        error = camera_autofocus_command(
-            device, OV5640_AF_CMD_TRIGGER, timeout_ms);
-    }
-    if (error == ESP_OK) {
-        error = camera_sensor_read8(
-            device, OV5640_AF_FW_STATUS, &firmware_status);
-    }
-    if (error == ESP_OK && firmware_status != OV5640_AF_STATUS_FOCUSED) {
-        error = ESP_ERR_INVALID_RESPONSE;
-    }
-    if (error == ESP_OK) {
-        error = camera_autofocus_command(
-            device, OV5640_AF_CMD_GET_RESULT, timeout_ms);
-    }
-    bool zone_focused = false;
-    for (size_t i = 0; error == ESP_OK && i < 5; ++i) {
-        error = camera_sensor_read8(
-            device, (uint16_t)(OV5640_AF_CMD_PARA0 + i), &zones[i]);
-        zone_focused = zone_focused || (error == ESP_OK && zones[i] == 0);
-    }
-    if (error == ESP_OK && !zone_focused) {
-        error = ESP_ERR_INVALID_RESPONSE;
-    }
-
-    ESP_LOGI(TAG,
-             "autofocus status=%s fw_status=0x%02x "
-             "zones=%02x/%02x/%02x/%02x/%02x elapsed_ms=%" PRId64,
-             error == ESP_OK ? "PASS" : "FAIL", firmware_status,
-             zones[0], zones[1], zones[2], zones[3], zones[4],
-             (esp_timer_get_time() - started_us) / 1000);
-    const esp_err_t remove_error = i2c_master_bus_rm_device(device);
-    return error != ESP_OK ? error : remove_error;
-}
-
 esp_err_t bsp_camera_start(const bsp_camera_cfg_t *cfg)
 {
     (void)cfg;
     if (s_started) {
         return ESP_OK;
     }
-    s_autofocus_firmware_loaded = false;
     ESP_RETURN_ON_ERROR(bsp_i2c_init(), TAG, "main I2C init failed");
     ESP_RETURN_ON_ERROR(bsp_peripheral_power_set(BSP_PERIPHERAL_CAMERA, true),
                         TAG, "camera power-up failed");
@@ -686,10 +719,8 @@ esp_err_t bsp_camera_start(const bsp_camera_cfg_t *cfg)
         .pwdn_pin = BSP_CAMERA_PWDN,
         .dvp_pin = {
             .data_width = 8,
-            /* The fitted FD6540/OV5640-compatible module does not use the
-             * reference camera's D0-D7 order. Three OV5640 built-in patterns
-             * identify D0<->D1 and D3<->D4; keep the schematic net names but
-             * route them into the controller's logical bit positions here. */
+            /* Keep nonstandard-adapter rewiring opt-in. Applying a legacy
+             * permutation to a standard module corrupts every pixel byte. */
 #if CONFIG_BSP_CAMERA_SENSOR_DATA_REMAP
             .data_io = {
                 BSP_CAMERA_D1, BSP_CAMERA_D0, BSP_CAMERA_D2, BSP_CAMERA_D4,
@@ -716,18 +747,20 @@ esp_err_t bsp_camera_start(const bsp_camera_cfg_t *cfg)
         .xclk_freq = BSP_CAMERA_XCLK_CLOCK_MHZ * 1000000,
 #endif
     };
-    /*
-     * The AF module's VCM supply is the raw AF_VCC rail; no separate host-side
-     * motor device exists. The OV5640's embedded MCU drives that VCM, so
-     * cam_motor remains unset and bsp_camera_autofocus_once() controls focus
-     * through the sensor SCCB interface after streaming starts.
-     */
     const esp_video_init_config_t video_config = {
         .dvp = &dvp_config,
     };
     /* Only the DVP device is initialized; the plain esp_video_init() would
      * initialize every video device enabled in sdkconfig (ISP, JPEG, ...). */
     error = esp_video_init_with_flags(&video_config, ESP_VIDEO_INIT_FLAGS_DVP);
+#if CONFIG_BSP_CAMERA_CORE_120MHZ
+    if (error == ESP_OK) {
+        error = camera_core_clock_enable();
+        if (error != ESP_OK) {
+            esp_video_deinit_with_flags(ESP_VIDEO_INIT_FLAGS_DVP);
+        }
+    }
+#endif
     if (error == ESP_OK) {
         const esp_err_t workaround_error =
             camera_sensor_workaround(V4L2_PIX_FMT_RGB565X);
@@ -735,6 +768,13 @@ esp_err_t bsp_camera_start(const bsp_camera_cfg_t *cfg)
             ESP_LOGW(TAG, "pre-open sensor workaround failed: %s",
                      esp_err_to_name(workaround_error));
         }
+        ESP_LOGD(TAG, "camera initialized: 800x600 RGB565X pclk=%uMHz hts=%u vts=%u "
+                 "%.1ffps dvdd=%s; post-open profile required",
+                 OV5640_PREVIEW_PCLK_HZ / 1000000U, OV5640_PREVIEW_HTS,
+                 OV5640_PREVIEW_VTS,
+                 (double)OV5640_PREVIEW_PCLK_HZ /
+                 (double)(OV5640_PREVIEW_HTS * OV5640_PREVIEW_VTS),
+                 BSP_CAMERA_DVDD_MODE_NAME);
         s_started = true;
         return ESP_OK;
     }
@@ -752,12 +792,16 @@ esp_err_t bsp_camera_stop(void)
     /* Tear down only what bsp_camera_start() initialized. The controller's own
      * XCLK output is released by esp_video_deinit_with_flags(). */
     esp_err_t result = esp_video_deinit_with_flags(ESP_VIDEO_INIT_FLAGS_DVP);
+#if CONFIG_BSP_CAMERA_CORE_120MHZ
+    if (result == ESP_OK) {
+        camera_core_clock_restore();
+    }
+#endif
     const esp_err_t xclk_error = xclk_ledc_stop();
     if (result == ESP_OK) {
         result = xclk_error;
     }
     s_started = false;
-    s_autofocus_firmware_loaded = false;
     const esp_err_t power_error =
         bsp_peripheral_power_set(BSP_PERIPHERAL_CAMERA, false);
     return result != ESP_OK ? result : power_error;

@@ -172,8 +172,13 @@ lv_display_t *lvgl_port_add_disp(const lvgl_port_display_cfg_t *disp_cfg)
                 };
                 gpio_config(&te_config);
                 /* ESP_ERR_INVALID_STATE = ISR service already installed by
-                 * another driver, which is fine to share. */
+                 * another driver, which is fine to share. The GPIO driver
+                 * reports that expected duplicate install at error level, so
+                 * silence only that diagnostic and check the result. */
+                const esp_log_level_t gpio_log_level = esp_log_level_get("gpio");
+                esp_log_level_set("gpio", ESP_LOG_NONE);
                 esp_err_t isr_err = gpio_install_isr_service(0);
+                esp_log_level_set("gpio", gpio_log_level);
                 if (isr_err == ESP_OK || isr_err == ESP_ERR_INVALID_STATE) {
                     isr_err = gpio_isr_handler_add(disp_ctx->te_gpio_num, lvgl_port_te_isr, disp_ctx);
                 }

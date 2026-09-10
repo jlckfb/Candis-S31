@@ -1,7 +1,6 @@
 #include <stdint.h>
 
 #include "dev_display_lcd.h"
-#include "dev_lcd_touch.h"
 #include "esp_board_manager_includes.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -33,7 +32,9 @@ static void round_window(lv_area_t *area, void *user_data)
 void app_main(void)
 {
     ESP_LOGI(TAG, "initializing Candis-S31 through ESP Board Manager");
-    ESP_ERROR_CHECK(esp_board_manager_init());
+    /* The standard lazy API acquires display dependencies without starting
+     * unrelated codecs, storage, camera or touch devices. */
+    ESP_ERROR_CHECK(esp_board_manager_init_device_by_name("display_lcd"));
 
     dev_display_lcd_handles_t *lcd = NULL;
     ESP_ERROR_CHECK(esp_board_manager_get_device_handle(
@@ -67,14 +68,6 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_lv_adapter_set_area_rounder_cb(
         display, round_window, NULL));
 
-    dev_lcd_touch_handles_t *touch = NULL;
-    if (esp_board_manager_check_name("lcd_touch") &&
-        esp_board_manager_get_device_handle("lcd_touch", (void **)&touch) == ESP_OK &&
-        touch != NULL && touch->touch_handle != NULL) {
-        esp_lv_adapter_touch_config_t touch_config =
-            ESP_LV_ADAPTER_TOUCH_DEFAULT_CONFIG(display, touch->touch_handle);
-        (void)esp_lv_adapter_register_touch(&touch_config);
-    }
 
     ESP_ERROR_CHECK(esp_lv_adapter_start());
     ESP_ERROR_CHECK(esp_lv_adapter_lock(-1));

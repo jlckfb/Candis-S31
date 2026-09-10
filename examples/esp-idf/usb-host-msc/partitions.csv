@@ -1,0 +1,8 @@
+# Candis-S31 watch demo: single large application, no OTA.
+# The LVGL UI with CJK font, Wi-Fi, NimBLE host, audio codec and USB host
+# stack exceeds the 1 MB default, so the application gets 8 MB of the 16 MB
+# flash.
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     ,        0x6000,
+phy_init, data, phy,     ,        0x1000,
+factory,  app,  factory, ,        8M,

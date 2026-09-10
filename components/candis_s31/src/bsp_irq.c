@@ -16,6 +16,7 @@ static const char *TAG = "candis_irq";
 static bsp_shared_irq_callback_t s_callback;
 static bool s_gpio_ready;
 static bool s_handler_added;
+static bool s_service_ready;
 
 static void shared_irq_gpio_isr(void *arg)
 {
@@ -117,6 +118,18 @@ esp_err_t bsp_shared_irq_service(bsp_shared_irq_status_t *status)
     return status->line_released ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
+esp_err_t bsp_shared_irq_init(void)
+{
+    if (s_service_ready) {
+        return ESP_OK;
+    }
+    const esp_err_t error = gpio_install_isr_service(0);
+    ESP_RETURN_ON_FALSE(error == ESP_OK || error == ESP_ERR_INVALID_STATE,
+                        error, TAG, "GPIO ISR service unavailable");
+    s_service_ready = true;
+    return ESP_OK;
+}
+
 esp_err_t bsp_shared_irq_register_callback(bsp_shared_irq_callback_t cb,
         void *arg)
 {
@@ -135,11 +148,7 @@ esp_err_t bsp_shared_irq_register_callback(bsp_shared_irq_callback_t cb,
         return ESP_OK;
     }
 
-    /* The application may already own the GPIO ISR service. */
-    const esp_err_t service_error = gpio_install_isr_service(0);
-    ESP_RETURN_ON_FALSE(service_error == ESP_OK ||
-                        service_error == ESP_ERR_INVALID_STATE,
-                        service_error, TAG, "GPIO ISR service unavailable");
+    ESP_RETURN_ON_ERROR(bsp_shared_irq_init(), TAG, "GPIO ISR service unavailable");
     /* Re-registration replaces the previous handler instead of failing. */
     if (s_handler_added) {
         s_handler_added = false;

@@ -78,6 +78,22 @@ need an external BSP checkout or a developer-specific path.
 | `ble_tx LEVEL CHANNEL LENGTH TYPE SYNC RATE COUNT` | Start controlled BLE TX; level is about `(LEVEL-8)*3 dBm` | Yes, RF transmitter |
 | `ble_rx CHANNEL SYNC RATE` | Start controlled BLE RX counting | Yes, RF receiver |
 | `bt_tone ENABLE CHANNEL BACKOFF` | Start or stop a Bluetooth carrier-wave tone | Yes, RF transmitter |
+| `audio_record_playback` | Record a stereo microphone WAV to TF, then play both channels or CH0 only | Yes, TF write and audio path |
+| `ble_scan [SECONDS 1-60]` | Scan for BLE advertisers and print each distinct peer | No |
+| `codec_link_probe` | Verify the GPIO44/R61/U19.11 link by switching the ES8389 AD1 address strap | Yes, codec strap only |
+| `codec_loopback` | Route the ES8389 DAC back to its ADC for a digital loop-back check | Yes, codec registers only |
+| `codec_reg [REG [VALUE]]` | Read one ES8389 register; with no arguments dump the key register set | Optional write |
+| `display_sleep_stress [CYCLES 1-100] [deep]` | Repeat panel sleep/wake while checking motion and touch response | Yes, display sleep state |
+| `i2s_loopback` | Loop GPIO8 TX internally into I2S RX and verify a known pattern | No |
+| `mem_bandwidth` | Measure PSRAM write/read/copy and flash read throughput at the current clocks | No |
+| `mem_psram_verify [probe\|full]` | Adjudicate 16 vs 32 MB physical PSRAM by address-alias evidence; `full` is destructive and may reset after progress lands on UART | Temporary RAM only for `probe` |
+| `mic1_ch0_manual` | Manual MIC1/CH0 test: `y` records, `n` plays CH0 back | Yes, TF write and audio path |
+| `mic2_ch1_manual` | Manual MIC2/CH1 test: `y` records, `n` plays CH1 back | Yes, TF write and audio path |
+| `mic_snoop` | Probe ASDOUT/I2S pad edge activity during a live capture | No |
+| `sdcard_list` | List the inserted TF card root | No |
+| `wav_play FILE [VOL] [mix\|ch0\|ch1]` | Play a 16-bit PCM WAV from TF | Yes, audio path |
+| `wifi_connect SSID PASSWORD` | Join a WPA2 access point and report IP/RSSI | Yes, Wi-Fi state |
+| `wifi_connect_hex SSID_HEX PASSWORD` | Join a WPA2 access point whose SSID is given as hex bytes (console-safe for non-ASCII names) | Yes, Wi-Fi state |
 | `rf_rx_result` | Read the latest PHY RX correct/total counters and RSSI | No |
 | `display_test` | Show red, green, blue, and white AMOLED quadrants, then ask the operator to confirm | Yes |
 | `display_brightness PERCENT` | Set CO5300 brightness from 0 through 100 | Yes |
@@ -129,8 +145,8 @@ Two ordering facts matter for the first passes:
   100 %, so the first light-up never flashes full brightness. Raise the level
   in steps and record current/temperature per step.
 
-The console registers 61 application commands plus the built-in `help` command
-(62 top-level commands total). The BSP initializes Type-C1 at a conservative
+The console registers 77 application commands plus the built-in `help` command
+(78 top-level commands total). The BSP initializes Type-C1 at a conservative
 500 mA baseline, then this brownout-investigation Factory image deliberately
 overrides it to 2000 mA at every boot. Use only a directly connected, verified
 source for this image. `pmic input_limit 100` is the explicit low-current

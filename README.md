@@ -50,9 +50,9 @@ The current baseline is ESP-IDF `v6.1-rc1`. Installation Manager (EIM), the offi
 
 Arduino and PlatformIO projects will be added only after they build with their normal public tools. A board variant or JSON manifest cannot add a new SoC by itself. This repository does not provide a private ESP-IDF fork or patched framework; repository-local component mirrors are identified under `components/`, `vendor/`, and [UPSTREAM.md](UPSTREAM.md).
 
-### Build verification — 2026-09-04
+### Build verification — 2026-09-07
 
-Baseline: ESP-IDF `v6.1-rc1`, target `esp32s31` (preview). `tools/build-all.sh` compiles the fourteen default targets serially; the matrix is designed to run from a plain clone. Build logs are local artifacts and are intentionally not shipped; reproduce the matrix with `tools/build-all.sh` and inspect its printed summary. The `display-hello` target also validates the local Board Manager generation output and its relative component overrides.
+Baseline: ESP-IDF `v6.1-rc1`, target `esp32s31` (preview). `tools/build-all.sh` compiles the 25 default targets serially; the matrix is designed to run from a plain clone. The matrix was verified from a clean source copy (no `.git`, build, `managed_components`, or local `sdkconfig`) on 2026-09-07; the first serial matrix on 2026-09-04 covered 14 targets. Build logs are local artifacts and are intentionally not shipped; reproduce the matrix with `tools/build-all.sh` and inspect its printed summary. The `display-hello` target also validates the local Board Manager generation output and its relative component overrides.
 
 | Target (`tools/build-all.sh --list`) | Source | Status |
 |---|---|---|
@@ -61,10 +61,21 @@ Baseline: ESP-IDF `v6.1-rc1`, target `esp32s31` (preview). `tools/build-all.sh` 
 | `low-power` | `examples/esp-idf/low-power` | Compiles |
 | `player` | `examples/esp-idf/player` | Compiles |
 | `display-hello` | `examples/esp-idf/display-hello` | Compiles; local Board Manager path |
-| `demo` | `firmware/demo` | Compiles |
-| `camera-test` | `firmware/camera_test` | Compiles |
-| `powercycle` | `firmware/powercycle` | Compiles |
-| `usb-cdc-device` | `firmware/usb_cdc_device` | Compiles |
+| `camera-test` | `examples/esp-idf/camera-test` | Compiles |
+| `power-cycle` | `examples/esp-idf/power-cycle` | Compiles |
+| `usb-cdc-device` | `examples/esp-idf/usb-cdc-device` | Compiles |
+| `buttons` | `examples/esp-idf/buttons` | Compiles |
+| `led` | `examples/esp-idf/led` | Compiles |
+| `rtc` | `examples/esp-idf/rtc` | Compiles |
+| `pmic` | `examples/esp-idf/pmic` | Compiles |
+| `storage` | `examples/esp-idf/storage` | Compiles |
+| `display-touch` | `examples/esp-idf/display-touch` | Compiles |
+| `display-benchmark` | `examples/esp-idf/display-benchmark` | Compiles |
+| `audio-recorder` | `examples/esp-idf/audio-recorder` | Compiles |
+| `audio-player` | `examples/esp-idf/audio-player` | Compiles |
+| `wifi` | `examples/esp-idf/wifi` | Compiles |
+| `ble` | `examples/esp-idf/ble` | Compiles |
+| `usb-host-msc` | `examples/esp-idf/usb-host-msc` | Compiles |
 | `testapp:candis_s31` | `components/candis_s31/test_apps` | Compiles |
 | `testapp:tg28_sw` | `vendor/idf-extra-components/tg28_sw/test_apps` | Compiles |
 | `testapp:rx8130ce` | `vendor/idf-extra-components/rx8130ce/test_apps` | Compiles |
@@ -88,14 +99,26 @@ The board runtime is maintained in [`components/candis_s31/`](components/candis_
 │       ├── getting-started/   # Toolchain smoke test
 │       ├── display-hello/     # Board Manager + LVGL display smoke test
 │       ├── low-power/         # S0/S1/deep-sleep/S2 state-machine prototype
-│       └── player/             # TF-card audio/video player (ESP-GMF)
+│       ├── player/            # TF-card audio/video player (ESP-GMF)
+│       ├── camera-test/       # Camera/DVP diagnostic with live AMOLED preview
+│       ├── power-cycle/       # Power-measurement helper firmware
+│       ├── usb-cdc-device/    # Type-C2 USB CDC device diagnostics
+│       ├── buttons/           # BOOT/PWR/RTC-alarm input events
+│       ├── led/               # WS2812B RGB LED effects
+│       ├── rtc/               # RX8130CE time and alarm
+│       ├── pmic/              # TG28 read-only dump and PA toggle
+│       ├── storage/           # TF card mount and file probe
+│       ├── display-touch/     # AMOLED cross marker with touch coords
+│       ├── display-benchmark/ # fullscreen/partial refresh fps
+│       ├── audio-recorder/    # microphone capture to WAV
+│       ├── audio-player/      # sine tone and WAV playback
+│       ├── wifi/              # STA scan and connect
+│       ├── ble/               # NimBLE advertising and scan
+│       └── usb-host-msc/      # Type-C2 host MSC mount
 ├── firmware/
-│   ├── camera_test/           # Camera/DVP diagnostic with live AMOLED preview
 │   ├── demo/                  # Watch-style comprehensive LVGL demo
 │   ├── factory/               # Factory Bring-up source and release contract
-│   ├── powercycle/            # Power-measurement helper firmware
-│   ├── recovery/              # Recovery procedure
-│   └── usb_cdc_device/        # Type-C2 USB CDC device diagnostics
+│   └── recovery/              # Recovery procedure
 ├── tools/                     # Build verification and release scripts
 ├── vendor/
 │   ├── esp-board-manager/     # Local Board Manager and friends-board snapshot

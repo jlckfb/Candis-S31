@@ -1,0 +1,5 @@
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# Report peripheral failures instead of aborting on them.
+CONFIG_BSP_ERROR_CHECK=n

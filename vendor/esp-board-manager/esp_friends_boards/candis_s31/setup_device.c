@@ -19,6 +19,7 @@
 #include "esp_err.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "gen_board_device_custom.h"
@@ -236,6 +237,7 @@ static int rtc_deinit(void *device_handle)
 
 typedef struct {
     tg28_sw_handle_t      pmic;
+    i2c_master_bus_handle_t i2c_main;
     periph_gpio_handle_t *display_vbat;
     periph_gpio_handle_t *display_vci;
     periph_gpio_handle_t *sd_power;
@@ -245,6 +247,10 @@ typedef struct {
     bool                  audio_dac_on;
     bool                  audio_adc_on;
 } candis_power_context_t;
+
+/* The codec configuration uses the 8-bit write address 0x20, whereas
+ * i2c_master_probe takes the 7-bit address. */
+#define CANDIS_CODEC_I2C_ADDRESS 0x10
 
 static esp_err_t set_gpio(periph_gpio_handle_t *handle, int level)
 {
@@ -270,6 +276,26 @@ static esp_err_t set_camera_safe_state(candis_power_context_t *context)
         ret = gpio_set_level(context->camera_reset, 0);
     }
     return ret;
+}
+
+/* The codec answers on I2C only after its rail has settled. Poll the control
+ * port instead of relying on a fixed delay, so the first register access of
+ * the codec driver cannot race the power-up ramp. */
+static esp_err_t wait_for_codec_ready(candis_power_context_t *context)
+{
+    if (context->i2c_main == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const int64_t deadline_us = esp_timer_get_time() + 200000;
+    while (esp_timer_get_time() < deadline_us) {
+        if (i2c_master_probe(context->i2c_main, CANDIS_CODEC_I2C_ADDRESS,
+                             50) == ESP_OK) {
+            return ESP_OK;
+        }
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    ESP_LOGE(TAG, "codec did not answer at 0x10 within 200 ms");
+    return ESP_ERR_TIMEOUT;
 }
 #define CANDIS_PIN_COUNT(a) (sizeof(a) / sizeof((a)[0]))
 #define CANDIS_TOUCH_RESET_GPIO GPIO_NUM_17
@@ -324,6 +350,19 @@ static esp_err_t park_pins_input(const gpio_num_t *pins, size_t count)
     return gpio_config(&config);
 }
 
+static int board_power_deinit(void *context)
+{
+    candis_power_context_t *power = context;
+    if (power->i2c_main != NULL) {
+        esp_err_t error = esp_board_periph_unref_handle("i2c_main");
+        if (error != ESP_OK) {
+            return error;
+        }
+    }
+    free(power);
+    return ESP_OK;
+}
+
 static int board_power_init(const dev_power_ctrl_config_t *config, void **context)
 {
     if (config == NULL || context == NULL) {
@@ -341,6 +380,9 @@ static int board_power_init(const dev_power_ctrl_config_t *config, void **contex
     }
     int ret = esp_board_device_get_handle("pmic", (void **)&power->pmic);
     if (ret == ESP_OK) {
+        ret = esp_board_periph_ref_handle("i2c_main", (void **)&power->i2c_main);
+    }
+    if (ret == ESP_OK) {
         ret = esp_board_periph_get_handle(custom->periph_names[0],
                                           (void **)&power->display_vbat);
     }
@@ -357,7 +399,7 @@ static int board_power_init(const dev_power_ctrl_config_t *config, void **contex
                                           (void **)&power->pa_control);
     }
     if (ret != ESP_OK) {
-        free(power);
+        board_power_deinit(power);
         return ret;
     }
 
@@ -375,7 +417,7 @@ static int board_power_init(const dev_power_ctrl_config_t *config, void **contex
         ret = set_camera_safe_state(power);
     }
     if (ret != ESP_OK) {
-        free(power);
+        board_power_deinit(power);
         return ret;
     }
 
@@ -383,11 +425,6 @@ static int board_power_init(const dev_power_ctrl_config_t *config, void **contex
     return ESP_OK;
 }
 
-static int board_power_deinit(void *context)
-{
-    free(context);
-    return ESP_OK;
-}
 
 static int board_power_set_display(candis_power_context_t *context, bool power_on)
 {
@@ -423,22 +460,26 @@ static int board_power_set_display(candis_power_context_t *context, bool power_o
 static int board_power_set_audio(candis_power_context_t *context,
                                  const char *device_name, bool power_on)
 {
-    if (strcmp(device_name, "audio_dac") == 0) {
-        context->audio_dac_on = power_on;
-    } else {
-        context->audio_adc_on = power_on;
-    }
-    const bool rail_on = context->audio_dac_on || context->audio_adc_on;
+    const bool dac_on = strcmp(device_name, "audio_dac") == 0
+                        ? power_on : context->audio_dac_on;
+    const bool adc_on = strcmp(device_name, "audio_adc") == 0
+                        ? power_on : context->audio_adc_on;
+    const bool rail_on = dac_on || adc_on;
     esp_err_t ret = rail_on ? ESP_OK
                   : park_pins_input(s_audio_pins, CANDIS_PIN_COUNT(s_audio_pins));
     if (ret == ESP_OK) {
         ret = set_regulator(context->pmic, TG28_SW_ALDO3, 3300, rail_on);
     }
     if (ret == ESP_OK && rail_on) {
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(5) + 1);
+        ret = wait_for_codec_ready(context);
     }
-    if (ret == ESP_OK && !context->audio_dac_on) {
+    if (ret == ESP_OK && !dac_on) {
         ret = set_gpio(context->pa_control, 0);
+    }
+    if (ret == ESP_OK) {
+        context->audio_dac_on = dac_on;
+        context->audio_adc_on = adc_on;
     }
     return ret;
 }

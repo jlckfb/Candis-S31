@@ -134,8 +134,7 @@ and issue their protocol-level shutdown commands.
 | Example | Description |
 | ------- | ----------- |
 | [`examples/esp-idf/display-hello`](../../../examples/esp-idf/display-hello) | Board Manager plus LVGL display smoke test |
-| [`firmware/demo`](../../../firmware/demo) | Comprehensive watch-style hardware demo |
-| [`firmware/camera_test`](../../../firmware/camera_test) | Camera/DVP diagnostic with visual confirmation |
+| [`examples/esp-idf/camera-test`](../../../examples/esp-idf/camera-test) | Continuous OV5640 preview on the AMOLED |
 | [`examples/esp-idf/player`](../../../examples/esp-idf/player) | TF-card audio/video player |
 | [`examples/esp-idf/low-power`](../../../examples/esp-idf/low-power) | Low-power state-machine prototype |
 
@@ -159,7 +158,7 @@ by this component manifest.
 
 The reset, power-on, and boot keys are dedicated to the reset path, PMIC, and
 boot strapping. They are not normal application GPIOs. `BSP_CAPS_BUTTONS` is
-therefore zero. The user-facing player and demo projects expose their own
+therefore zero. The user-facing player example exposes its own
 application controls instead of assuming generic board buttons.
 
 `bsp_spiffs_mount()` mounts the example SPIFFS partition
@@ -200,6 +199,11 @@ interrupt before returning. Passing a NULL callback removes the handler
 again. Register the callback after `bsp_board_init()`, which configures the
 pin with interrupts disabled.
 
+`bsp_shared_irq_init()` installs the shared GPIO ISR service once. The BSP
+display and input entry points reuse it, so registering PMIC/RTC callbacks
+after TE/touch setup does not reinstall the service. Do not uninstall the
+GPIO ISR service while any BSP display or input consumer is active.
+
 ## Display and touch
 
 The on-board 2.0-inch CO5300 AMOLED (QSPI, 460x460 active area inside a 470x460 GRAM window; the supplier init code sets the column window 10..469) and the CST820 capacitive touch panel (I2C, `BSP_I2C_NUM`) are both initialized by `bsp_display_start()`.
@@ -220,11 +224,12 @@ The on-board 2.0-inch CO5300 AMOLED (QSPI, 460x460 active area inside a 470x460 
   rotation when `sw_rotate` is enabled. Disable the Kconfig option for an upright
   board spin and keep the touch transform matched.
 - **TE synchronization:** with `CONFIG_BSP_LCD_TE_SYNC` (default y) the LVGL
-  refresh is gated on the panel's tearing-effect output (GPIO16) through the
-  esp_lvgl_adapter TE_SYNC profile: each TE-gated flush transfers the whole frame.
-  At the 48 MHz QSPI limit a full frame takes ~17.6 ms, so full-screen motion tops
-  out at ~30 fps while local animations track the 60 Hz TE beat; sparse, local
-  invalidations keep the UI tear-free. Disable the option only for diagnostics.
+  refresh is gated on the panel's tearing-effect output (GPIO16). In the BSP's
+  partial-buffer LVGL port, the first chunk waits for TE; subsequent chunks
+  use the double-buffered DMA pipeline. A 460x460 RGB565 update needs at least
+  17.6 ms at 48 MHz QSPI, longer than this panel's measured 16.69 ms period.
+  The measured TE-on rates are therefore about 29.95 fps full-screen and
+  59.90 fps for local updates, not a guaranteed minimum of exactly 30/60 fps.
 
 - **Touch is optional:** if the CST820 is missing or fails to initialize, `bsp_display_start()` still succeeds and logs a warning; the display keeps working without touch input.
 
@@ -254,17 +259,16 @@ Disabling it selects esp_video's controller-driven 20 MHz XCLK; 20 MHz divides
 the ESP32-S31 160 MHz CAM source exactly, but that alternate path is not the
 EVT1 baseline.
 
-The fitted module is autofocus-capable. AF_VCC powers the voice-coil motor,
-while the OV5640's internal VCM current sink controls it; therefore no separate
-`cam_motor` I2C device is expected. After `VIDIOC_STREAMON`,
-`bsp_camera_autofocus_once()` downloads the sensor's embedded AF firmware and
-runs OmniVision's documented `0x12` zone relaunch, `0x03` single-focus and
-`0x07` result sequence. A focus attempt passes only when firmware status is
-`0x10` and at least one returned zone is focused.
+The fitted module is an OV5640 with a voice-coil autofocus actuator, but the
+EVT1 board leaves its `CAM_AF_VCC` motor rail unpopulated, so the lens has no
+focus actuator and no `cam_motor` I2C device is registered. The BSP therefore
+configures DVP capture only: `bsp_camera_start()` brings up power, XCLK, the
+DVP route and the sensor profile, and the application drives the V4L2 stream.
 
 ## Audio codec
 
-The ES8389 codec sits on the main I2C bus (address 0x20) and on I2S
+The ES8389 codec sits on the main I2C bus (7-bit address 0x10; the codec
+configuration uses the 8-bit value 0x20) and on I2S
 (MCLK=GPIO35, BCLK=GPIO18, WS=GPIO19, DOUT=GPIO8, DIN=GPIO44); the speaker
 amplifier enable is GPIO42. Both speaker and microphone logical devices clock
 the codec from BCLK with `no_dac_ref=true`; at 16 kHz/16-bit stereo this is an
@@ -282,5 +286,13 @@ the same chip. Version 1.6.2 reference-counts that physical ES8389 and avoids
 the repeated whole-chip reset in 1.5.11; the two BSP configs intentionally use
 the same clock/reference fields so initialization order cannot change ADC
 routing.
+
+Open every BSP-owned codec with `bsp_audio_codec_open(device, &format)`.
+It returns `ESP_CODEC_DEV_*` codes and restores the I2S running state needed
+by the upstream format-change path after a previous close. The microphone
+also needs TX running for the shared clock. The remaining stream operations
+still use `esp_codec_dev_read/write/close`; `bsp_audio_deinit()` closes both
+devices, releases I2S and powers the audio path off. Do not run operations
+on a codec concurrently with its open, close or deinitialization.
 
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)

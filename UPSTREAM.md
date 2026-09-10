@@ -116,6 +116,13 @@ drivers to `vendor/idf-extra-components/` with relative `override_path`
 entries. The display example maps both Board Manager packages and the same
 drivers to local vendor paths.
 
+Local note (2026-09-05): the standalone example set now covers
+`camera-test`, `power-cycle`, and `usb-cdc-device` at their new
+`examples/esp-idf/` locations, plus twelve feature examples (buttons, led,
+rtc, pmic, storage, display-touch, display-benchmark, audio-recorder,
+audio-player, wifi, ble, usb-host-msc) extracted from the watch demo; the
+upstream ownership table and release status below are unchanged.
+
 The current compatibility baseline is:
 
 | Item | Version | Validation |
@@ -135,3 +142,51 @@ The repository records local snapshot validation only. Public support is
 claimed after the corresponding artifact can be installed and tested through
 its normal channel. Hardware limitations remain documented in `BETA.md` and
 `hardware/bring-up.md`.
+
+## Vendor snapshot baseline and upstream drift
+
+Locked reproducible baseline (2026-09): the staged Board Manager packages in
+`vendor/esp-board-manager/` are `esp_board_manager` `0.6.1` and
+`esp_friends_boards` `0.5.2` (snapshot: LeenixP/esp-board-manager local
+worktree, commit `202225d`, synced 2026-09-04, zero dirty files). The
+`display-hello` example uses this pair; advanced firmware uses the separate
+repository-owned board runtime.
+
+At this review, official `main` declares
+[`esp_board_manager` `0.7.2`](https://github.com/espressif/esp-board-manager/blob/main/esp_board_manager/idf_component.yml)
+and [`esp_friends_boards` `0.6.1`](https://github.com/espressif/esp-board-manager/blob/main/esp_friends_boards/idf_component.yml),
+with two breaking migrations in between:
+
+- `esp_friends_boards` `0.5.3` migrated friend-board audio codec
+  configurations to the `esp_codec_dev` 2.0 initialization layout
+  ([0.5.3 changelog](https://components.espressif.com/components/espressif/esp_friends_boards/versions/0.5.3/changelog));
+- `esp_friends_boards` `0.6.0` and later board packs use role-specific
+  peripheral selectors (`i2c_name`, `spi_name`, `pa_name`, `reset_name`,
+  ...) and require `esp_board_manager` `>= 0.7.1`
+  ([official migration guide](https://docs.espressif.com/projects/esp-board-manager/en/latest/migration/migrate-to-0.7.html)).
+
+Upstream pull requests prepared from this snapshot therefore need a separate
+adaptation, `idf.py bmgr` regeneration, and validation pass against the
+newer versions. This repository does not silently upgrade the snapshot;
+those passes belong to each future contribution, not to this one.
+
+## Upstream acceptance gates
+
+The submission targets in [Contribution workflow](#contribution-workflow)
+  stay as written. Before any release, acceptance must be confirmed with the
+  receiving maintainers: which repository hosts the component and under
+  which namespace. There is no open issue or pull request for this
+  snapshot, and no namespace has been chosen unilaterally. The earlier
+  `esp-bsp#823`, `idf-extra-components#824`, and
+  `esp-board-manager#7` pull requests are closed; they did not establish
+  acceptance or maintenance ownership.
+- The [`idf-extra-components` README](https://github.com/espressif/idf-extra-components#adding-new-components)
+  states that the repository "is intended for components maintained by
+  Espressif developers" and asks external authors to publish their
+  components from a separate repository. A driver submission there is
+  therefore not guaranteed and must be confirmed with the maintainers.
+- In [espressif/esp-bsp#823](https://github.com/espressif/esp-bsp/pull/823),
+  the maintainer suggested `idf-extra-components` as another location for
+  reusable drivers. The author offered to move FUSB303B if Espressif would
+  accept and maintain it. The final reply limits `esp-bsp` to Espressif and
+  M5Stack boards; it does not commit another team to maintaining the driver.

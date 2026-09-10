@@ -134,7 +134,7 @@ static int command_codec_reg(int argc, char **argv)
                 .channel = 2,
                 .sample_rate = AUDIO_SAMPLE_RATE,
             };
-            result = esp_codec_dev_open(mic, &format);
+            result = bsp_audio_codec_open(mic, &format);
         } else {
             result = esp_codec_dev_close(mic);
         }
@@ -221,7 +221,7 @@ static int command_speaker_test(int argc, char **argv)
         return ESP_FAIL;
     }
     esp_codec_dev_sample_info_t format = audio_format();
-    int result = esp_codec_dev_open(speaker, &format);
+    int result = bsp_audio_codec_open(speaker, &format);
     if (result == ESP_CODEC_DEV_OK) {
         result = esp_codec_dev_set_out_vol(speaker, volume);
     }
@@ -281,7 +281,7 @@ static int command_microphone_test(int argc, char **argv)
         return ESP_FAIL;
     }
     esp_codec_dev_sample_info_t format = audio_format();
-    int result = esp_codec_dev_open(microphone, &format);
+    int result = bsp_audio_codec_open(microphone, &format);
     if (result == ESP_CODEC_DEV_OK) {
         result = esp_codec_dev_set_in_gain(microphone, (float)gain_db);
     }
@@ -463,7 +463,7 @@ static int command_mic_snoop(int argc, char **argv)
         return ESP_FAIL;
     }
     esp_codec_dev_sample_info_t format = audio_format();
-    int result = esp_codec_dev_open(microphone, &format);
+    int result = bsp_audio_codec_open(microphone, &format);
     if (result != ESP_CODEC_DEV_OK) {
         printf("mic_snoop: open failed: %s\n", esp_err_to_name(result));
         return result;
@@ -575,7 +575,7 @@ static int command_codec_loopback(int argc, char **argv)
     bool speaker_open = false;
     bool microphone_open = false;
     bool mix_enabled = false;
-    result = esp_codec_dev_open(speaker, &format);
+    result = bsp_audio_codec_open(speaker, &format);
     if (result != ESP_CODEC_DEV_OK) {
         printf("codec_loopback: speaker stream open failed: %s\n",
                esp_err_to_name(result));
@@ -588,7 +588,7 @@ static int command_codec_loopback(int argc, char **argv)
                esp_err_to_name(result));
         goto cleanup;
     }
-    result = esp_codec_dev_open(microphone, &format);
+    result = bsp_audio_codec_open(microphone, &format);
     if (result != ESP_CODEC_DEV_OK) {
         printf("codec_loopback: microphone stream open failed: %s\n",
                esp_err_to_name(result));

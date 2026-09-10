@@ -728,6 +728,10 @@ esp_err_t bsp_rtc_alarm_irq_enable(bool enable);
 esp_err_t bsp_rtc_get_and_clear_alarm_flag(bool *alarm_flag);
 esp_err_t bsp_rtc_clear_interrupt_flags(uint8_t *flags);
 
+/** Initialize the shared GPIO ISR service once, before display/input consumers.
+ *  The display and callback entry points call this automatically. */
+esp_err_t bsp_shared_irq_init(void);
+
 /** Service TG28_SW and RX8130CE until their shared interrupt line is released.
  *  When a callback is registered, the line is re-armed before returning. */
 esp_err_t bsp_shared_irq_service(bsp_shared_irq_status_t *status);
@@ -789,6 +793,10 @@ esp_err_t bsp_audio_deinit(void);
 const audio_codec_data_if_t *bsp_audio_get_codec_itf(void);
 esp_codec_dev_handle_t bsp_audio_codec_speaker_init(void);
 esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void);
+/** Open/reopen a BSP-owned codec, preparing its I2S clocks for esp_codec_dev.
+ *  Returns ESP_CODEC_DEV_* codes. Serialize with codec I/O, close and deinit. */
+int bsp_audio_codec_open(esp_codec_dev_handle_t device,
+                         esp_codec_dev_sample_info_t *format);
 esp_err_t bsp_audio_codec_deinit(esp_codec_dev_handle_t device);
 /** @} */
 
@@ -797,16 +805,11 @@ esp_err_t bsp_audio_codec_deinit(esp_codec_dev_handle_t device);
  */
 /** DVP camera pipeline. Sensor support is selected in project configuration. */
 esp_err_t bsp_camera_start(const bsp_camera_cfg_t *cfg);
-/** Reapply the board sensor override after esp_video_open()/VIDIOC_S_FMT.
- *  v4l2_pixel_format must be V4L2_PIX_FMT_RGB565X or V4L2_PIX_FMT_UYVY. */
+/** Reapply the board sensor override after esp_video_open()/VIDIOC_S_FMT,
+ *  before REQBUFS/STREAMON; open/format setup overwrites the pre-open pass.
+ *  v4l2_pixel_format must be V4L2_PIX_FMT_RGB565X or V4L2_PIX_FMT_UYVY.
+ *  Do not apply the profile while the stream is running. */
 esp_err_t bsp_camera_apply_workaround(uint32_t v4l2_pixel_format);
-/** Run the OV5640 embedded single-shot autofocus sequence.
- *
- * The DVP stream must already be running so the sensor firmware can measure
- * image edges. The firmware is loaded once per camera power cycle; later
- * calls only relaunch the center zone and refocus.
- */
-esp_err_t bsp_camera_autofocus_once(uint32_t timeout_ms);
 esp_err_t bsp_camera_stop(void);
 /** @} */
 

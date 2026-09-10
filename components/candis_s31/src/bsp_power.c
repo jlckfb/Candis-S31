@@ -79,12 +79,31 @@ static esp_err_t configure_output(gpio_num_t gpio, uint32_t level)
     return gpio_set_level(gpio, level);
 }
 
+/* The camera PWDN/RST lines are driven by the board power sequence before
+ * esp_video takes them over and configures the same pads itself. Configure
+ * them without reserving the pins so the camera driver's own gpio_config()
+ * does not report a conflict; the camera path remains their only owner. */
+static esp_err_t configure_output_shared(gpio_num_t gpio, uint32_t level)
+{
+    /* Load the output latch before changing direction to avoid enable pulses. */
+    ESP_RETURN_ON_ERROR(gpio_set_level(gpio, level), TAG, "GPIO latch failed");
+    ESP_RETURN_ON_ERROR(gpio_set_pull_mode(gpio, GPIO_FLOATING), TAG,
+                        "GPIO pull config failed");
+    ESP_RETURN_ON_ERROR(gpio_set_direction(gpio, GPIO_MODE_OUTPUT), TAG,
+                        "GPIO direction failed");
+    return gpio_set_level(gpio, level);
+}
+
 /* Park the given pins as floating inputs (no pull-up/pull-down) so they
  * cannot back-feed a peripheral whose supply is about to be removed. */
 static esp_err_t tristate_pins(const gpio_num_t *gpios, size_t count)
 {
     uint64_t mask = 0;
     for (size_t index = 0; index < count; ++index) {
+        /* The peripheral driver has stopped. Release its pad reservation
+         * before returning the pin to GPIO input mode. */
+        ESP_RETURN_ON_ERROR(gpio_reset_pin(gpios[index]), TAG,
+                            "GPIO release failed");
         mask |= 1ULL << gpios[index];
     }
     const gpio_config_t config = {
@@ -181,9 +200,9 @@ static esp_err_t safe_state_note(esp_err_t first_error, esp_err_t error,
 
 static esp_err_t camera_control_pins(void)
 {
-    ESP_RETURN_ON_ERROR(configure_output(BSP_CAMERA_PWDN, 1), TAG,
+    ESP_RETURN_ON_ERROR(configure_output_shared(BSP_CAMERA_PWDN, 1), TAG,
                         "camera PWDN config failed");
-    const esp_err_t rst_error = configure_output(BSP_CAMERA_RST, 0);
+    const esp_err_t rst_error = configure_output_shared(BSP_CAMERA_RST, 0);
     if (rst_error != ESP_OK) {
         /* Roll back PWDN to a floating input so a partially-configured
          * state is never left on the sensor pads. */
@@ -334,8 +353,12 @@ esp_err_t bsp_power_domain_set(bsp_power_domain_t domain, bool enable)
      * "conflict found" warning. These enables stay as outputs for the BSP's
      * lifetime, so configure each one once and use the output latch after
      * that; this also avoids needless direction rewrites on live rails. */
+    /* The codec owns PA pin reservation; BSP only drives its safe level
+     * before that owner is created. Camera control pins use the same rule. */
     const esp_err_t error = s_domain_states[domain] == BSP_POWER_DOMAIN_STATE_UNKNOWN
-                            ? configure_output(config->gpio, level)
+                            ? (domain == BSP_POWER_AUDIO_PA
+                               ? configure_output_shared(config->gpio, level)
+                               : configure_output(config->gpio, level))
                             : gpio_set_level(config->gpio, level);
     if (error == ESP_OK) {
         s_domain_states[domain] = enable ? BSP_POWER_DOMAIN_STATE_ON
@@ -446,7 +469,7 @@ esp_err_t bsp_peripheral_power_set(bsp_peripheral_t peripheral, bool enable)
                 return error;
             }
             vTaskDelay(pdMS_TO_TICKS(1));
-            error = regulator_start(BSP_PMIC_ALDO4, 2800);
+            error = regulator_start(BSP_PMIC_ALDO4, CONFIG_BSP_CAMERA_AVDD_MV);
             if (error != ESP_OK) {
                 rollback_note("camera DOVDD",
                               bsp_pmic_regulator_enable(BSP_PMIC_BLDO1, false));

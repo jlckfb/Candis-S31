@@ -27,7 +27,6 @@ typedef struct {
     const char *video_path; /**< AVI (MJPG) file on TF card */
     int volume;             /**< 0..100 */
     bool loop;              /**< loop playback */
-    float speed;            /**< playback speed, 0.5 .. 2.0 */
     player_event_cb_t cb;
     void *user;
 } video_play_request_t;
@@ -52,7 +51,6 @@ esp_err_t video_player_set_brightness(int brightness);
 
 /** Set volume 0..100. */
 esp_err_t video_player_set_volume(int volume);
-esp_err_t video_player_set_speed(float speed);
 esp_err_t video_player_set_loop(bool loop);
 
 /** True while playing or paused. */
