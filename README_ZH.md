@@ -6,7 +6,7 @@
 集成触摸、音频、DVP 摄像头接口、TF 卡、双 USB Type-C 与电源管理，为 ESP32-S31 产品开发提供可参考、
 可复用的硬件与固件方案。
 
-![立创·Candis-S31 开发板](img/board-hero.png)
+<img src="img/board-hero.png" alt="立创·Candis-S31 开发板" width="360">
 
 **2.0" AMOLED（460 × 460）· 双核 RISC-V · 16 MB / 32 MB PSRAM**
 
@@ -15,7 +15,7 @@
 板载完整的交互硬件：AMOLED 显示与触摸、音频输入输出、DVP 摄像头接口、双 USB Type-C、TF 卡槽、
 电源管理与独立 RTC。
 
-![Candis-S31 开发板正反面器件标注图](img/board-overview.png)
+<img src="img/board-overview.png" alt="Candis-S31 开发板正反面器件标注图" width="720">
 
 | | 模块 | 说明 |
 |---|---|---|
@@ -30,7 +30,7 @@
 
 主控为乐鑫 ESP32-S31，集成多协议连接与先进 HMI 能力。
 
-![Espressif ESP32-S31](img/esp32-s31.png)
+<img src="img/esp32-s31.png" alt="Espressif ESP32-S31" width="560">
 
 | | |
 |---|---|
@@ -84,11 +84,7 @@
 
 ## 展示
 
-![Candis-S31 与电池](img/gallery-1.jpg)
-
-![Candis-S31 AMOLED 显示](img/gallery-2.jpg)
-
-![Candis-S31 板卡细节](img/gallery-3.jpg)
+<img src="img/gallery-1.jpg" alt="Candis-S31 与电池" width="300"> <img src="img/gallery-2.jpg" alt="Candis-S31 AMOLED 显示" width="300"> <img src="img/gallery-3.jpg" alt="Candis-S31 板卡细节" width="300">
 
 ## 快速开始
 

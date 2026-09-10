@@ -6,7 +6,7 @@ Candis-S31 is an open reference design for the ESP32-S31, built around a 2.0-inc
 It integrates touch, audio, a DVP camera connector, a TF card slot, two USB Type-C ports and TG28 power
 management on a single board, providing a reusable hardware and firmware baseline for ESP32-S31 products.
 
-![Candis-S31 development board](img/board-hero.png)
+<img src="img/board-hero.png" alt="Candis-S31 development board" width="360">
 
 **2.0" AMOLED (460 x 460) · Dual-core RISC-V · 16 MB / 32 MB PSRAM**
 
@@ -15,7 +15,7 @@ management on a single board, providing a reusable hardware and firmware baselin
 The board carries the complete interactive set: AMOLED display and touch, audio input and output, a DVP
 camera interface, two USB Type-C ports, a TF card slot, power management and an RTC.
 
-![Candis-S31 front and back with component callouts](img/board-overview.png)
+<img src="img/board-overview.png" alt="Candis-S31 front and back with component callouts" width="720">
 
 | | Block | Description |
 |---|---|---|
@@ -31,7 +31,7 @@ camera interface, two USB Type-C ports, a TF card slot, power management and an 
 The primary controller is the Espressif ESP32-S31, which combines multi-protocol connectivity with
 advanced HMI capabilities.
 
-![Espressif ESP32-S31](img/esp32-s31.png)
+<img src="img/esp32-s31.png" alt="Espressif ESP32-S31" width="560">
 
 | | |
 |---|---|
@@ -86,11 +86,7 @@ advanced HMI capabilities.
 
 ## Gallery
 
-![Candis-S31 with battery](img/gallery-1.jpg)
-
-![Candis-S31 AMOLED display](img/gallery-2.jpg)
-
-![Candis-S31 board detail](img/gallery-3.jpg)
+<img src="img/gallery-1.jpg" alt="Candis-S31 with battery" width="300"> <img src="img/gallery-2.jpg" alt="Candis-S31 AMOLED display" width="300"> <img src="img/gallery-3.jpg" alt="Candis-S31 board detail" width="300">
 
 ## Getting started
 
