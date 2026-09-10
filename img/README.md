@@ -4,7 +4,6 @@ Images referenced by the top-level `README.md` and `README_ZH.md`.
 
 | File | What it should show |
 |---|---|
-| `board-hero.png` | The board itself, three-quarter view, screen lit |
 | `board-overview.png` | Front and back with component callouts (1–6 blocks) |
 | `esp32-s31.png` | Espressif ESP32-S31 platform illustration |
 | `gallery-1.jpg` | Board powered from a battery |
