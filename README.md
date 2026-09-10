@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="img/board-hero.png" alt="Candis-S31 development board" width="380">
-</p>
-
 <h1 align="center">Candis-S31</h1>
 
 <p align="center">

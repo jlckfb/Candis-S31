@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="img/board-hero.png" alt="立创·Candis-S31 开发板" width="380">
-</p>
-
 <h1 align="center">立创 · Candis-S31</h1>
 
 <p align="center">
