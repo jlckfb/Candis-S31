@@ -119,8 +119,7 @@ esp_codec_dev 等），各工程的 `dependencies.lock` 固定已解析的版本
 - 可复用驱动：`vendor/idf-extra-components/`；Board Manager 与 `candis_s31` 定义：
   `vendor/esp-board-manager/`。
 - `tools/sync_upstream.sh` 用于刷新两个 vendor 快照，来源提交记录在各自的 `SOURCE_COMMIT`。
-- 上游归属与提交策略见 [UPSTREAM.md](UPSTREAM.md)。官方 `esp-bsp` 只维护 Espressif/M5Stack 开发板，
-  本仓库不依赖其检出。
+- 板级运行时不依赖官方 `esp-bsp` 检出：该仓库只维护 Espressif / M5Stack 开发板。
 
 ## 8. 反馈
 

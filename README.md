@@ -190,7 +190,6 @@ top-level application `CMakeLists.txt`.
 | [components/candis_s31](components/candis_s31/README.md) | Board runtime component and [API reference](components/candis_s31/API.md) |
 | [firmware/factory](firmware/factory/README.md) | Factory console and its release contract |
 | [firmware/recovery](firmware/recovery/README.md) | Recovery procedure |
-| [UPSTREAM.md](UPSTREAM.md) | Driver ownership and the upstream contribution map |
 | [OSHWHub project page](https://oshwhub.com/li-chuang-kai-fa-ban/project_spaoolal) | Schematic, PCB and pinout files |
 
 ## Board support
@@ -205,7 +204,6 @@ top-level application `CMakeLists.txt`.
 - Board Manager describes device and peripheral wiring; the board's shared-interrupt, charging, Type-C,
   camera-clock and display-transition policy lives in the runtime component. Advanced firmware therefore
   uses the component, while the small display example uses the Board Manager path.
-- Driver ownership and the upstream contribution map are recorded in [UPSTREAM.md](UPSTREAM.md).
 
 ## License
 

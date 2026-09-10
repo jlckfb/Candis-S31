@@ -184,7 +184,6 @@ VS Code 扩展与命令行使用同一个工程。环境安装、烧录与硬件
 | [components/candis_s31](components/candis_s31/README.md) | 板级运行时组件与 [API 参考](components/candis_s31/API.md) |
 | [firmware/factory](firmware/factory/README.md) | 产测控制台与其发布约定 |
 | [firmware/recovery](firmware/recovery/README.md) | 恢复流程 |
-| [UPSTREAM.md](UPSTREAM.md) | 驱动归属与上游贡献映射 |
 | [立创开源硬件平台工程页](https://oshwhub.com/li-chuang-kai-fa-ban/project_spaoolal) | 原理图、PCB 与引脚定义 |
 
 ## 板级支持
@@ -197,7 +196,6 @@ VS Code 扩展与命令行使用同一个工程。环境安装、烧录与硬件
   [`display-hello`](examples/esp-idf/display-hello) 直接使用该 Board Manager 定义。
 - Board Manager 描述器件与外围接线；本板的共享中断、充电、Type-C、摄像头时钟与显示切换策略由运行时
   组件承载。因此完整固件使用该组件，display 示例直接使用 Board Manager 通路。
-- 驱动归属与上游贡献映射记录在 [UPSTREAM.md](UPSTREAM.md)。
 
 ## 许可
 
