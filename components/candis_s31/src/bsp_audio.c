@@ -269,9 +269,7 @@ esp_codec_dev_handle_t bsp_audio_codec_speaker_init(void)
      * esp_codec_dev 1.6.x shares the physical ES8389 between both logical
      * devices, so these fields must not depend on creation order. At
      * 16 kHz/16-bit stereo, BCLK is 512 kHz and the x2 coefficient row is an
-     * exact match. Post-reflow DAC-to-ADC loopback proved the digital DAC
-     * path, and the operator separately confirmed every acoustic speaker
-     * regression tone with this common policy. */
+     * exact match. */
     es8389_codec_cfg_t codec_config = {
         .ctrl_if = s_speaker.control,
         .gpio_if = s_speaker.gpio,

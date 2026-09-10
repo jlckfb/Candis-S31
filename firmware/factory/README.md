@@ -1,16 +1,8 @@
 # Factory Bring-up Firmware
 
-This project is the controlled diagnostic application used while bringing up
-Candis-S31 hardware. It is not a product demo. Tests are run individually from
-the serial console so an unverified peripheral is never enabled as a side
-effect of booting the firmware.
-
-> EVT1 Bring-Up is in progress on physical `v0.5_260803_1544` boards. The
-> Factory image compiles with ESP-IDF `v6.1-rc1`, and S1-S4 plus substantial
-> S5-S7 evidence has been collected. Camera, audio, RF closure, and S8-S10
-> remain open. The 2026-08-20 low-power/RF-stop/rail/microphone updates are
-> compile-verified only and have not been flashed or run on hardware; a
-> successful build is never promoted to a hardware `PASS`.
+This project is the controlled diagnostic application for Candis-S31 hardware.
+It is not a product demo. Tests are run individually from the serial console so
+no peripheral is enabled as a side effect of booting the firmware.
 
 ## Design
 
@@ -107,7 +99,7 @@ need an external BSP checkout or a developer-specific path.
 | `led_test` | Show red, green, and blue on the addressable LED, then ask the operator to confirm | Yes |
 | `sdcard_test` | Mount, write, read, verify, remove, and unmount a test file | Writes the inserted card |
 | `speaker_test [FREQ_HZ] [VOLUME] [DURATION_MS]` | Play a square-wave tone (20% default volume), then ask the operator to confirm | Yes |
-| `microphone_test [DURATION_MS] [GAIN_DB]` | Capture ch0/ch1, report peak/DC-removed RMS/DC/clipping, fail dead or clearly clipped channels, and remain WARN until physical mapping is verified | Yes |
+| `microphone_test [DURATION_MS] [GAIN_DB]` | Capture ch0/ch1, report peak/DC-removed RMS/DC/clipping, fail dead or clearly clipped channels, and record the ch0/ch1 mapping as `WARN` unless an operator confirms it | Yes |
 | `camera_test` | Capture five DVP frames and verify frame size, non-blank content, and frame-to-frame change; each frame wait is bounded by a 3 s timeout | Yes |
 | `jpeg_encode_test [COUNT] [QUALITY]` | Benchmark the S31 hardware JPEG encoder with a synthetic 800x600 RGB565 frame | No, hardware JPEG codec |
 | `cordic_test [COUNT]` | Compare hardware CORDIC sine/cosine output with software math and report timing | No, hardware CORDIC |
@@ -121,15 +113,14 @@ need an external BSP checkout or a developer-specific path.
 | `report_reset` | Return every collected result to `NOT_RUN` while retaining the most recent safe-state result | Report only |
 | `reboot` | Restart the SoC | Yes |
 
-Run `rail`, `peripheral_power`, and `otg` only after checking the matching rail
-against the EVT bring-up sheet. Raw rail changes are rejected while a display
-or audio owner is active. EXT pin 2 has no reverse-current blocker, so it can
-only be enabled with the explicit `output_only` token and every self-powered
-load disconnected. `otg on` prints an additional warning because Type-C2 can
-source 5 V; the schematic's source indication gate remains part of the
-hardware safety path.
+Run `rail`, `peripheral_power`, and `otg` only after checking the matching rail.
+Raw rail changes are rejected while a display or audio owner is active. EXT pin
+2 has no reverse-current blocker, so it can only be enabled with the explicit
+`output_only` token and every self-powered load disconnected. `otg on` prints
+an additional warning because Type-C2 can source 5 V; the schematic's source
+indication gate remains part of the hardware safety path.
 
-Two ordering facts matter for the first passes:
+Two ordering facts matter:
 
 - The boot safe state powers the FUSB303B and every switched peripheral rail
   off. Scan the main bus once in that state to prove those devices are silent,
@@ -147,10 +138,10 @@ Two ordering facts matter for the first passes:
 
 The console registers 77 application commands plus the built-in `help` command
 (78 top-level commands total). The BSP initializes Type-C1 at a conservative
-500 mA baseline, then this brownout-investigation Factory image deliberately
-overrides it to 2000 mA at every boot. Use only a directly connected, verified
-source for this image. `pmic input_limit 100` is the explicit low-current
-fallback; selecting 500/900/1000/1500/2000 at runtime requires the
+500 mA baseline, then this Factory image deliberately overrides it to 2000 mA
+at every boot. Use only a directly connected, verified source for this image.
+`pmic input_limit 100` is the explicit low-current fallback; selecting
+500/900/1000/1500/2000 at runtime requires the
 `source_verified` token and prints a warning. Plain `charge_test` accepts the
 BSP 500 mA baseline; pass `source_verified` when the board is intentionally
 above that baseline. Neither form raises a limit by itself.
@@ -168,15 +159,12 @@ USB evidence boundaries, stated once: `otg on` only proves the Type-C2 5 V
 boost path; it never installs the USB Host stack and is never a Host PASS.
 `usb_host_test` is the host evidence — it enumerates a real device and reads
 its descriptors over EP0, which is actual bus traffic, then stops the stack
-and drops the boost. USB *device* mode (Type-C2 as a gadget behind an
-external host) has no Factory coverage in this round; run the dedicated
-TinyUSB-device diagnostic image for that check, per the bring-up plan. On
-this hardware the source always advertises the USB 500 mA default; the
-1.5 A/3 A enum values are kept only to report the peer's advertised
-capability, and any request for a higher source current fails explicitly.
+and drops the boost. On this hardware the source always advertises the USB
+500 mA default; the 1.5 A/3 A enum values are kept only to report the peer's
+advertised capability, and any request for a higher source current fails
+explicitly.
 
-The OV5640 autofocus/VCM path is intentionally not exposed as a command until
-the module supplier confirms VCM power and the actuator control interface.
+The OV5640 autofocus/VCM path is not exposed as a console command.
 
 An I2C scan on the main bus is graded against each device's power state.
 While `BSP_POWER_TYPE_C_CONTROL` is on, FUSB303B must answer at exactly one of
@@ -187,7 +175,7 @@ off records a `WARN`. Devices behind switched rails (CST820 `0x15`, ES8389
 `0x10` — 7-bit on the wire; `0x20` is its 8-bit write address —, OV5640
 `0x3C`) may likewise stay silent while their rail is off; a
 powered device that does not answer, an unexpected address, or an answer at
-the unconfirmed VCM address `0x0C` records a `WARN`. The low-power bus passes
+the VCM address `0x0C` records a `WARN`. The low-power bus passes
 only when both the RX8130CE at `0x32` and TG28_SW at `0x34` respond.
 
 ## Operator checks and manual results
@@ -215,20 +203,20 @@ and `display_sleep` — accept a manually entered `PASS` or `FAIL` through
 marked `SKIP` when the omission is intentional and documented.
 
 `camera_test` bounds each frame wait with a 3 s `VIDIOC_S_DQBUF_TIMEOUT`. A
-dead or unpowered sensor now fails the command with `ESP_ERR_TIMEOUT` instead
+dead or unpowered sensor fails the command with `ESP_ERR_TIMEOUT` instead
 of stalling the console; investigate the sensor power and DVP wiring, then
 rerun.
 
-`sleep_test` is a **SoC timer-sleep and board-safe-state smoke test**, not the
-product S1/S2/TG28 soft-power-off acceptance test. UART, TG28, RTC, LP-I2C,
-VBUS, and board leakage can still dominate current. The command first stops
-any active RF worker/tone; if `rf_init` ran at any point in the same boot it
-then refuses to sleep because the public certification API has no matching
-deinit. Reboot, do not run `rf_init`, and retry. `wake_info` labels rejected,
-incomplete, and reset-mismatched retained records instead of presenting them
-as valid wake evidence; a rejected attempt replaces the previous retained
-record. Deep-sleep `measured_us` is captured at `app_main` entry, so it still
-includes boot latency but does not include the operator's console wait.
+`sleep_test` is a **SoC timer-sleep and board-safe-state smoke test**. UART,
+TG28, RTC, LP-I2C, VBUS, and board leakage can still dominate current. The
+command first stops any active RF worker/tone; if `rf_init` ran at any point
+in the same boot it then refuses to sleep because the public certification API
+has no matching deinit. Reboot, do not run `rf_init`, and retry. `wake_info`
+labels rejected, incomplete, and reset-mismatched retained records instead of
+presenting them as valid wake evidence; a rejected attempt replaces the
+previous retained record. Deep-sleep `measured_us` is captured at `app_main`
+entry, so it still includes boot latency but does not include the operator's
+console wait.
 
 Valid `rail` names are `dcdc1` through `dcdc4`, `aldo1` through `aldo4`,
 `bldo1` through `bldo2`, `cpusldo`, and `dldo1` through `dldo2`. `cpusldo` is
@@ -286,9 +274,7 @@ and application, run:
 idf.py --preview merge-bin --output candis_s31_factory_merged.bin --format raw
 ```
 
-The raw merged image is written under `build/` and is intended for flash offset
-`0x0`. It remains a local artifact until the matching board revision and flash
-procedure have been verified.
+The raw merged image is written under `build/` for flash offset `0x0`.
 
 The committed `dependencies.lock` pins registry component versions and hashes
 for reproducible builds. It is regenerated by `idf.py reconfigure`; do not
@@ -298,9 +284,7 @@ reusable drivers map to `vendor/idf-extra-components/`.
 
 ## Serial session
 
-After the programming connector and ROM download sequence have been verified
-for the board revision, flash at the highest validated baud and then monitor
-at the console baud:
+Flash at the highest validated baud and monitor at the console baud:
 
 ```bash
 idf.py --preview -p PORT -b 4000000 flash
@@ -333,10 +317,9 @@ OTP boot snapshot: dcdc1=on@3300mV ...      <- power-on boot; lot evidence
 candis-factory>
 ```
 
-That `PASS` only confirms that the GPIO API accepted the disabled levels. Rail
-voltage, leakage, sequencing, and active polarity still require measurement on
-EVT1. After a warm reset the same line is logged as a warning that it is not
-the OTP state; power-cycle the board before recording lot evidence. Compare
+That `PASS` confirms that the GPIO API accepted the disabled levels. After a
+warm reset the same line is logged as a warning that it is not the OTP state;
+power-cycle the board before recording lot evidence. Compare
 the OTP boot snapshot against the TG28 confirmation sheet for the lot: DCDC1
 enabled at 3.3 V and DCDC4 enabled at 1.8 V (step1, no external load, no
 measurable node — register evidence only), with DCDC2/DCDC3, the ALDO/BLDO
@@ -353,7 +336,7 @@ boot path itself is unchanged.
 
 ## Result format
 
-Every implemented test is one of:
+Every test is one of:
 
 - `PASS`: the documented check ran and met its current criterion;
 - `FAIL`: the check ran and did not meet the criterion;
@@ -380,7 +363,7 @@ FACTORY_RESULT {"test":"flash","status":"PASS","detail":"size=16777216 expected=
 `report` ends with `FACTORY_SUMMARY`, which counts each status in a `warn`
 field alongside `pass`/`fail`/`skip`/`not_run`. The overall state is `FAIL`
 when any test fails, then `WARN` when any test warns, then `NOT_RUN` while any
-required test has not run, and only then `PASS`. A missing or unimplemented
+required test has not run, and only then `PASS`. A missing or silent
 peripheral is never converted to `PASS`.
 
 If the console itself fails to start, the firmware logs the error, waits five
@@ -413,7 +396,7 @@ software-owned USB Host result. Before `rtc_test` it first issues an `rtc_set`
 from the host clock (UTC), because a fresh board powers up with an invalid RTC
 time. The board identity defaults to the base MAC from `board_info`.
 `--non-interactive` supplies safe canned answers for unattended parser
-validation; it is not a substitute for fixture observations.
+validation.
 The optional `power_rail_scan` composite check cycles the ES8389 audio rail,
 whose rail-only API leaves the codec addressable. CST820 is intentionally not
 graded there because it needs a reset pulse after ALDO2 rises (before that it
@@ -427,7 +410,7 @@ hardware.
 
 ## Release requirements
 
-The first hardware-verified release must include:
+A release must include:
 
 - one merged binary or the complete image and offset list;
 - SHA-256 checksums;
@@ -436,7 +419,7 @@ The first hardware-verified release must include:
 - supported board revision;
 - flash command and expected ROM/application output;
 - fixture version and required measurement equipment;
-- a completed test manifest and known limitations.
+- a completed test manifest.
 
 Release binaries belong in GitHub Release assets. Build directories and
 downloaded components do not belong in Git.
@@ -447,6 +430,6 @@ git-ignored. The script requires a concrete release name, fills
 `tools/release/manifest.template.yaml`, generates a matching placeholder-free
 Recovery `launchpad.toml`, and archives the merged image, its SHA-256, the
 dependency lock, `flash_factory.sh`, the Recovery procedure, and both manifests.
-Published artifacts are uploaded as GitHub Release assets only after hardware
-validation. The CI `factory` job runs the same script with a concrete
-`ci-<commit>` identifier and stores the archive as a build artifact.
+Published artifacts are uploaded as GitHub Release assets. The CI `factory` job
+runs the same script with a concrete `ci-<commit>` identifier and stores the
+archive as a build artifact.

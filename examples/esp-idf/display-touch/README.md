@@ -12,7 +12,6 @@ BSP), a cross marker follows the finger, and every touch move prints
 | Partition table | `partitions.csv` (single 8 MB app) |
 | Managed components | None direct (LVGL via the board component) |
 | Compile status | Verified |
-| Hardware status | **Partial** — EVT1 (2026-09-10): display and CST820 initialization verified; physical touch coordinates and marker alignment remain an operator check |
 
 ## Behavior
 
@@ -20,7 +19,6 @@ BSP), a cross marker follows the finger, and every touch move prints
   a hint label.
 - Pressing/dragging moves the cross marker to the finger and prints
   `touch: <x>,<y>` for every coordinate update.
-- No idle heartbeat is emitted; initialization alone is not touch acceptance.
 
 ## Build and flash
 
@@ -45,5 +43,4 @@ right and y grows down in the 180°-rotated panel orientation.
 
 - GPIO16 (TE) interrupt ownership belongs to the display stack; do not
   register an application ISR on that pin.
-- Requires 32 MB PSRAM (the example refuses to boot without it, matching
-  the LVGL draw pipeline baseline).
+- Requires 32 MB PSRAM, the LVGL draw pipeline baseline.

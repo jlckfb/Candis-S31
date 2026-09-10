@@ -26,8 +26,10 @@ menu "Board Support Package (Candis-S31)"
             bool "Enable internal I2C pull-ups"
             default n
             help
-                External pull-ups are fitted on the board. Enable this only
-                for controlled diagnostics.
+                Uses the SoC's internal pull-ups on both I2C buses. They stay
+                disabled by default because the board fits external pull-ups;
+                enable this only for a board spin or a bench setup that has
+                none.
     endmenu
 
     menu "Display"
@@ -40,7 +42,7 @@ menu "Board Support Package (Candis-S31)"
                 48 MHz is the highest frequency the ESP32-S31 SPI clock
                 generator produces exactly (BBPLL 480 MHz / 10) within that
                 limit. Values above 40 MHz route over the GPIO matrix on
-                this pinout; validate signal integrity on new board spins.
+                this pinout.
 
         config BSP_LCD_TE_SYNC
             bool "Synchronize LVGL flushes with the panel TE signal"
@@ -59,25 +61,25 @@ menu "Board Support Package (Candis-S31)"
             help
                 Height of each internal-DMA LVGL PARTIAL draw buffer and the
                 matching QSPI maximum transfer. The 48-line default is the
-                measured 60 Hz local / 30 Hz full-screen baseline and keeps
-                internal RAM pressure below the earlier 80-line setting.
+                measured 60 Hz local / 30 Hz full-screen baseline and fits
+                the internal-RAM budget.
 
         config BSP_LCD_DRAW_BUF_DOUBLE
             bool "Use two LVGL draw buffers"
             default y
             help
                 Allocate two internal-DMA PARTIAL buffers so LVGL rendering
-                can overlap the QSPI transfer. Disable only when internal RAM
-                is constrained and revalidate display throughput afterward.
+                can overlap the QSPI transfer. Disable it when internal RAM
+                is constrained.
 
         config BSP_LCD_DIRECT_MODE
             bool "Full-frame PSRAM DIRECT rendering with per-cycle TE-gated flush"
             default n
             help
                 Optional esp_lvgl_port full-frame path for applications that
-                require a persistent framebuffer. The validated default is
-                PARTIAL double buffering, which has lower local-update latency;
-                leave this disabled unless the DIRECT path is tested separately.
+                require a persistent framebuffer. The default is PARTIAL
+                double buffering, which has lower local-update latency and
+                pipelines rendering with QSPI DMA.
         config BSP_DISPLAY_ROTATE_180
             bool "Rotate panel scan and touch by 180 degrees"
             default y
@@ -150,20 +152,23 @@ menu "Board Support Package (Candis-S31)"
             bool "Use the OV5640 internal DVDD regulator"
             default n
             help
-                Diagnostic option for boards whose external 1.5 V camera
-                core rail is unavailable. Clears OV5640 SC_PWC bit 3 and
-                leaves TG28 DCDC2 off. Use only with AVDD/DOVDD present;
-                the OV5640 datasheet warns that internal regulation with
-                2.8 V I/O can increase sensor heat.
+                Selects the internal OV5640 DVDD regulator instead of the
+                board's external 1.5 V camera core rail: it clears OV5640
+                SC_PWC bit 3 and leaves TG28 DCDC2 off. Enable it when
+                validating a module whose AVDD/DVDD wiring differs from the
+                EVT1 module, and only with AVDD/DOVDD present. The OV5640
+                datasheet warns that internal regulation with 2.8 V I/O can
+                increase sensor heat.
 
         config BSP_CAMERA_AVDD_MV
             int "Camera AVDD voltage (mV)"
             default 2800
             range 2600 3000
             help
-                Experimental OV5640 AVDD setting. TG28 ALDO4 accepts
-                100 mV steps in this range; the default remains 2800 mV.
-                Keep DOVDD at 2800 mV for the direct DVP connections.
+                AVDD rail voltage for the fitted OV5640 module. TG28 ALDO4
+                accepts 100 mV steps in this range; the EVT1 module uses the
+                2800 mV default. Keep DOVDD at 2800 mV for the direct DVP
+                connections.
 
         config BSP_CAMERA_CORE_120MHZ
             bool "Use the 120 MHz LCDCAM core clock for DVP capture"
@@ -180,57 +185,61 @@ menu "Board Support Package (Candis-S31)"
             bool "Swap D0/D1 and D3/D4 for a nonstandard camera adapter"
             default n
             help
-                Diagnostic compatibility option only. The normal module uses
-                schematic-order D0-D7. An unnecessary bit swap makes pixel
-                values non-monotonic and causes severe color banding.
-                Enable only after verifying the adapter's physical wiring.
+                Swaps D0/D1 and D3/D4 in the DVP data map for a nonstandard
+                camera adapter. The EVT1 module uses schematic-order D0-D7.
+                Enable it only after verifying the adapter's physical wiring:
+                an unnecessary bit swap makes pixel values non-monotonic and
+                causes severe color banding.
 
         config BSP_CAMERA_TIMING_60MHZ
-            bool "Use experimental OV5640 60 MHz / HTS 2000 timing"
+            bool "Use the OV5640 60 MHz / HTS 2000 preview timing"
             depends on IDF_TARGET_ESP32S31
             default n
             help
-                Keep 800x600 output and VTS 984, reduce PLL1 from 800 to
-                600 MHz and PCLK from 80 to 60 MHz. HTS 2000 gives a nominal
-                30.488 fps and preserves the complete binned readout.
-                Recalculate 50/60 Hz exposure steps for the new line time.
-                XCLK, ADC PLL2, power rails and ISP tuning are unchanged.
-                Diagnostic profile, not a claim of improved image quality.
+                Keeps 800x600 output and VTS 984 while reducing PLL1 from
+                800 to 600 MHz and PCLK from 80 to 60 MHz. HTS 2000 gives a
+                nominal 30.488 fps and preserves the complete binned readout;
+                50/60 Hz band steps follow the selected PCLK and HTS. XCLK,
+                ADC PLL2, power rails and ISP tuning are unchanged. Select it
+                when the DVP receiver needs more clock margin than the default
+                PCLK 80 MHz / HTS 2060 profile provides.
 
         config BSP_CAMERA_TIMING_MATCHED80
-            bool "Use experimental 80 MHz / HTS 2666 matched-line timing"
+            bool "Use the OV5640 80 MHz / HTS 2666 matched-line timing"
             depends on IDF_TARGET_ESP32S31 && !BSP_CAMERA_TIMING_60MHZ
             default n
             help
-                Keep PCLK 80 MHz and VTS 984 but extend HTS to 2666.
+                Keeps PCLK 80 MHz and VTS 984 but extends HTS to 2666.
                 This gives 30.495 fps and almost the same line period as
                 the 60 MHz / HTS 2000 profile (33.325 vs 33.333 us).
-                Diagnostic intermediate profile, not a product default.
+                Select it to compare the two matched-line variants; the
+                default build uses PCLK 80 MHz / HTS 2060.
 
         config BSP_CAMERA_TIMING_15FPS
-            bool "Use experimental 15 fps timing for gain/noise diagnosis"
+            bool "Use the OV5640 15 fps preview timing"
             depends on IDF_TARGET_ESP32S31 && !BSP_CAMERA_TIMING_60MHZ
             depends on !BSP_CAMERA_TIMING_MATCHED80
             default n
             help
-                Keep the 20 MHz XCLK, 80 MHz PCLK, HTS 2060 and RGB565X
-                output, but extend VTS to 2460 and the AEC ceiling to 2456.
+                Keeps the 20 MHz XCLK, 80 MHz PCLK, HTS 2060 and RGB565X
+                output, but extends VTS to 2460 and the AEC ceiling to 2456.
                 The nominal frame rate becomes 15.8 fps so automatic exposure
                 can use a longer integration time instead of high analog gain.
-                This is a diagnostic profile for the gain-dependent row-noise
-                hypothesis, not a product frame-rate claim.
+                Select it to inspect gain-dependent row noise; the default
+                profile keeps 30 fps.
 
         config BSP_CAMERA_STANDARD_CLOCK_ROOTS
-            bool "Compare the OV5640 recommended clock-root dividers"
+            bool "Use the OV5640 recommended clock-root dividers"
             depends on IDF_TARGET_ESP32S31
             default n
             help
-                Use PLL root divide-by-two (0x3037=0x12) and the datasheet's
+                Uses PLL root divide-by-two (0x3037=0x12) and the datasheet's
                 recommended downstream roots (0x3108=0x01) together.
                 The paired change preserves SCLK, SCLK2x and DVP PCLK while
                 halving the clock entering the downstream root dividers.
-                Keep PLL VCO, HTS/VTS, exposure steps, ADC PLL2 and ISP
-                settings unchanged. Experimental image-quality comparison.
+                PLL VCO, HTS/VTS, exposure steps, ADC PLL2 and ISP settings
+                are unchanged. Select it to compare image quality against the
+                default clock roots.
 
         config BSP_CAMERA_CMX_COLOR_TRIM
             bool "Apply the measured module white-balance trim in the colour matrix"
@@ -243,12 +252,10 @@ menu "Board Support Package (Candis-S31)"
                 are written. Skipped when BSP_CAMERA_SKIP_ISP_PROFILE is set.
 
                 Defaults R 112 % / B 109 % were checked on this EVT1 module
-                against an indoor neutral patch (centre RGB about 112/113/113),
-                replacing the older scene-average estimate that overcorrected
-                red. This is not multi-illuminant or multi-module calibration.
+                against an indoor neutral patch (centre RGB about 112/113/113).
+                This is not multi-illuminant or multi-module calibration.
                 Integer coefficients, clipping and downstream ISP processing
                 mean these percentages are not exact output RGB gains.
-                Verify neutral patches and a colour chart when lighting changes.
                 Set both to 100 % to restore the unscaled board matrix.
 
         config BSP_CAMERA_CMX_RED_PERCENT
@@ -272,11 +279,11 @@ menu "Board Support Package (Candis-S31)"
             depends on IDF_TARGET_ESP32S31
             default n
             help
-                Diagnostic A/B only. Keep the board PLL, external DVDD,
-                timing and RGB565X output overrides, but do not rewrite the
-                Candis ISP/AWB/CCM profile after the official esp_cam_sensor
-                table. Enable only to separate sensor ISP tuning from the
-                DVP transport and analog timing paths.
+                Keeps the board PLL, external DVDD, timing and RGB565X output
+                overrides but does not rewrite the Candis ISP/AWB/CCM profile
+                after the official esp_cam_sensor table. Select it to separate
+                sensor ISP tuning from the DVP transport and analog timing
+                paths; the default applies the Candis profile.
 
 
     endmenu

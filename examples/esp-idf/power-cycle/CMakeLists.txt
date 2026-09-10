@@ -1,4 +1,4 @@
-# Candis-S31 power-state cycle harness (measurement aid, not a product app).
+# Candis-S31 power-state cycle example (a measurement aid, not a product app).
 cmake_minimum_required(VERSION 3.22)
 
 # Use the repository-owned board component. Reusable drivers are mapped by its

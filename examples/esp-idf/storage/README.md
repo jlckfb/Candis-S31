@@ -12,7 +12,6 @@ the root directory, and runs a write → read-back → delete probe on
 | Partition table | `partitions.csv` (single 8 MB app) |
 | Managed components | None direct |
 | Compile status | Verified |
-| Hardware status | **Verified** — EVT1 (2026-09-10): mount, capacity, root listing and the write/read-back/delete probe all passed |
 
 ## Behavior
 
@@ -21,12 +20,10 @@ the root directory, and runs a write → read-back → delete probe on
 - With a card present, mounts it, prints total/free capacity, lists every
   root entry, and probes a new file using exclusive creation. An existing
   `example_storage.txt` is preserved and reported as a blocked write probe.
-- Capture **15 s** from reset and require the complete sequence:
-  `write ok` → `read ok (…, content match)` → `delete ok`, without errors.
-  Short writes, close/read errors and mismatched content are not success.
-  Deletion after an error only cleans the file created by this run; `delete ok`
-  alone is not acceptance. A full card may validly have zero free capacity.
-- A mount failure is reported once; it is not followed by a completion heartbeat.
+- Capture **15 s** from reset and expect the complete sequence: `write ok` →
+  `read ok (…, content match)` → `delete ok`. A full card may validly have
+  zero free capacity.
+- A mount failure is reported once, without a completion heartbeat.
 
 ## Build and flash
 

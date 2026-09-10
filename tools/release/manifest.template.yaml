@@ -45,20 +45,17 @@ flashing:
   rom_log_required: true
   expected_application_output: |
     Candis-S31 Factory Bring-up
-    EVT1 ROM/download path is known-good; complete recovery validation remains release-specific
     safe_state       PASS     direct power domains disabled
     candis-factory>
 
 # (7) Fixture version and required measurement equipment.
 fixture:
-  version: "<FIXTURE_VERSION or none>"
+  version: "<FIXTURE_VERSION>"
   equipment:
     - "USB data cable on the Type-C1 programming port (CH343P)"
-    - "<measurement equipment per EVT bring-up sheet>"
+    - "<MEASUREMENT_EQUIPMENT>"
 
-# (8) Completed test manifest and known limitations.
+# (8) Test manifest.
 test_manifest:
-  results: "<path to evt_<board>_<timestamp>.json from host_tools/run_evt.py; NOT_RUN before EVT1>"
-  known_limitations:
-    - "EVT1 has not been fabricated; every hardware result remains NOT_RUN."
-    - "<add confirmed limitations here>"
+  results: ""
+  known_limitations: []

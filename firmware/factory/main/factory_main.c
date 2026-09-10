@@ -20,9 +20,9 @@
 #define FACTORY_CONSOLE_MAX_FAILURES 3
 
 /* Factory-lab override: raise the Type-C1 input-current limit from the BSP
- * 500 mA boot default to the TG28 maximum. Decision 2026-08-19 during the
- * DCDC1 brownout investigation: the lab default is locked at 2000 mA. This
- * is an application-level choice; the BSP stays source-agnostic. */
+ * 500 mA boot default to the TG28 maximum. The lab default is locked at
+ * 2000 mA. This is an application-level choice; the BSP stays
+ * source-agnostic. */
 #define FACTORY_INPUT_CURRENT_LIMIT_MA 2000
 
 static const char *TAG = "candis_factory";
@@ -194,8 +194,8 @@ void app_main(void)
                        esp_err_to_name(boot_safe_err));
 
     ESP_LOGI(TAG, "Candis-S31 Factory Bring-up");
-    ESP_LOGW(TAG, "EVT1 bring-up is in progress; preserve NOT_RUN for every "
-             "unverified test and run commands one stage at a time");
+    ESP_LOGI(TAG, "Run commands one stage at a time; each test reports its "
+             "own result");
     factory_report_print_one(FACTORY_TEST_SAFE_STATE);
     if (otp_boot_err == ESP_OK) {
         /* Label the line by boot type so a warm-reset read can never be

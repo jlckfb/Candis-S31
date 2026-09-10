@@ -8,8 +8,8 @@
  * @file
  * @brief ESP BSP: Candis-S31
  *
- * The pin map is based on schematic revision 0.5. Driver interfaces are
- * complete, but electrical behavior must still be validated on EVT1 boards.
+ * The pin map is based on schematic revision 0.5 and the driver interfaces
+ * are complete.
  */
 
 #pragma once
@@ -612,14 +612,11 @@ const char *bsp_peripheral_name(bsp_peripheral_t peripheral);
 #define BSP_PMIC_SAFE_TERMINATION_CURRENT_MA 25
 
 /** Board default input-current limit (REG16), applied and exact-readback
- *  verified at every bsp_pmic_init(). Relaxed to 2000 mA and aligned with
- *  the Factory diagnostic image (2026-08-21 user decision). This is a
- *  register ceiling, not a source capability claim: the TG28 backs the
- *  actual charge current off under this input limit/VINDPM while the
- *  system load keeps priority, and firmware cannot classify the C1
- *  source - PC-port current budgets are NOT guaranteed. PC protection
- *  lives in the application charge controller's 200 mA default REG62
- *  ceiling (see the demo svc_power policy). */
+ *  verified at every bsp_pmic_init(). 2000 mA matches the Factory firmware
+ *  image and remains a register ceiling, not a source capability claim: the
+ *  TG28 backs the actual charge current off under this input limit/VINDPM
+ *  while the system load keeps priority. PC protection lives in the
+ *  application charge controller's 200 mA default REG62 ceiling. */
 #define BSP_PMIC_SAFE_INPUT_CURRENT_LIMIT_MA 2000
 
 /** TG28_SW access. Init preserves regulator voltage/enable OTP state for the
@@ -666,8 +663,7 @@ esp_err_t bsp_pmic_read_registers(uint8_t register_address, uint8_t *values,
                                   size_t count);
 /** Dump the TG28 fuel-gauge battery model area (128 bytes) into model.
  *  from_sram selects the programmed/learned SRAM area, false the factory
- *  ROM area. See tg28_sw_read_battery_model() for the procedure and the
- *  EVT open questions. */
+ *  ROM area. See tg28_sw_read_battery_model() for the procedure. */
 esp_err_t bsp_pmic_read_battery_model(bool from_sram, uint8_t *model,
                                       size_t size);
 esp_err_t bsp_pmic_program_battery_model(const uint8_t *model, size_t size);

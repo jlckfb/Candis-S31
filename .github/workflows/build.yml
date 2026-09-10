@@ -154,6 +154,14 @@ jobs:
           bash -n firmware/recovery/flash_factory.sh
           bash -n tools/release/pack_factory_release.sh
 
+      - name: Validate the player host helpers
+        run: |
+          cc -std=c11 -Wall -Wextra -o "$RUNNER_TEMP/player_utils_test" \
+            examples/esp-idf/player/tests/player_utils_test.c \
+            examples/esp-idf/player/main/player_utils.c \
+            -I examples/esp-idf/player/main
+          "$RUNNER_TEMP/player_utils_test"
+
       - name: Build factory firmware
         run: |
           . ~/esp-idf/export.sh
@@ -212,11 +220,14 @@ jobs:
           . ~/esp-idf/export.sh
           idf.py --preview -C examples/esp-idf/camera-test -D IDF_TARGET=esp32s31 build
 
-      - name: Build bounded camera validation
+      - name: Build the camera validation variant
         working-directory: examples/esp-idf/camera-test
         run: |
           . ~/esp-idf/export.sh
-          printf 'CONFIG_CAMERA_TEST_DIAGNOSTICS=y\n' > /tmp/camera-validation.defaults
+          # Compile the option-gated paths the default build never reaches:
+          # the manual 50 Hz banding value, the per-second sensor statistics
+          # line, and the CRC-checked console frame export.
+          printf 'CONFIG_CAMERA_TEST_FORCE_50HZ=y\nCONFIG_CAMERA_TEST_SENSOR_STATS=y\nCONFIG_CAMERA_TEST_SERIAL_FRAME_DUMP=y\n' > /tmp/camera-validation.defaults
           idf.py --preview -B build-validation -D SDKCONFIG=build-validation/sdkconfig \
             -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;/tmp/camera-validation.defaults" \
             -D IDF_TARGET=esp32s31 build

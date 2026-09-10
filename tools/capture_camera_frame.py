@@ -110,7 +110,8 @@ def receive_frame(port: serial.Serial, timeout: float) -> tuple[dict, bytes, byt
         header = line[marker:].decode("ascii", errors="strict").strip()
         fields = dict(re.findall(r"([a-z][a-z0-9_]*)=([^ ]+)", header))
         if fields.get("version") != "2":
-            raise ValueError("unverified legacy dump; rebuild camera-test for protocol v2")
+            raise ValueError("legacy dump without CRC32 fields; "
+                             "rebuild camera-test for protocol v2")
         width, height, stride = (int(fields[key]) for key in ("width", "height", "stride"))
         raw_bytes, rgb_bytes = (int(fields[key]) for key in ("raw", "rgb"))
         crop_x, crop_y = (int(fields[key]) for key in ("crop_x", "crop_y"))

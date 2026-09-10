@@ -190,9 +190,10 @@ esp_err_t bsp_usb_host_start(bsp_usb_host_power_mode_t mode, bool limit_500mA)
     ESP_RETURN_ON_FALSE(mode == BSP_USB_HOST_POWER_MODE_USB_DEV,
                         ESP_ERR_INVALID_ARG, TAG, "invalid USB power mode");
     if (!limit_500mA) {
-        /* The board has no verified unlimited host mode. Requesting one is an
-         * expected API constraint rather than a runtime fault, so board code
-         * reports it at warning level and leaves error logs to real failures. */
+        /* The board supports only the 500 mA-limited host mode. Requesting the
+         * unlimited mode is an expected API constraint rather than a runtime
+         * fault, so board code reports it at warning level and leaves error
+         * logs to real failures. */
         ESP_LOGW(TAG, "only the 500 mA-limited mode is supported");
         return ESP_ERR_NOT_SUPPORTED;
     }

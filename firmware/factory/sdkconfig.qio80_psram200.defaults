@@ -10,8 +10,8 @@
 # replace the baseline DIO/40M/100M choices; everything else is inherited.
 #
 # --- Flash: DIO -> QIO -------------------------------------------------------
-# W25Q128 IO0-IO3 are wired to SPIQ/SPID/SPIWP/SPIHD on EVT1, so quad mode is
-# physically available (HW-Debug.md §2.4). QIO is a legal non-octal mode:
+# W25Q128 IO0-IO3 are wired to SPIQ/SPID/SPIWP/SPIHD on EVT1 (schematic
+# netlist), so quad mode is physically available. QIO is a legal non-octal mode:
 #   .tools/esp-idf/components/esptool_py/Kconfig.projbuild:47-49
 #   (config ESPTOOLPY_FLASHMODE_QIO, depends on !ESPTOOLPY_OCT_FLASH)
 # Note: the image header still records "dio" on purpose - esptool flashes the
@@ -24,17 +24,11 @@ CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
 # 80 MHz is the highest grade in the official ESP32-S31 menu (the choice only
 # offers 80/40/20 MHz):
 #   .tools/esp-idf/components/spi_flash/esp32s31/Kconfig.flash_freq:1-16
-# 120 MHz timing code exists but is not released for S31 - IDF's own S31 test
-# config says "use 80 until 120 is supported TODO: IDF-14653":
-#   .tools/esp-idf/components/esp_hw_support/test_apps/mspi/sdkconfig.ci.esp32s31_120sdr_200ddr:8-9
-# Do NOT select 120 MHz here.
 CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
 
 # --- PSRAM: 100 MHz -> 200 MHz -----------------------------------------------
 # 200 MHz is the Kconfig default grade for S31 (not an overclock):
 #   .tools/esp-idf/components/esp_psram/esp32s31/Kconfig.spiram:19-43
 #   (choice SPIRAM_SPEED, line 21: default SPIRAM_SPEED_200M)
-# 250 MHz stays out of this round: the chip capacity/top-mark rating question
-# is still open (HW-Debug.md §2.4), so 250 MHz must be qualified later as a
-# separate official, non-overclocked grade before any use.
+# 250 MHz uses the separate overlay sdkconfig.qio80_psram250.defaults.
 CONFIG_SPIRAM_SPEED_200M=y

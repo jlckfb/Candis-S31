@@ -395,8 +395,8 @@ static int command_microphone_test(int argc, char **argv)
     factory_report_set(FACTORY_TEST_MICROPHONE, status, detail);
     factory_report_print_one(FACTORY_TEST_MICROPHONE);
     if (status != FACTORY_STATUS_FAIL) {
-        printf("microphone_test: WARN until physical ch0/ch1 mapping and "
-               "cross-channel behavior are verified\n");
+        printf("microphone_test: ch0/ch1 mapping is operator-graded; "
+               "cross-channel behavior is reported in the result line\n");
         return ESP_OK;
     }
     return result != ESP_CODEC_DEV_OK ? result : ESP_FAIL;

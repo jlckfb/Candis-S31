@@ -6,8 +6,8 @@ CONFIG_ULP_COPROC_ENABLED=y
 CONFIG_ULP_COPROC_TYPE_LP_CORE=y
 CONFIG_ULP_COPROC_RESERVE_MEM=4096
 
-# The prototype must report peripheral failures instead of aborting: an EVT
-# board with a loose touch FPC still has to reach the state machine.
+# Report peripheral failures instead of aborting: a board with a missing or
+# detached touch panel must still reach the state machine.
 CONFIG_BSP_ERROR_CHECK=n
 
 # No PSRAM. This example drives the panel through bsp_display_new() and never

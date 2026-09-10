@@ -44,19 +44,14 @@ both CO5300 mirror axes and both CST820 touch mirror axes. This example uses
 QSPI at 48 MHz, a 48-line internal-RAM partial buffer, and the required 2x2
 window rounding. GPIO16 TE synchronization and the 30 fps full-screen / 60 fps
 local-update targets are covered by the repository-owned product Demo and
-[display benchmark](../display-benchmark/README.md). The latest TE-enabled
-measurements remain below those strict targets; this static Board Manager
+[display benchmark](../display-benchmark/README.md). This static Board Manager
 hello screen is not a performance test.
 
-The final-source EVT1 run (2026-09-10) initialized only `display_lcd` and
-reported `460x460, QSPI 48MHz, MX|MY 180deg` at 1.670 s. There was no audio
-device initialization or codec-probe failure. This verifies the intended
-display-only lifecycle; panel appearance still needs a visual check.
+Startup initializes only `display_lcd` and reports `460x460, QSPI 48MHz,
+MX|MY 180deg` at 1.670 s, with no audio device initialization or codec-probe
+failure, so the display-only lifecycle runs on its own.
 
 The full board definition retains both audio devices for applications that
 need them. Its power callback probes the ES8389 at the correct **7-bit 0x10**
 after ALDO3 rises; the audio YAML retains the codec driver's **8-bit 0x20**
-address convention. The separate real-board probe initialized and released
-DAC-first/ADC-second, then ADC-first/DAC-second after power teardown;
-both rounds returned `ESP_OK`. This is codec initialization evidence, not
-Board Manager PCM playback/recording or a listening test.
+address convention.

@@ -27,9 +27,9 @@
 
 static const char *TAG = "candis_display";
 
-/* EVT bring-up exposes the panel at 30 % brightness, but initialization and
- * deep-wake keep WRDISBV at zero until a complete black/current UI frame has
- * reached GRAM. This preserves TE output while preventing random GRAM or a
+/* Normal operation exposes the panel at 30 % brightness, but initialization
+ * and deep-wake keep WRDISBV at zero until a complete black/current UI frame
+ * has reached GRAM. This preserves TE output while preventing random GRAM or a
  * fixed 30 % flash from becoming visible. The 0x63 (WRHBMDISBV) init value
  * only applies in HBM mode, which this board never enables. */
 #define CO5300_FIRST_BRIGHTNESS_PERCENT  30
@@ -552,7 +552,7 @@ esp_err_t bsp_touch_delete(void)
         }
     }
     /* The touch object owns the panel IO. Do not delete that IO underneath a
-     * touch object whose delete failed; retain both handles for diagnostics.
+     * touch object whose delete failed; retain both handles instead.
      * Supply removal below is still mandatory. */
     if (s_touch == NULL && s_touch_io != NULL) {
         const esp_err_t error = esp_lcd_panel_io_del(s_touch_io);
@@ -786,8 +786,8 @@ lv_display_t *bsp_display_start_with_config(const bsp_display_cfg_t *config)
         bsp_display_stop();
         return NULL;
     }
-    /* Touch is optional: during EVT a loose touch FPC must not keep the
-     * screen dark, so a touch failure only disables the input device. */
+    /* Touch is optional: a touch controller failure only disables the input
+     * device and never keeps the screen dark. */
     if (bsp_touch_new(NULL, &s_touch) == ESP_OK) {
         const lvgl_port_touch_cfg_t touch_config = {
             .disp = s_lvgl_display,
@@ -796,7 +796,7 @@ lv_display_t *bsp_display_start_with_config(const bsp_display_cfg_t *config)
         /* Registering the touch interrupt installs the process-wide GPIO ISR
          * service, which the display TE line may already have installed. The
          * GPIO driver logs that expected duplicate at error level, so silence
-         * only that diagnostic; the returned handle still proves success. */
+         * only that log message; the returned handle still proves success. */
         const esp_log_level_t gpio_log_level = esp_log_level_get("gpio");
         esp_log_level_set("gpio", ESP_LOG_NONE);
         s_lvgl_touch = lvgl_port_add_touch(&touch_config);
@@ -891,8 +891,7 @@ void bsp_display_rotate(lv_display_t *display, lv_display_rotation_t rotation)
      * Display rotation itself is applied to the panel MADCTL by esp_lvgl_port
      * (sw_rotate is disabled in the BSP default config).
      * Note: at 90/180 degrees the active GRAM window is row/column asymmetric
-     * (column offset 10, row offset 0), so a 10-20 px shift is possible and
-     * must be measured during EVT. */
+     * (column offset 10, row offset 0). */
     lv_display_set_rotation(display, rotation);
 }
 

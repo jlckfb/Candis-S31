@@ -1,5 +1,5 @@
 /*
- * Candis-S31 power-state cycle harness (measurement aid, not a product app).
+ * Candis-S31 power-state cycle example (a measurement aid, not a product app).
  *
  * Each cycle:
  *   1. ACTIVE (10 s): display on, white frame, maximum brightness.

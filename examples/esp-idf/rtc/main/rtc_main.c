@@ -5,7 +5,7 @@
  * (CONFIG_EXAMPLE_RTC_SET_ON_BOOT), then arms the minute-compare alarm for
  * the next minute boundary and reports it over the shared IRQ line. The
  * RX8130CE alarm compares minute/hour/day fields only, so the next minute
- * boundary is the fastest self-contained target (test_system.c pattern).
+ * boundary is the fastest self-contained target.
  *
  * SPDX-License-Identifier: Apache-2.0
  */

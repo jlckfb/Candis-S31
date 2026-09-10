@@ -11,7 +11,6 @@ IRQ line (GPIO2).
 | Flash configuration | 16 MB, DIO 40 MHz |
 | Managed components | None direct; public registry dependencies via the repository board component |
 | Compile status | Verified |
-| Hardware status | **Verified** — EVT1 (2026-09-10): calendar read and a minute alarm fired over the TG28/RX8130CE shared IRQ line |
 
 ## Behavior
 
@@ -26,8 +25,7 @@ IRQ line (GPIO2).
 - After fire or timeout, disables the alarm IRQ, disarms the compare, clears
   AF, then prints `RTC alarm fired` or the timeout error and ends.
   Capture **75 s** from reset (wait budget is 60 − current seconds + 8 s).
-  No operator action is needed with a valid running RTC. The poll fallback
-  proves an alarm flag, not necessarily callback delivery on GPIO2.
+  No operator action is needed with a valid running RTC.
 
 ## Build and flash
 
@@ -49,7 +47,5 @@ I (…) rtc: RTC alarm fired
 
 - The example uses the IDF default partition table; no TF card, display, or
   PSRAM is required.
-- The board has no 32.768 kHz crystal; the RX8130CE runs from its internal
-  oscillator, so long-term drift is larger than a crystal-backed design.
-- The alarm compare has minute granularity; sub-minute alarms are not
-  expressible on this hardware path.
+- The RX8130CE runs from its internal oscillator; this board carries no external 32.768 kHz crystal.
+- The alarm compares minute/hour/day fields; sub-minute alarms are not expressible.

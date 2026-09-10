@@ -1,6 +1,6 @@
-# Candis-S31 powercycle harness: board-critical subset of the demo defaults
-# (flash, PSRAM, display pipeline). Wi-Fi/BLE/audio/camera are left at IDF
-# defaults and never initialized by this app.
+# Candis-S31 power-state cycle example: board-critical subset of the demo
+# defaults (flash, PSRAM, display pipeline). Wi-Fi/BLE/audio/camera are left
+# at IDF defaults and never initialized by this app.
 CONFIG_IDF_TARGET="esp32s31"
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
@@ -47,6 +47,6 @@ CONFIG_LV_DRAW_BUF_ALIGN=64
 CONFIG_FREERTOS_HZ=1000
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 
-# LVGL private heap and the one font the harness needs.
+# LVGL private heap and the one font the example needs.
 CONFIG_LV_MEM_SIZE_KILOBYTES=64
 CONFIG_LV_FONT_MONTSERRAT_16=y

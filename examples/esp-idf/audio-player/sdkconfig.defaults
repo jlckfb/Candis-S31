@@ -4,8 +4,8 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 # Report peripheral failures instead of aborting on them.
 CONFIG_BSP_ERROR_CHECK=n
 
-# PSRAM: octal mode, 250 MHz (EVT1-validated setting); holds the capture
-# buffer.
+# PSRAM: octal mode, 250 MHz (EVT1-validated setting); holds the playback
+# buffers.
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_250M=y

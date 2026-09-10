@@ -31,10 +31,9 @@ These macros allow users to configure or reference standard interfaces like I2C,
 - Audio I2S: `BSP_I2S_*`
 - USB: `BSP_USB_*`
 - SD Card (MMC): `BSP_SD_*`
-- SD Card (SPI): `BSP_SD_SPI_*`
 
 > [!NOTE]
-> Not all boards support all interfaces. You should always check if the related capability macro (e.g., BSP_CAPS_SDCARD) is defined.
+> The `BSP_CAPS_*` macros list the interfaces this component supports.
 
 ### I2C
 
@@ -58,53 +57,6 @@ i2c_master_bus_handle_t i2c = bsp_i2c_get_handle();
 
 > [!NOTE]
 > The BSP ensures that I2C initialization is performed only once, even if called multiple times. This helps avoid conflicts when multiple components rely on the same I2C bus.
-
-
-### ADC
-
-Some devices included in BSPs (such as buttons, battery monitoring, etc.) use the ADC peripheral. In most cases, the ADC is automatically initialized as part of the specific device setup. However, you can manually initialize the ADC using the following API:
-
-```
-/* Initialize the ADC peripheral */
-bsp_adc_initialize();
-```
-
-If you need direct access to the ADC instance (e.g., for custom measurements), you can retrieve the handle:
-
-```
-adc_oneshot_unit_handle_t adc = bsp_adc_get_handle();
-```
-
-> [!NOTE]
-> The BSP ensures the ADC is initialized only once, even if `bsp_adc_initialize()` is called multiple times.
-
-### Features
-
-Some boards support enabling or disabling specific hardware features (such as LCD, SD card, camera, etc.) to reduce power consumption or manage shared resources. The BSP provides a unified API to control these features:
-
-```
-/* Enable the LCD feature */
-bsp_feature_enable(BSP_FEATURE_LCD, true);
-
-/* Disable the speaker to reduce power usage */
-bsp_feature_enable(BSP_FEATURE_SPEAKER, false);
-```
-
-Supported feature flags (may vary depending on the board):
-- `BSP_FEATURE_LCD` - Display module
-- `BSP_FEATURE_TOUCH` - Touch controller
-- `BSP_FEATURE_SD` - SD card interface
-- `BSP_FEATURE_SPEAKER`-  Audio speaker
-- `BSP_FEATURE_BATTERY` - Battery monitoring
-- `BSP_FEATURE_VIBRATION` - Vibration motor
-
-> [!NOTE]
-> Not all BSPs support feature toggling, and some features may not be available or controllable via this API. Always check the BSP header or documentation for supported features.
-
-> [!TIP]
-> Disabling unused features can help reduce power consumption, especially in battery-powered applications.
-
-
 
 
 ## Identification
@@ -134,7 +86,6 @@ Each BSP defines an identifier macro in the form of `BSP_BOARD_*`.
 ## :1234: Capabilities
 
 Each BSP defines a set of capability macros that indicate which features are supported.
-The list may look like this.
 You can use these macros to conditionally compile code depending on feature availability.
 
 ### Capabilities API Reference
@@ -290,7 +241,7 @@ bsp_sdcard_unmount();
 
 Mount with Custom Configuration
 
-Some BSPs allow selecting between SDMMC and SPI interfaces for the SD card. Use the appropriate API function based on your hardware:
+The BSP provides a mount function for each SD interface:
 ```
 bsp_sdcard_cfg_t cfg = {0};
 /* Mount SD card using SDMMC interface */
@@ -306,8 +257,7 @@ bsp_sdcard_sdspi_mount(&cfg)
 ```
 
 > [!NOTE]
-> Not all BSPs support both SDMMC and SPI modes. Check the board documentation to see which interfaces are available.
-> If an unsupported interface is used, the API will return `ESP_ERR_NOT_SUPPORTED` error.
+> The Candis-S31 TF card is wired for SDMMC mode. `bsp_sdcard_sdspi_mount()` returns `ESP_ERR_NOT_SUPPORTED`.
 
 ### After Mounting
 
@@ -706,7 +656,7 @@ cfg.lvgl_port_cfg.task_stack = 10000;   /* Example: change LVGL task stack size 
 lv_display_t display = bsp_display_start_with_config(&cfg);
 ```
 
-After initialization, you can use the [LVGL](https://docs.lvgl.io/master/) API or [LVGL Port](../components/esp_lvgl_port/README.md) API.
+After initialization, you can use the [LVGL](https://docs.lvgl.io/master/) API or [LVGL Port](../esp_lvgl_port/README.md) API.
 
 ### Initialization without LVGL - NoGLIB BSP
 
@@ -728,7 +678,7 @@ esp_lcd_touch_handle_t tp;
 bsp_touch_new(NULL, &tp);
 ```
 
-After initialization, you can use the [ESP-LCD](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/lcd/index.html) API and [ESP-LCD Touch](../components/lcd_touch/README.md) API.
+After initialization, you can use the [ESP-LCD](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/lcd/index.html) API and [ESP-LCD Touch](../../vendor/idf-extra-components/esp_lcd_touch_cst820/README.md) API.
 
 ### Set Brightness
 
@@ -1223,10 +1173,10 @@ esp_err_t bsp_led_set (
 
 ## :electric_plug: USB
 
-Boards with USB support define macros for USB pins, such as `BSP_USB_POS` and `BSP_USB_NEG`, and may also provide control APIs for enabling or disabling USB functionality.
+The component provides USB Host and FUSB303B Type-C control for the Type-C2 connector.
 
 ```
-/* Initialize USB in device mode and enable power */
+/* Install the USB Host library for the Type-C2 connector */
 bsp_usb_host_start(BSP_USB_HOST_POWER_MODE_USB_DEV, true);
 
 ...
@@ -1234,10 +1184,7 @@ bsp_usb_host_start(BSP_USB_HOST_POWER_MODE_USB_DEV, true);
 bsp_usb_host_stop();
 ```
 
-> [!NOTE]
-> Not all BSPs implement USB support or provide power control. Refer to the board's documentation and the BSP header files for available functions and supported modes.
-
-For more USB-related APIs and configuration options, check the corresponding BSP header files.
+The USB and Type-C functions are declared in `bsp/candis_s31.h`.
 
 ### USB and Type-C API Reference
 
@@ -1878,7 +1825,7 @@ esp_err_t bsp_pmic_read_battery_model (
 ```
 
 
-Dump the TG28 fuel-gauge battery model area (128 bytes) into model. from\_sram selects the programmed/learned SRAM area, false the factory ROM area. See tg28\_sw\_read\_battery\_model() for the procedure and the EVT open questions.
+Dump the TG28 fuel-gauge battery model area (128 bytes) into model. from\_sram selects the programmed/learned SRAM area, false the factory ROM area. See tg28\_sw\_read\_battery\_model() for the procedure.
 ### function `bsp_pmic_read_registers`
 
 ```c
@@ -2081,16 +2028,15 @@ Install or clear (callback == NULL) the application shutdown callback. Configure
 
 ## :camera: Camera
 
-The BSP initializes the DVP pipeline and applies the EVT1 sensor timing and
-image profile. The sensor's embedded autofocus is not exposed: this board has
-no populated voice-coil motor supply path.
+The BSP initializes the DVP pipeline and applies the board sensor timing and
+image profile.
 
 ### Example Usage
 
-For a complete board diagnostic, refer to [`examples/esp-idf/camera-test`](../../examples/esp-idf/camera-test). Generic sensor and DVP examples are provided by [`esp_video`](https://github.com/espressif/esp-video-components).
+The camera example is provided at [`examples/esp-idf/camera-test`](../../examples/esp-idf/camera-test). Generic sensor and DVP examples are provided by [`esp_video`](https://github.com/espressif/esp-video-components).
 
 > [!NOTE]
-> Please, do not forget select right camera sensor in `menuconfig`
+> Select the fitted camera sensor in `menuconfig`.
 
 ### Camera API Reference
 

@@ -12,7 +12,6 @@ RSSI and advertised name. A full result list does not restart logging.
 | Partition table | `partitions.csv` (single 8 MB app) |
 | Managed components | None direct (NimBLE via ESP-IDF `bt`) |
 | Compile status | Verified |
-| Hardware status | **Verified for advertise/scan** — EVT1 (2026-09-10): an independent host received 100 advertisements from `30:ed:a0:f4:66:eb`; active scan completed with 32 distinct peers and no duplicate lines; connections/bonding were not tested |
 
 ## Behavior
 
@@ -23,9 +22,8 @@ RSSI and advertised name. A full result list does not restart logging.
   listed once, and further reports are not printed after the list is full.
 - After the real scan-complete event, the example prints
   `advertise + scan cycle done` once and ends. Capture **30 s** from reset.
-  A failed advertising/scan start or missing completion event is an error,
-  not a completed cycle. A nearby advertising peer is needed for receive
-  evidence; an external scanner is needed to independently observe our advertising.
+  A nearby advertising peer produces receive results; an external scanner
+  observes our advertising.
 
 ## Build and flash
 
@@ -53,5 +51,4 @@ LightBlue): `candis-example` must appear for 10 s.
 
 - The radio shares the board antenna with WiFi; run one radio example at a
   time.
-- The example uses the public address policy (`ble_hs_id_infer_auto`); no
-  bonding or persistence is configured.
+- The example uses the public address policy (`ble_hs_id_infer_auto`).

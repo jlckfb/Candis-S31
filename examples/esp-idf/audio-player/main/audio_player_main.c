@@ -32,7 +32,7 @@ static const char *TAG = "audio_player";
 #define WAV_HEADER_BYTES  44U
 #define IN_WAV_PATH       BSP_SD_MOUNT_POINT "/example_record.wav"
 
-/* Rates the ES8389 BCLK policy supports (svc_audio.c wav_sample_rate_supported). */
+/* Sample rates the ES8389 BCLK policy supports. */
 static bool wav_sample_rate_supported(uint32_t sample_rate)
 {
     return sample_rate == 8000 || sample_rate == 16000 ||

@@ -177,8 +177,8 @@ static esp_err_t camera_sensor_read8(i2c_master_dev_handle_t device,
 /* Board-level profile for the OV5640 module on the EVT1 FPC.
  * It is applied before and after the first video-device open:
  * esp_video_open() lazily runs dvp_video_init(), whose format-table write
- * resets these registers after the pre-open pass. Three facts established on
- * 2026-08-31 by serial frame analysis (see AGENT-AI.md 0P):
+ * resets these registers after the pre-open pass. Three facts established by
+ * analyzing frames captured from this board over the serial log:
  *
  * 1. The esp_cam_sensor option/table is named "RGB565_BE" but writes
  *    FORMAT_CTRL0 0x4300 = 0x6F. That upstream name is inverted relative
@@ -188,16 +188,15 @@ static esp_err_t camera_sensor_read8(i2c_master_dev_handle_t device,
  *
  *    These are RGB565 byte-order encodings, not a Bayer/ISP selector.
  *    FORMAT_MUX 0x501F selects the processing output; the profile uses
- *    0x01 for RGB. Historical mosaic observations must not be attributed
- *    to 0x6F alone. Verified source frames carry RGB565 bits [15:8]
+ *    0x01 for RGB. Verified source frames carry RGB565 bits [15:8]
  *    first and [7:0] second, matching V4L2 RGB565X byte order.
  * 2. Keep the board's measured AWB/CMX baseline and module trim. For live view,
  *    the upstream esp_cam_sensor automatic CIP/gamma/SDE profile replaces
  *    forced manual edge enhancement and non-vendor thresholds that can erase
  *    fine texture before the host receives a frame.
- * 3. Use the SVGA blanking and clock dividers validated on this board.
+ * 3. Use the SVGA blanking and clock dividers of this board.
  *    A frame must include the binned source readout, not only the 600
- *    output rows; the former VTS=835 profile truncated that interval.
+ *    output rows.
  *
  * The capture buffer therefore matches both V4L2_PIX_FMT_RGB565X and
  * the LV_COLOR_FORMAT_RGB565_SWAPPED image source used by the app.

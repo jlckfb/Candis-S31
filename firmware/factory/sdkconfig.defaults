@@ -47,12 +47,11 @@ CONFIG_BSP_LCD_DRAW_BUF_DOUBLE=y
 CONFIG_BSP_CAMERA_XCLK_USE_LEDC=y
 
 # Keep PSRAM at the validated 100 MHz baseline for this image.
-# Capacity is closed: the in-package device is 32 MB (2026-08-25 BOM confirmed
-# by the user; factory mem_psram_verify probe reports TRUE_32MB). The 200 MHz
+# Capacity is closed: the in-package device is 32 MB (2026-08-25 BOM;
+# factory mem_psram_verify probe reports TRUE_32MB). The 200 MHz
 # official grade is validated on this board (boot MEMTEST + display regression
 # + repeated reboots via sdkconfig.qio80_psram200.defaults); 250 MHz is
 # validated as a separate official grade (sdkconfig.qio80_psram250.defaults).
-# The product/NRV16 "16 MB" naming is a documentation error to fix there.
 CONFIG_SPIRAM_SPEED_100M=y
 CONFIG_SPIRAM_MEMTEST=y
 
@@ -65,9 +64,8 @@ CONFIG_FREERTOS_HZ=1000
 CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
 CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER=y
 
-# Start the restored PARTIAL+TE path with one software draw unit so the display
-# transport can be qualified independently of multi-draw scheduling.  A later
-# two-unit A/B may be run only after the 60/30 fps baseline is stable.
+# Start the PARTIAL+TE path with one software draw unit so the display
+# transport is qualified independently of multi-draw scheduling.
 CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=1
 CONFIG_LV_DRAW_BUF_ALIGN=64
 CONFIG_LV_DRAW_SW_SUPPORT_RGB565_SWAPPED=y
@@ -103,7 +101,7 @@ CONFIG_CAM_CTRL_SPI_ENABLE=n
 # BLE controller smoke test (ble_smoke command). The factory firmware talks
 # to the controller directly, so no host stack is built.
 CONFIG_BT_ENABLED=y
-# M5 matrix: BLE observer scan needs a host stack; controller-only cannot scan.
+# The BLE observer scan needs a host stack; controller-only cannot scan.
 # CONFIG_BT_CONTROLLER_ONLY is not set
 CONFIG_BT_NIMBLE_ENABLED=y
 

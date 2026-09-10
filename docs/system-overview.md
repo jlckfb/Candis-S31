@@ -18,9 +18,9 @@ Candis-S31 is a compact ESP32-S31 development board built around a square
 - RTC: RX8130CE (no 32.768 kHz crystal on the board)
 - Audio: ES8389 codec + NS4150B speaker PA, analog microphones
 - Camera: DVP OV5640 target; FPC pin 23/24 expose AF power/ground and the
-  schematic feeds pin 23 from camera 2.8 V through R95. R95 was removed on
-  2026-08-19 and stays DNP while an OV3660-class module is used; refit it only
-  for a verified OV5640-AF module, then rerun the display-100% camera stress.
+  schematic feeds pin 23 from camera 2.8 V through R95. Pin 23/24 assignment
+  differs between module families, so check the current R95 fit state in
+  [`hardware/facts.md`](../hardware/facts.md) before mating a module.
 - USB: two Type-C ports — USB1 debug (CH343P UART), USB2 OTG (FUSB303B CC
   controller, ISL9113 5 V boost, 500 mA only)
 - Storage: TF card slot (SDMMC, switched power)
@@ -50,7 +50,7 @@ vendor/esp-board-manager/esp_friends_boards/candis_s31
 - Reusable drivers know only their chip protocol and public interfaces.
 - `components/candis_s31/` owns every board decision: GPIO map, rail control,
   reset and interrupt wiring, device probe order, Type-C policy, camera clock
-  workaround, and display transitions.
+  configuration, and display transitions.
 - `vendor/esp-board-manager/` is the staged declarative board definition.
   Board Manager does not replace the runtime component because its generic
   model cannot encode this board's complete charging, shared-interrupt,
@@ -66,11 +66,10 @@ Two firmware images, different jobs:
 - **factory** (`firmware/factory`): production-line diagnostic console.
   61 application commands plus built-in `help` (62 top-level commands total,
   115200 8N1 on the CH343P debug port).
-  Results are tracked as PASS / FAIL / WARN / SKIP / NOT_RUN and persisted in
-  NVS, so a power cycle does not lose earlier results; `report` prints the
-  final JSON summary. Single 4 MB application partition, no OTA. The boot
-  safe state shuts down unused PMIC rails (including the OTP-started,
-  unconnected DCDC4) before any test runs.
+  Results are tracked per command and persisted in NVS, so a power cycle does
+  not lose earlier results; `report` prints the final JSON summary. Single 4 MB
+  application partition, no OTA. The boot safe state shuts down unused PMIC
+  rails (including the OTP-started, unconnected DCDC4) before any test runs.
 - **recovery** (`firmware/recovery`): ROM download-mode path for a board that
   no longer boots or flashes. `flash_factory.sh` writes a merged factory
   image at offset 0x0 (bootloader + partitions + app in one pass). A merged
@@ -100,15 +99,16 @@ OFF ──PWRON key / VBUS attach──▶ BOOT ──▶ ACTIVE (S0-RUN)
 ```
 
 - Deep shutdown is the TG28 soft power-off: REG10 bit0
-  (`bsp_pmic_power_off()`). With VBUS attached the board may reboot instead
-  of powering off — a known item in the bring-up checklist.
+  (`bsp_pmic_power_off()`); `examples/esp-idf/low-power` guards that write
+  against the VBUS-present case.
 - Wake source: RX8130CE alarm, wired-AND with the TG28 interrupt onto GPIO2
   (active-low, open-drain through U2). The interrupt handler must service
   both devices in a loop until the line releases.
 - Constraints: no 32.768 kHz crystal — the deep-sleep slow clock is the
-  internal RC oscillator, so wake timing drifts and must be measured, not
-  assumed; no battery NTC — the TS pin is a fixed 10 kΩ to GND, so charge
-  enable decisions wait for vendor written confirmation.
+  internal RC oscillator, which has a wider tolerance than a crystal, so wake
+  timing is measured rather than assumed; no battery NTC — the TS pin is a
+  fixed 10 kΩ to GND, so the charger has no cell-temperature input for
+  charge-enable decisions.
 
 ## Board usage flows
 
@@ -134,19 +134,3 @@ Usage boundaries:
 - Do not enable display bias, OTG boost, or other switched rails before the
   EVT1 power checks in `hardware/bring-up.md` are complete.
 
-## Current status (2026-09-04)
-
-- EVT1 (`v0.5_260803_1544`) is on the bench. Display, touch, microSD, USB
-  host/device, Wi-Fi, BLE, RTC, and PMIC domains have recorded hardware
-  validation; ES8389 initialization and digital-path checks pass, while
-  speaker/microphone listening acceptance on the current board remains open.
-  The camera adapter, DVP stream, and built-in color-bar path are validated,
-  while real-scene image quality and JPEG capture remain open.
-- The Factory image and all repository firmware targets build with ESP-IDF
-  `v6.1-rc1`; the current evidence boundary is compile/build unless a section
-  explicitly cites a saved EVT log.
-- Korvo-1 pre-validation verdicts carried into this design: standard I2S
-  audio path works; internal USB PHY works; the camera can run from the
-  SoC-generated XCLK; deep sleep is usable; the LP core is usable. Known
-  caveat N1: for the LP-core mailbox, never mix asynchronous then synchronous
-  waits on the same channel.

@@ -7,8 +7,7 @@
  *     460x460 panel every frame;
  *   - "partial": a bouncing 48 px ball repaints a bounded region only.
  *
- * Frame counting ports the factory motion context (tests/display_diag.c):
- * LV_EVENT_REFR_READY counts a frame only when at least one
+ * Frame counting: LV_EVENT_REFR_READY counts a frame only when at least one
  * LV_EVENT_FLUSH_START happened in that refresh cycle.
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -110,7 +109,7 @@ static void stripes_draw_cb(lv_event_t *event)
     }
 }
 
-/* 1 s on-screen statistics tick (display_diag pattern). */
+/* 1 s on-screen statistics tick. */
 static void stats_cb(lv_timer_t *timer)
 {
     (void)timer;

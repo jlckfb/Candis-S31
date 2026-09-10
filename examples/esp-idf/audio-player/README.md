@@ -3,8 +3,8 @@
 Plays one second of a program-generated 1 kHz sine tone through the speaker
 (no asset files needed), then tries to play `/sdcard/example_record.wav`
 from the TF card. A missing file prints a skip line before teardown. Only
-PCM16 WAV (1-2 channels, 8/16/44.1/48 kHz) is accepted — the demo's verified
-playback envelope.
+PCM16 WAV (1-2 channels, 8/16/44.1/48 kHz) is accepted, matching the ES8389
+BCLK policy.
 
 | Item | Current value |
 |---|---|
@@ -13,8 +13,7 @@ playback envelope.
 | Flash configuration | 16 MB, QIO 80 MHz, 32 MB PSRAM octal 250 MHz |
 | Partition table | `partitions.csv` (single 8 MB app) |
 | Managed components | `espressif/esp_codec_dev` 1.6.2 |
-| Compile status | Verified with ESP-IDF v6.1-rc1 from fresh defaults (2026-09-10) |
-| Hardware status | **Partial** — EVT1 (2026-09-10): the 1 kHz tone and the full TF-card WAV played back in one run; the listening check is a manual step |
+| Compile status | Verified with ESP-IDF v6.1-rc1 from fresh defaults |
 
 ## Behavior
 
@@ -51,10 +50,7 @@ I (…) audio_player: skip: /sdcard/example_record.wav not found (record one wit
 
 ## Constraints
 
-- The speaker is driven at the demo-verified default route; no equalizer or
+- The speaker is driven at the board's default route; no equalizer or
   DSP processing is applied here.
 - 8/16/44.1/48 kHz sample rates follow the ES8389 BCLK policy; other rates
   are rejected with a `skip:` line.
-- The final-source EVT1 run completed the tone, reopened the speaker,
-  consumed `320000/320000` WAV bytes and returned at 8.291 s, without
-  `i2s_channel_disable ... already disabled` or GPIO ownership errors.

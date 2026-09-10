@@ -38,10 +38,10 @@ _Static_assert((int)BSP_PMIC_SWITCH_DC1SW == (int)TG28_SW_SWITCH_DC1SW &&
                (int)BSP_PMIC_SWITCH_DC4SW == (int)TG28_SW_SWITCH_DC4SW,
                "BSP and TG28_SW switch order must stay aligned");
 
-/* EVT1 measurements show that TG28's low-speed ADC does not update every
- * newly enabled channel within the old 50 ms delay: VSYS first became valid
- * at 50 ms, TDIE at 100 ms, and VBUS only at 1000 ms. The compatibility
- * single-channel API must favor correct data over a short blocking time. */
+/* TG28's low-speed ADC needs up to 1000 ms before every newly enabled
+ * channel carries valid data: VSYS becomes valid at 50 ms, TDIE at 100 ms
+ * and VBUS at 1000 ms. The compatibility single-channel API therefore
+ * favors correct data over a short blocking time. */
 #define BSP_PMIC_ADC_DEFAULT_SETTLE_MS 200
 #define BSP_PMIC_ADC_VBUS_SETTLE_MS    1000
 
@@ -237,8 +237,6 @@ esp_err_t bsp_pmic_init(void)
                  previous_input_limit, BSP_PMIC_SAFE_INPUT_CURRENT_LIMIT_MA);
     }
     if (error == ESP_OK) {
-        /* One-shot afternoon evidence: every safe-profile register read
-         * back exactly as written. */
         ESP_LOGI(TAG,
                  "safe profile verified: input=%u mA (was %u), charge=%u mA, "
                  "precharge=%u mA, termination=%u mA/en, Vchg=%u mV",

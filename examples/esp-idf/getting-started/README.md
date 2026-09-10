@@ -9,7 +9,6 @@ This project checks the ESP32-S31 build, flash, and serial path without enabling
 | Flash configuration | 16 MB |
 | Managed components | None |
 | Compile status | Verified |
-| Hardware status | **Verified** — EVT1 (2026-09-10): boots and prints the target, flash size and free heap |
 
 ## What it prints
 
@@ -79,8 +78,6 @@ board peripherals are not initialized by this example
 The ROM and bootloader print additional lines before the application starts.
 Capture **5 s** from reset and require the target, flash size, free heap and
 final `board peripherals are not initialized by this example` line.
-This startup path was observed on EVT1 on 2026-09-10; no peripheral acceptance
-is implied.
 
 ## Clean rebuild
 
@@ -96,9 +93,9 @@ Do not copy `sdkconfig`, `build/`, or `managed_components/` from an older enviro
 
 ## Why there is no dependencies.lock
 
-This project has no `idf_component.yml` and no managed component dependencies, so Component Manager has nothing to lock. Once a future example uses registry components, its generated `dependencies.lock` should be committed after the selected versions pass CI and hardware testing. Lock files must not be edited by hand.
+This project has no `idf_component.yml` and no managed component dependencies, so Component Manager has nothing to lock. Examples that use registry components commit their generated `dependencies.lock`; lock files must not be edited by hand.
 
-Candis-S31 board support will not be copied into a local `components/` directory. After the board definition is released in `espressif/esp_friends_boards`, a peripheral example can declare the released Board Manager and board-collection dependencies in `main/idf_component.yml`. The minimal getting-started project remains dependency-free until it actually needs board devices.
+Candis-S31 board support is not copied into a local `components/` directory. A peripheral example declares the Board Manager and board-collection dependencies in `main/idf_component.yml`. This project stays dependency-free.
 
 ## Troubleshooting
 
@@ -108,4 +105,4 @@ Candis-S31 board support will not be copied into a local `components/` directory
 - **Flash succeeds but the application does not start:** save the complete ROM and bootloader log before erasing anything.
 - **The screen remains black:** this project never powers the display; a black screen is expected.
 
-Read the [EVT1 bring-up notes](../../../hardware/bring-up.md) before adding board GPIO or power control.
+Read the [board bring-up notes](../../../hardware/bring-up.md) before adding board GPIO or power control.

@@ -12,30 +12,25 @@ The example does not format the drive, write raw sectors, or create files.
 | Partition table | `partitions.csv` (single 8 MB app) |
 | Managed components | `espressif/usb_host_msc` from the public Component Registry; additional dependencies via the board component |
 | Compile status | Verified |
-| Hardware status | **Partial** — EVT1 (2026-09-10): host startup and drive enumeration work; the attached 62 GB stick reports partition type 0x07 and did not mount with FATFS |
 
 ## Behavior
 
 - Starts the host in validated 500 mA mode (`BSP_USB_HOST_POWER_MODE_USB_DEV`),
-  installs the MSC driver, and waits up to 15 s for enumeration. Normal startup
-  no longer deliberately requests an unsupported power mode.
+  installs the MSC driver, and waits up to 15 s for enumeration.
 - With a compatible FAT12/16/32 drive: mounts `/usb0` and prints the root
   directory once. `dir: N root entries` is the end marker (zero is valid).
-- Capture **25 s** from reset with the drive already inserted. Allow five
-  existing mount attempts spaced by 500 ms. Require enumeration/capacity,
-  successful mounting, then root listing, without read/mount errors.
+- Capture **25 s** from reset with the drive already inserted. The example
+  makes five mount attempts spaced by 500 ms: enumeration/capacity, then a
+  successful mount, then the root listing.
 - With no drive, installation failure, or failed mount: reports the precise
-  stage and ends the probe; insert a compatible drive and **reset** to retry.
-  There is no hot-plug remount loop disguised as a waiting heartbeat.
-- Failed-mount diagnosis only reads sector 0. It reports the signature,
-  partition-0 type and little-endian first LBA from offset `0x1BE + 8`.
-  These fields describe a partition only when sector 0 is an MBR. Type `0x07`
-  alone does not distinguish NTFS, exFAT or another filesystem; corruption
-  and I/O failures are also possible. `FAT mount failed` is a failure marker,
-  not a filesystem identification or PASS.
-- **Do not reformat the existing 0x07 stick for this check.** A separate,
-  already compatible FAT medium is required to close the mount/list gap.
-  File read/write throughput is not a feature of this directory-listing example.
+  stage and ends the run; insert a compatible drive and **reset** to retry.
+  There is no hot-plug remount.
+- On a mount failure it reads sector 0 and reports the signature, partition-0
+  type and little-endian first LBA from offset `0x1BE + 8`. Type `0x07` covers
+  NTFS, exFAT and other formats; `FAT mount failed` is a failure marker.
+- **Do not reformat an existing drive.** Use a separate medium already
+  formatted FAT12/16/32 for the mount and listing path. File read/write
+  throughput is not part of this directory-listing example.
 
 ## Build and flash
 
@@ -57,7 +52,6 @@ I (…) usb_host_msc: dir: 12 root entries
 ## Constraints
 
 - **Use the C2 port** for the drive; C1 is the flash/serial console.
-- The example accepts the first enumerated drive only; hubs and multiple
-  LUNs are not exercised here.
+- The example uses the first enumerated drive.
 - The 500 mA limit is a board policy (EVT1 USB rail); drives that draw more
-  than 500 mA without negotiation fail by design.
+  than 500 mA without negotiation do not work.

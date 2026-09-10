@@ -444,7 +444,7 @@ static int command_charge_test(int argc, char **argv)
     if (!limit_is_baseline && !limit_is_verified) {
         result = FACTORY_STATUS_FAIL;
         snprintf(detail, sizeof(detail),
-                 "unverified input limit=%u mA (expected %u mA)",
+                 "input limit=%u mA without source_verified (expected %u mA)",
                  input_limit, BSP_PMIC_SAFE_INPUT_CURRENT_LIMIT_MA);
     } else if (status.vbus_present &&
                (status.charging || status.charge_done)) {

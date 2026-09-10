@@ -11,7 +11,6 @@ an SSID is configured — connects and prints the IP address.
 | Partition table | `partitions.csv` (single 8 MB app) |
 | Managed components | None direct |
 | Compile status | Verified |
-| Hardware status | **Verified** — EVT1 (2026-09-10): STA up and 21 access points scanned; connecting still needs a configured SSID |
 
 ## Behavior
 
@@ -21,10 +20,9 @@ an SSID is configured — connects and prints the IP address.
   `no SSID configured … scan only` and ends. Capture **15 s** for the scan.
 - SSID configured: connects, waits up to 20 s for `IP_EVENT_STA_GOT_IP`, and
   prints `connected, ip: <address>`; a timeout prints the disconnect reason.
-- For the connection path, allow **35 s** from reset and require
-  `connected, ip: ...`, not just a scan result. It requires an available
-  2.4 GHz AP, correct credentials and DHCP. Zero visible APs is reported as
-  `0 APs visible, 0 printed`, not ten nonexistent records.
+- For the connection path, allow **35 s** from reset and expect
+  `connected, ip: ...`. An available 2.4 GHz AP, correct credentials and DHCP
+  are required. Zero visible APs is reported as `0 APs visible, 0 printed`.
 
 ## Build and flash
 
@@ -48,6 +46,6 @@ I (…) wifi: no SSID configured (CONFIG_EXAMPLE_WIFI_SSID empty); scan only
 
 ## Constraints
 
-- 2.4 GHz STA only; no AP mode or power-save tuning in this example.
+- 2.4 GHz station mode.
 - The radio shares the board antenna with BLE; run one radio example at a
   time.

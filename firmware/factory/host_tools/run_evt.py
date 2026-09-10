@@ -77,7 +77,8 @@ STAGES = [
     ("buttons", 60, "buttons"),  # two operator key presses on the board
     ("wifi_scan", 30, "wifi"),
     ("ble_smoke", 20, "ble"),
-    # First light-up: cap brightness before any pattern, per bring-up.md.
+    # First light-up: cap brightness before any pattern, per
+    # hardware/bring-up.md.
     # display_brightness prints no FACTORY_RESULT, so it reuses the "INFO"
     # marker semantics (send, wait out the timeout, record nothing).
     ("display_brightness 30", 5, "INFO"),

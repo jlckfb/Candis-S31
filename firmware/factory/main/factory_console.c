@@ -361,7 +361,7 @@ static int command_ble_smoke(int argc, char **argv)
 #endif
 }
 
-/* ---- M5 matrix: wifi_connect / ble_scan (station + BLE observer) ---- */
+/* ---- wifi_connect / ble_scan (station + BLE observer) ---- */
 
 static volatile bool s_wifi_got_ip;
 static volatile bool s_wifi_disconnected;

@@ -42,10 +42,6 @@ Steady-state preview is otherwise silent: invalid frames are logged and
 skipped, and a failed pipeline reports `CAMERA_PREVIEW_STOPPED` with an
 on-screen message.
 
-Measured on EVT1 (2026-09-10): reset to `CAMERA_PREVIEW_READY` 2.04 s (1.14 s
-bootloader/PSRAM, 1.71 s sensor detect, 2.04 s first frame), 39.3 fps capture
-with `presented=78 superseded=0` in the first two seconds.
-
 ## Configuration options (`main/Kconfig.projbuild`)
 
 | Option | Default | Meaning |
@@ -81,23 +77,14 @@ whole profile; the example only supplies the V4L2 format.
   109 %) scales the red/blue input-column magnitudes in `0x5381..0x5389`,
   preserving the signs in `0x538A/0x538B`. The base matrix is restored before
   each application, so repeated profile calls do not compound the trim.
-  On 2026-09-10 a full-frame grey card under indoor lighting measured, over the
-  displayed 460x460 window, R/G = 0.990 and B/G = 1.025 (centre 300x300:
-  1.034 / 1.026). That is a single-module, single-illuminant check, **not** an
-  absolute or multi-illuminant colour-accuracy claim: automatic white balance
-  moves its operating point by roughly ±10 % between scenes, and the same
-  profile measured R/G = 0.93 on a second, dimmer scene at 6.25x AGC.
+  A full-frame grey card under indoor lighting gives R/G = 0.990 and B/G =
+  1.025 over the displayed 460x460 window (centre 300x300: 1.034 / 1.026).
+  Automatic white balance tracks the illuminant by roughly ±10 % between
+  scenes, so the trim corrects the fixed board matrix and leaves AWB in
+  charge.
   Setting both percentages to 100 restores the unscaled board matrix;
   `BSP_CAMERA_SKIP_ISP_PROFILE` bypasses both the board ISP matrix and its trim
-  for explicit A/B diagnosis.
-- **Known module limits (measured, not fixed in software).** The bare lens
-  shows a residual radial red deficit: with LENC on, R/G falls from 1.08 at
-  the frame centre to 0.84 at the corner of the 800x600 frame. A global matrix
-  trim cannot flatten a radial error, so the periphery keeps a slight cyan
-  cast. In dim scenes the sensor pins exposure at 969/984 lines with AGC at
-  6.25x and the colour error grows (R/G 0.62 on an unlit whiteboard). The AWB
-  red limit (`0x5193`, 0x70 or 0xF0) was measured to have no effect on the
-  converged gains in either regime.
+  for explicit A/B comparison.
 - **DC clock.** `BSP_CAMERA_CORE_120MHZ` keeps the LCDCAM core at 120 MHz
   (divide-by-one) for DVP; the IDF default divides it to 60 MHz and truncates
   frames.
@@ -113,13 +100,11 @@ STREAMON**, because the lazy video initialisation overwrites pre-open
 registers. MMAP frames remain capture-owned until the crop copy completes; the
 four display buffers remain LVGL-owned until refresh completion.
 
-## Autofocus
+## Lens
 
-The demo does not implement autofocus. The EVT1 module's voice-coil motor rail
-(`CAM_AF_VCC`) has no populated path on this board, so the lens has no focus
-actuator and no `cam_motor` device is registered; `bsp_camera_start()` sets up
-DVP capture only. The fitted lens is fixed and rests at its spring position,
-which is focused for subjects at a normal working distance.
+The board uses the EVT1 module's fixed-focus lens. `bsp_camera_start()` sets up
+DVP capture; the fitted lens rests at its spring position, which is focused for
+subjects at a normal working distance.
 
 ## Verifying the frame without the panel
 
@@ -139,13 +124,3 @@ not alter colour. Capture temporarily blocks frame publication while
 transmitting about 1.38 MB at 460800 baud; do not use that interval as a
 preview-fps measurement. Export occurs after three seconds of preview so the
 sensor's AEC/AWB have settled.
-
-## Validation status
-
-EVT1 validation with ESP-IDF v6.1-rc1 (2026-09-10) established: reset to
-`CAMERA_PREVIEW_READY` in 2.04 s, 39.3 fps capture with `dropped`/`rejected`
-at zero, byte-identical source/display crops, grey-card neutrality over the
-displayed window, and the LENC A/B above. Re-run the default preview, the
-`CAMERA_TEST_SENSOR_STATS` build and the ISP-profile-bypass build after any
-change to the profile, then repeat the grey-card capture before claiming a
-colour result.

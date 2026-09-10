@@ -9,8 +9,8 @@ baseline and is retained only for history; its reference designators differ.
 | Revision | 0.5 / `v0.5_260803_1544` |
 | Export date | 2026-08-10 |
 | Hardware stage | EVT1 fabrication baseline |
-| Fabricated | Submitted 2026-08-03; boards not yet received |
+| Fabricated | Submitted 2026-08-03; EVT1 boards built |
 
 Use the revision and date in the filename when reporting a hardware issue. Later revisions may change pin assignments, active levels, or power connections.
 
-The editable design source and manufacturing outputs are not part of this revision of the public repository.
+The editable design source and manufacturing outputs are not published in this repository.

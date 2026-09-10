@@ -1,4 +1,4 @@
-# Candis-S31 EVT1 speed-step trial: Flash QIO 80 MHz + PSRAM Octal DDR 250 MHz.
+# Candis-S31 EVT1 speed-step overlay: Flash QIO 80 MHz + PSRAM Octal DDR 250 MHz.
 #
 # Incremental overlay on top of sdkconfig.defaults and
 # sdkconfig.qio80_psram200.defaults. Build with:
@@ -17,7 +17,7 @@
 # IDF ships a release test configuration for this exact grade:
 #   .tools/esp-idf/components/esp_psram/test_apps/psram/sdkconfig.ci.esp32s31_250m_release
 # The ESP32-S31 datasheet rates the PSRAM controller up to 250 MHz 8-bit DDR.
-# The earlier blockers are closed: the in-package device is confirmed 32 MB
-# (BOM + mem_psram_verify probe TRUE_32MB on this EVT1 board), and the 200 MHz
-# grade passed boot MEMTEST, display motion regression, and repeated reboots.
+# The in-package device is 32 MB (BOM + mem_psram_verify probe TRUE_32MB on
+# this board), and the 200 MHz grade passed boot MEMTEST, display motion
+# regression, and repeated reboots.
 CONFIG_SPIRAM_SPEED_250M=y

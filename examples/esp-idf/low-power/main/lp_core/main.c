@@ -6,7 +6,7 @@
 
 /**
  * @file
- * @brief LP core housekeeper for the Candis-S31 low-power prototype.
+ * @brief LP core housekeeper for the Candis-S31 low-power example.
  *
  * Runs on the rv32imac LP core and does two things:
  *

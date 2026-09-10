@@ -1,6 +1,8 @@
 # Candis-S31 EVT1 as-fabricated hardware facts
 
-Extracted 2026-08-14 from the running EasyEDA project 【ESP32-S31】Candis-S31, board `v0.5_260803_1544打样` / PCB_3 full pad netlist (291 components, 939 pads); cross-checked against BSP `candis_s31.h` and `pinout/README.md` (all consistent). Schematic drafting hazard noted for next revision: display-page LCD_VCI_EN_H wire self-overlaps and passes within 1e-13 of the LCD_QSPI_SIO2 stub endpoint near (275,735)/(330,720) — not a net join, confirmed separate nets in the PCB netlist; clean up in the next schematic revision.
+Extracted from the PCB_3 full pad netlist of board `v0.5_260803_1544` (291
+components, 939 pads); cross-checked against BSP `candis_s31.h` and
+`pinout/README.md` (all consistent).
 
 ## U4 ESP32-S31 (QFN80) pad → net → function
 
@@ -9,7 +11,7 @@ Functional rows only; power/ground pads summarized below the table.
 | pad | Signal | PCB net | Function / link |
 |---|---|---|---|
 | 1 | ANT | $3N276 | C5/L2 → RF matching; R1/R2 0Ω select one of RF1 IPEX / U3 ceramic antenna |
-| 2,3 | VDDA3/VDDA4 | $3N259 | Analog supply, C11(1uF)+C1(100nF) decoupling via L1/L2(2nH/600mA); Espressif strongly recommends an added 10uF — missing on EVT |
+| 2,3 | VDDA3/VDDA4 | $3N259 | Analog supply, C11(1uF)+C1(100nF) decoupling via L1/L2(2nH/600mA); Espressif's design guide recommends an added 10uF |
 | 4 | CHIP_PU | ESP32S31_CHIP_PU | ←R28←D1←KEY_RST_N (TG28.29 PWROK); Q1.3 auto-download |
 | 5 | GPIO0 | GPIO0 | TF card detect (CARD1.CD) |
 | 6 | GPIO1 | FUSB303_EN_N | Type-C controller enable, active low |
@@ -38,7 +40,7 @@ Functional rows only; power/ground pads summarized below the table.
 | 49 | GPIO36 | GPIO36 | VDD_SPI voltage strap: R6 10kΩ pull-up = high = 3.3V. `R9` 10kΩ to GND is **DNP and must stay empty** (footprint is present). Also TF_PWR_EN_N active low, via R100 0Ω → Q5 gate |
 | 50 | GPIO37 | GPIO37 | JTAG_SEL strap, 10kΩ pull-up, no application load |
 | 51 | GPIO38 | GPIO38 | via R48 → LCD_VCI_EN_H → U14.1 (R49 pull-down). ESP-IDF GPIO docs/io_mux call this secondary `Boot Mode select 0`, although it is omitted from datasheet v0.5 Table 3-1's user-facing strap list; it is a don't-care for the documented SPI and Joint Download modes |
-| 52,53 | GPIO39/40 | CAM_RST_N/CAM_PWDN | Camera reset / power-down. ESP-IDF GPIO docs/io_mux call these secondary `Boot Mode select 1/2`, although datasheet v0.5 exposes only GPIO36/37/60/61 as user-facing straps. Reconcile them as lower bits of a wider internal boot-mode field: they are don't-care when GPIO61 selects SPI Boot or GPIO61/GPIO60 select Joint Download, and may participate in undocumented SPI Download/ATE/diagnostic combinations. Exact bit-level behavior awaits an S31 TRM definition |
+| 52,53 | GPIO39/40 | CAM_RST_N/CAM_PWDN | Camera reset / power-down. ESP-IDF GPIO docs/io_mux call these secondary `Boot Mode select 1/2`, although datasheet v0.5 exposes only GPIO36/37/60/61 as user-facing straps. They are lower bits of a wider internal boot-mode field: don't-care when GPIO61 selects SPI Boot or GPIO61/GPIO60 select Joint Download, and outside the documented SPI Download and ATE modes |
 | 55 | GPIO42 | AUDIO_PA_EN_H | PA CTRL (100kΩ pull-down) |
 | 56 | GPIO43 | FUSB303_INT_N | Type-C interrupt, active low (100kΩ pull-up) |
 | 57 | GPIO44 | ES8389_ASDOUT | I2S record data; via R61 (0Ω) doubles as AD1 power-up config — must be Hi-Z/low while ALDO3 rises (BSP order: ALDO3 on first, then the I2S channel is created, so the pad is still in its reset Hi-Z state at rail rise; teardown deletes the I2S channel before dropping the rail) |
@@ -54,19 +56,17 @@ Power/ground pads: 11/43/54/64/77/80 = VCC_3V3_MAIN; 30/34/35 = ESP_LDO_1V8 (in-
 
 ## TG28 (U6, QFN-40) rail → load
 
-> Inductor designators corrected 2026-08-19 from the PCB_3 pad netlist: `$2N82` = {U6.22, U7.1}, `$2N83` = {U6.25, U9.1}, `$2N33` = {U6.35, U8.2}. The previous revision of this table swapped U7/U8 and listed pins 35/22 against the wrong converters.
-
 | pin | Net | Load / note |
 |---|---|---|
 | 21/22 | VCC_3V3_MAIN (DCDC1 3.3V/2A): pin 22 = LX1 switch node → **U7** 1µH → rail; pin 21 = output/sense | Main rail, always on (49 pads). **Probe the rail at U7 pad 2**, not at U8 |
-| 25/26 | CAM_DVDD_1V5_SW (DCDC2 1.5V): pin 25 = LX2 switch node → **U9** 1µH → rail; pin 26 = output/sense | FPC1.10. **Probe at U9 pad 2, or C112/C113 (100nF/1µF) / C38 (22µF)** — probing U7 returns 3.3 V and looks like a DCDC2 fault |
+| 25/26 | CAM_DVDD_1V5_SW (DCDC2 1.5V): pin 25 = LX2 switch node → **U9** 1µH → rail; pin 26 = output/sense | FPC1.10. **Probe at U9 pad 2, or C112/C113 (100nF/1µF) / C38 (22µF)** |
 | 18 | LCD_3V3_SW (ALDO1 3.3V) | U14.13+14 (panel maker confirmed pin13 = NC, no load branch) |
 | 19 | LCD_CTP_3V3_SW (ALDO2 3.3V) | U14.22/23, touch pull-ups, Q2 isolation gate |
 | 16 | AUDIO_3V3_SW (ALDO3 3.3V) | ES8389/MIC/audio pull-ups; also U20.3 self-enable PA switch |
-| 15 | TG28_ALDO4 via L6 -> CAM_AVDD_2V8_SW | FPC1.4; R95 (0Ω) -> CAM_AF_VCC (FPC1.23) - **R95 refitted 2026-08-20; see "Post-fabrication reworks"** |
+| 15 | TG28_ALDO4 via L6 -> CAM_AVDD_2V8_SW | FPC1.4; R95 (0Ω) -> CAM_AF_VCC (FPC1.23) - see "Board revisions and reworks" |
 | 12 | CAM_DOVDD_2V8_SW (BLDO1 2.8V) | FPC1.11, camera I2C pull-ups |
 | 14 | 3V3_EXT_SW (BLDO2 3.3V/300mA) | U26.2, R103/R104, Q6 |
-| 20 | TG28_DC1SW | U24.1 (WS2812B-1313-V6 VDD), U25.5 (buffer VCC); OTP default OFF pending first-board measurement |
+| 20 | TG28_DC1SW | U24.1 (WS2812B-1313-V6 VDD), U25.5 (buffer VCC); OTP default OFF |
 | 28 | TG28_VRTC (3.0V always on) | U1.10 (RTC VBAT), R31/R32 pull-ups |
 | 27 | TG28_VBACKUP | Backup input |
 | 33 | TG28_VBAT+ | CN1.1 two-wire battery; TS = R29 10kΩ fixed to GND (no real NTC) |
@@ -79,21 +79,24 @@ Power/ground pads: 11/43/54/64/77/80 = VCC_3V3_MAIN; 30/34/35 = ESP_LDO_1V8 (in-
 | 39/40 | TG28_SCL/SDA | via R26/R27 → GPIO6/7 (LP I2C, 7-bit 0x34) |
 | 1 | TG28_CHGL_LED | Charge indicator LED |
 
+The three 1µH inductors are `$2N82` = {U6.22, U7.1}, `$2N83` = {U6.25, U9.1},
+`$2N33` = {U6.35, U8.2} in the PCB netlist.
+
 ## Connectors as-fabricated
 
 - U14 display 24P BTB: 1=LCD_VCI_EN_H 2=SIO3(GPIO9) 3=SIO2(GPIO14) 4=SIO1(GPIO13) 5=SIO0(GPIO11) 6=CLK(GPIO12) 7=CS(GPIO10) 8=RST(GPIO15) 9=TE(GPIO16) 10=GND 11/12=NC 13/14=LCD_3V3_SW 15=LCD_VBAT 16=GND 17=CTP_INT(GPIO3) 18=CTP_RST(GPIO17) 19=CTP_SCL 20=CTP_SDA 21=GND 22/23=LCD_CTP_3V3_SW 24=NC 25-28=shell GND
-- FPC1 camera 24P (FH12-24S): 1=NC 2=GND 3=CAM_I2C_SDA 4=CAM_AVDD_2V8 5=CAM_I2C_SCL 6=CAM_RST_N 7=CAM_VSYNC 8=CAM_PWDN 9=CAM_HSYNC 10=CAM_DVDD_1V5 11=CAM_DOVDD_2V8 12=CAM_D7 13=CAM_MCLK 14=CAM_D6 15=GND 16=CAM_D5 17=CAM_PCLK 18=CAM_D4 19=CAM_D0 20=CAM_D3 21=CAM_D1 22=CAM_D2 23=CAM_AF_VCC 24=GND (AF_VCC fed from CAM_AVDD through R95 0Ω as fabricated; **R95 refitted by hand 2026-08-20**, so FPC1.23 is currently powered with the camera rail. No VCM driver IC on board: AF_VCC is a raw 2.8 V feed, not a focus control signal. Pin 23/24 are the family-incompatible positions - OV5640-AF modules expect 23=AF-VCC/24=AF-GND, while the Korvo OV3660 module uses 23=LED+/24=IR_CUT)
+- FPC1 camera 24P (FH12-24S): 1=NC 2=GND 3=CAM_I2C_SDA 4=CAM_AVDD_2V8 5=CAM_I2C_SCL 6=CAM_RST_N 7=CAM_VSYNC 8=CAM_PWDN 9=CAM_HSYNC 10=CAM_DVDD_1V5 11=CAM_DOVDD_2V8 12=CAM_D7 13=CAM_MCLK 14=CAM_D6 15=GND 16=CAM_D5 17=CAM_PCLK 18=CAM_D4 19=CAM_D0 20=CAM_D3 21=CAM_D1 22=CAM_D2 23=CAM_AF_VCC 24=GND (AF_VCC fed from CAM_AVDD through R95 0Ω as fabricated; check the fitted state in "Board revisions and reworks" before mating a module. No VCM driver IC on board: AF_VCC is a raw 2.8 V feed, not a focus control signal. Pin 23/24 are the family-incompatible positions - OV5640-AF modules expect 23=AF-VCC/24=AF-GND, while the Korvo OV3660 module uses 23=LED+/24=IR_CUT)
 - CARD1 TF: 1=DAT2 2=DAT3 3=CMD 4=TF_VDD_3V3_SW 5=CLK 6=GND 7=DAT0 8=DAT1 CD=GPIO0 (GPIO20-25 mapping in U4 table)
 - USB1 (debug port): VBUS→U11 fuse→U12 TPS22917→TG28_VBUS; CC1/CC2 via R33/R34 5.1kΩ pull-down (D2/D4 ESD); D+/D-→CH343P UD+/UD-
 - USB2 (OTG): CC1/2→U17 FUSB303B; D+/D-→R23/R25→U4.44/45; VBUS=OTG_VBUS_5V (U16 ISL9113 boost; EN=OTG_BOOST_EN_SAFE from U15 SN74LVC1G58 wired as 2-input AND with one inverted input — U15.1 tied to VCC_3V3_MAIN selects the config, U15.3=GPIO45 (R40 100kΩ pull-down), U15.6=FUSB303_SOURCE_OK_N (R44 100kΩ pull-up), Y=U15.4 → Y = GPIO45 AND NOT(FUSB303_SOURCE_OK_N), R45 100kΩ pull-down on Y)
-- USB2 role strap as fabricated: U17.3 (`PORT/DEBUG_N`) is **floating**, because R41 and R42 are both DNP. FUSB303B Table 1: "Float = FUSB303B as a Dual Role Port (DRP)". So Type-C2 comes up as DRP, not Sink — reconcile this against the Source-before-boost and 500 mA-only policy during `typec_test`. R46 909kΩ → GND sets the address strap and matches the datasheet's ~900kΩ standby-current recommendation. `EN_N` (U17.11) rests at 3.3 V through R43 100kΩ in parallel with the device's internal ~6MΩ pull-up to VDD; onsemi FUSB303B **Rev.3** Table 4 rates these pins −0.5…6.0 V, superseding the erroneous 2.0 V `EN_N` row printed in Rev.2 (the copy kept in `其他IC资料/FUSB303B.pdf`)
+- USB2 role strap as fabricated: U17.3 (`PORT/DEBUG_N`) is **floating**, because R41 and R42 are both DNP. FUSB303B Table 1: "Float = FUSB303B as a Dual Role Port (DRP)". So Type-C2 comes up as DRP, not Sink — reconcile this against the Source-before-boost and 500 mA-only policy during `typec_test`. R46 909kΩ → GND sets the address strap and matches the datasheet's ~900kΩ standby-current recommendation. `EN_N` (U17.11) rests at 3.3 V through R43 100kΩ in parallel with the device's internal ~6MΩ pull-up to VDD; onsemi FUSB303B **Rev.3** Table 4 rates these pins −0.5…6.0 V, superseding the erroneous 2.0 V `EN_N` row printed in Rev.2
 - U26 EXT GH1.25-4: 1=GND 2=3V3_EXT_SW 3=EXT_I2C_SDA 4=EXT_I2C_SCL (U27 = M2 mounting hole)
 - CN1 battery: 1=TG28_VBAT+ 2=GND; CN2 speaker: 1/2=U22.8/U22.5 (NS4150B differential output, neither side may be grounded)
 - Keys: SW1=KEY_PWRON_N (TG28.30); SW2=ESP32S31_BOOT (GPIO61); SW3 RESET→R101 (510Ω)→KEY_RST_N (TG28.29 PWROK)
 
 ## DNP positions as fabricated (footprint present, part not fitted)
 
-The PCB_3 pad netlist above contains **every footprint, including unfitted
+The PCB pad netlist above contains **every footprint, including unfitted
 ones**, so on its own it expresses design intent rather than the fitted
 circuit. Assembly state comes from the schematic BOM flag (`addIntoBom`); the
 calibration pair is `R63`/`R68` fitted against `R62`/`R65` unfitted. Eleven
@@ -117,21 +120,21 @@ Incoming inspection must confirm the ten PCB-present positions are genuinely
 empty. A wrongly fitted `R9` is the one that blocks boot: GPIO36 would sit near
 1.65 V, and erratum SPI-855 forbids booting a v0.0 die with 1.8 V VDD_SPI.
 
-## Post-fabrication reworks
+## Board revisions and reworks
 
-These positions were **fitted at fabrication** and later changed by hand, so they
-are not part of the DNP table above. Board-level results recorded after the date
-shown reflect the reworked state.
+`v0.5_260803_1544` is the EVT1 fabrication baseline. Positions changed by hand
+after fabrication are listed below; a board-level result must state which fitted
+state it was taken in, because the fitted state of `R95` decides whether a
+camera module may be mated.
 
-| Ref | Date | Change | Reason | Evidence | DVT intent |
-|---|---|---|---|---|---|
-| `R95` (0Ω 0402, camera page) | 2026-08-19 | **Removed** — cuts `CAM_AVDD_2V8_SW` (ALDO4 2.8 V) → `CAM_AF_VCC` → FPC1.23 | FPC1 is wired to the OV5640-AF family convention (23=AF-VCC, 24=AF-GND), but the module in use was an ESP32-S31-Korvo-1 OV3660 whose pin 23=LED+ and pin 24=IR_CUT. Mating the two energised the module's IR-CUT coil continuously (tens of ohms), overloading ALDO4; combined with a 100 % display load and camera-init transients this dropped DCDC1 below its 85 % UVP threshold and TG28 powered the whole board off | Same stress case that failed 4 times in a row passed **20/20** after removal (`.work/evt1/s7_tg28_r95_removed.log`, `s7_tg28_r95_removed_2.log`); PoR baseline REG20=0x04 / REG21=0x00. Korvo pin mapping from `esp32s31原厂官方资料/esp32-s31-korvo-1-schematics.pdf` p3 (J4 FPC_24P_CAM) | Keep **DNP** while an OV3660-class module is used. If IR-CUT switching or a real AF module must be supported, pins 23/24 need a configurable driver (0Ω option + GPIO/load switch) — decide at DVT review. A genuine OV5640-AF module needs R95 refitted, and that configuration must re-run the "display 100 % + camera_test ×10" stress before being trusted |
-| `R95` | 2026-08-20 | **Refitted by hand**; current board state supplies `CAM_AF_VCC` from ALDO4 when camera power is enabled | The planned first OV5640-AF validation stage required R95 to remain removed; the operator confirmed it had been refitted only after the collapse | `camera_test` hung with no sensor log, the board fell to about 4 mA, PWRON recovered it, and the recovered TG28 state was REG20=0x01 / REG21=0x20 (`.work/evt1/s8_ov5640_camera_collapse_pmic.log`) | Do not repeat camera tests with R95 fitted until the AF load is quantified and a controlled power plan is approved. Remove R95 again for the sensor-only bring-up stage |
-| FPC1 mating | 2026-08-20 | **Camera FPC tail confirmed mirrored (pin 1 ↔ pin 24) against FPC1** — user physical inspection; module removed, camera tests paused pending a pin-order adapter FPC cable/board | Mirrored mating maps board pin 10 (`CAM_DVDD_1V5_SW`) to module DGND and board pin 23 (`CAM_AF_VCC`, R95 fitted) to module AGND — two hard rail shorts; sensor AVDD/DVDD/DOVDD all land on GND or SoC GPIOs and SCCB SDA/SCL land on module D2/D3, so detection is physically silent | Explains the 2026-08-20 03:39 collapse exactly (zero sensor logs + ~4 mA + REG21=0x20); full derivation and adapter verification in `.work/evt1/20260820_fpc_mirror_adapter_verify.md`; in-project `OV5640_FPC转换板` schematic verified as an exact 24-position mirror (FPC1.pinN ↔ FPC2.pin(25−N), 24/24) via EasyEDA live read | DVT: fix the camera connector pin order (footprint/silkscreen) so no adapter is needed in production; the interconnect FPC between mainboard and adapter must be same-face/straight (a reverse-face cable re-mirrors the chain); R95 rule reverts to the pinout-check plan once orientation is corrected |
+| Ref | Change | Reason | Action | DVT intent |
+|---|---|---|---|---|
+| `R95` (0Ω 0402, camera page) | Connects `CAM_AVDD_2V8_SW` (ALDO4 2.8 V) to `CAM_AF_VCC` on FPC1.23; fitted as fabricated, removable by hand | An OV3660-class module uses pin 23 for its IR-cut LED supply, not for AF power. Mating it to a board with `R95` fitted energises that coil continuously (tens of ohms), overloads ALDO4, and the resulting transient can drag DCDC1 below its 85 % undervoltage threshold and power the whole board off | Check the fitted state on the board under test before mating a camera module; leave `R95` unfitted while an OV3660-class module is used | If IR-cut switching or a real AF module must be supported, pins 23/24 need a configurable driver (0Ω option + GPIO/load switch) — decide at DVT review. A genuine OV5640-AF module needs `R95` fitted, and that configuration must pass the "display 100 % + camera_test ×10" stress before being trusted |
+| FPC1 pin order | FPC1 follows the OV5640-AF convention (pin 23 = AF supply, pin 24 = ground); the ESP32-S31-Korvo-1 OV3660 module uses pin 23 = LED+, pin 24 = IR_CUT, and its tail is mirrored (pin 1 ↔ pin 24) against FPC1 | Mirrored mating maps board pin 10 (`CAM_DVDD_1V5_SW`) to module DGND and board pin 23 (`CAM_AF_VCC`) to module AGND — two hard rail shorts; sensor AVDD/DVDD/DOVDD land on GND or SoC GPIOs and SCCB SDA/SCL land on module D2/D3, so detection stays physically silent | Use a pin-order adapter FPC or a module whose pin order matches, and confirm the contact-face orientation before mating | Fix the camera connector pin order (footprint/silkscreen) so no adapter is needed in production; the interconnect FPC between mainboard and adapter must be same-face/straight (a reverse-face cable re-mirrors the chain) |
 
 ## Expected I2C addresses
 
-All 7-bit. Final adjudication at EVT is the `i2c_scan` measurement.
+All 7-bit. The `i2c_scan` measurement is the final authority at EVT.
 
 | Bus | Address | Device | Strap / wiring evidence |
 |---|---|---|---|

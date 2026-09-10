@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-# Run this from the configured tmux `idf` session so the ESP-IDF esptool and
-# Python environment are active. Arguments:
+# Run this from an activated ESP-IDF environment so esptool and its Python
+# environment are active. Arguments:
 # PORT [MERGED_IMAGE] [BAUD] GPIO61_DOWNLOAD_LEVEL GPIO61_RUN_LEVEL.
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 port=${1:-PORT}
@@ -37,7 +37,7 @@ if command -v esptool >/dev/null 2>&1; then
 elif python -m esptool version >/dev/null 2>&1; then
     esptool=(python -m esptool)
 else
-    echo "esptool is unavailable; activate the tmux idf environment first" >&2
+    echo "esptool is unavailable; activate an ESP-IDF environment first" >&2
     exit 2
 fi
 

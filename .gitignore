@@ -4,6 +4,7 @@
 **/build_esp32s31/
 sdkconfig
 /firmware/factory/sdkconfig.qio80_psram200
+/firmware/factory/sdkconfig.qio80_psram250
 sdkconfig.old
 **/managed_components/
 .manifest_sha

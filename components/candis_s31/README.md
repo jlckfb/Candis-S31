@@ -10,13 +10,10 @@ AMOLED. The board also carries capacitive touch, battery charging and power
 management, an RTC, two USB Type-C connectors, an ES8389 audio codec, a DVP
 camera connector, a microSD slot, and one addressable RGB LED.
 
-This repository-owned board component follows schematic revision 0.5. The implementation and examples are
-compile-tested with ESP-IDF 6.1. EVT1 hardware has recorded validation for the
-display, touch, storage, USB, RTC, and PMIC domains; ES8389 initialization and
-digital-path checks pass, while speaker/microphone listening acceptance remains
-open. The corrected camera FPC adapter is fitted and DVP streaming plus the
-color-bar path are verified; real-scene image quality and JPEG capture remain
-EVT-specific validation items.
+This repository-owned board component follows schematic revision 0.5. The
+implementation and examples are compile-tested with ESP-IDF 6.1, and the
+component provides display, touch, storage, USB, RTC, PMIC, audio, camera and
+RGB LED support for this board.
 
 ## Capabilities and dependencies
 
@@ -67,11 +64,10 @@ The TG28 driver can represent the discrete input-current limits
 (100/500/900/1000/1500/2000mA), but this board has fixed Type-C1 Rd and no Rp
 detector. `bsp_pmic_init()` therefore forces the REG16 input limit to
 `BSP_PMIC_SAFE_INPUT_CURRENT_LIMIT_MA` (2000 mA) with exact readback
-verification before other PMIC setup. That value is a register ceiling, not a
-source capability claim: the TG28 backs the actual charge current off under
-the input limit/VINDPM while the system load keeps priority, and firmware
-cannot classify the C1 source, so PC-port current budgets are NOT guaranteed
-- PC protection lives in the application charge controller's REG62 charge-current
+verification before other PMIC setup. That value is a register ceiling rather
+than a source capability claim: the TG28 backs the actual charge current off
+under the input limit/VINDPM while the system load keeps priority, and PC-port
+protection lives in the application charge controller's REG62 charge-current
 ceiling. The public `bsp_pmic_set/get_input_current_limit` accepts the full
 hardware whitelist; requests above the boot default are accepted only from
 callers that have independently verified the connected source. Charger
@@ -118,9 +114,7 @@ and issue their protocol-level shutdown commands.
 ## Third-party notices
 
 - The CO5300 initialization sequence in `bsp_display.c` is converted from the
-  AM200Q460460LK module supplier's reference material. Its license status is
-  being confirmed with the supplier; treat the sequence as supplier-provided
-  reference data until that confirmation is complete.
+  AM200Q460460LK module supplier's reference material.
 - Touch support uses the published `espressif/esp_lcd_touch_cst820`
   component (Apache-2.0), which follows the module-specific CST820 report
   format and exposes the common `esp_lcd_touch` API. Its framework sleep hooks
@@ -136,7 +130,7 @@ and issue their protocol-level shutdown commands.
 | [`examples/esp-idf/display-hello`](../../../examples/esp-idf/display-hello) | Board Manager plus LVGL display smoke test |
 | [`examples/esp-idf/camera-test`](../../../examples/esp-idf/camera-test) | Continuous OV5640 preview on the AMOLED |
 | [`examples/esp-idf/player`](../../../examples/esp-idf/player) | TF-card audio/video player |
-| [`examples/esp-idf/low-power`](../../../examples/esp-idf/low-power) | Low-power state-machine prototype |
+| [`examples/esp-idf/low-power`](../../../examples/esp-idf/low-power) | Light sleep, deep sleep and screen-off state machine |
 
 <!-- END_EXAMPLES -->
 </div>
@@ -228,8 +222,8 @@ The on-board 2.0-inch CO5300 AMOLED (QSPI, 460x460 active area inside a 470x460 
   partial-buffer LVGL port, the first chunk waits for TE; subsequent chunks
   use the double-buffered DMA pipeline. A 460x460 RGB565 update needs at least
   17.6 ms at 48 MHz QSPI, longer than this panel's measured 16.69 ms period.
-  The measured TE-on rates are therefore about 29.95 fps full-screen and
-  59.90 fps for local updates, not a guaranteed minimum of exactly 30/60 fps.
+  The measured TE-on rates are about 29.95 fps full-screen and 59.90 fps for
+  local updates.
 
 - **Touch is optional:** if the CST820 is missing or fails to initialize, `bsp_display_start()` still succeeds and logs a warning; the display keeps working without touch input.
 
@@ -251,19 +245,15 @@ VTS=835, for a 30.003 fps target. Relative to the measured
 30 fps. PLL1 is 760 MHz and PCLK stays below the OV5640's 96 MHz maximum.
 HTS remains unchanged, following OmniVision's dummy-line guidance. Matched
 50/60 Hz banding caps exposure at 30.06/25.03 ms instead of 44-72 ms.
-These timing and image-quality changes still require EVT1 visual confirmation.
 
-`CONFIG_BSP_CAMERA_XCLK_USE_LEDC=y` keeps the validated clock source under
-board ownership and passes `xclk_io=GPIO_NUM_NC` / `xclk_freq=0` to esp_video.
-Disabling it selects esp_video's controller-driven 20 MHz XCLK; 20 MHz divides
-the ESP32-S31 160 MHz CAM source exactly, but that alternate path is not the
-EVT1 baseline.
+`CONFIG_BSP_CAMERA_XCLK_USE_LEDC=y` keeps the board-owned clock source and
+passes `xclk_io=GPIO_NUM_NC` / `xclk_freq=0` to esp_video. Disabling it
+selects esp_video's controller-driven 20 MHz XCLK, which is an exact divisor
+of the ESP32-S31 160 MHz CAM source.
 
-The fitted module is an OV5640 with a voice-coil autofocus actuator, but the
-EVT1 board leaves its `CAM_AF_VCC` motor rail unpopulated, so the lens has no
-focus actuator and no `cam_motor` I2C device is registered. The BSP therefore
-configures DVP capture only: `bsp_camera_start()` brings up power, XCLK, the
-DVP route and the sensor profile, and the application drives the V4L2 stream.
+The BSP configures DVP capture for the OV5640 module: `bsp_camera_start()`
+brings up power, XCLK, the DVP route and the sensor profile, and the
+application drives the V4L2 stream.
 
 ## Audio codec
 

@@ -860,8 +860,8 @@ static int command_audio_record_playback(int argc, char **argv)
                    "operator heard both recorded microphone channels",
         ch0_only ? "operator did not hear clean CH0 speech" :
                    "operator did not hear both recorded microphone channels",
-        ch0_only ? "WAV played CH0 only; operator confirmation pending" :
-                   "stereo WAV played ch0 then ch1; operator confirmation pending");
+        ch0_only ? "WAV played CH0 only; operator answer not given" :
+                   "stereo WAV played ch0 then ch1; operator answer not given");
     if (answer == 'n') {
         result = ESP_FAIL;
     }
@@ -1033,7 +1033,7 @@ static int command_manual_mic_channel(int argc, char **argv,
 
     char speaker_detail[FACTORY_DETAIL_LENGTH];
     snprintf(speaker_detail, sizeof(speaker_detail),
-             "%s CH%u WAV played; external confirmation pending",
+             "%s CH%u WAV played; operator answer not given",
              microphone_name, selected_channel);
     factory_report_set(FACTORY_TEST_SPEAKER, FACTORY_STATUS_NOT_RUN,
                        speaker_detail);
@@ -1122,7 +1122,7 @@ static int command_wav_play(int argc, char **argv)
             FACTORY_TEST_SPEAKER, answer,
             "operator confirmed clean WAV playback",
             "operator reported missing or distorted WAV playback",
-            "WAV data sent; operator confirmation pending");
+            "WAV data sent; operator answer not given");
         if (answer == 'n') {
             result = ESP_FAIL;
         }

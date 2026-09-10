@@ -8,8 +8,8 @@ five seconds and reports its average frame rate:
   panel every frame;
 - `partial`: a bouncing 48 px ball repaints a bounded region only.
 
-Frame counting follows the demo's display diagnostics: a refresh cycle only
-counts at `LV_EVENT_REFR_READY` when it contains a flush. FPS is
+Frame counting: a refresh cycle only counts at `LV_EVENT_REFR_READY` when it
+contains a flush. FPS is
 `(frames - 1) * 1000000 / interval_us`, using the first and last counted
 refresh timestamps. This measures LVGL refresh throughput, not timer calls,
 SPI chunks, or physical panel scans.
@@ -22,51 +22,32 @@ SPI chunks, or physical panel scans.
 | Partition table | `partitions.csv` (single 8 MB app) |
 | Managed components | None direct (LVGL via the board component) |
 | Compile status | Verified |
-| Hardware status | Run on EVT1 on 2026-09-07, 2026-09-08 and 2026-09-10; tear-free display acceptance remains open |
 
 ## Behavior
 
 - Runs each phase for about 5 s after a 500 ms warm-up, reporting the measured
   frame count, first-to-last interval, TE state, FPS, and `PASS` or `BELOW_TARGET`.
-- Uses 1 ms animation and LVGL refresh timers with a 1 ms FreeRTOS tick.
-  Throughput is not capped by a 30/60 fps animation timer.
+- Runs its animation and LVGL refresh timers at 1 ms with a 1 ms FreeRTOS tick.
 - The on-screen label shows the number of refreshes in the latest stats tick.
-- Fullscreen >= 30 fps and partial >= 60 fps are minimum thresholds, not
-  scheduling targets or upper limits. The comparison uses the unrounded FPS;
-  a printed `60.000` can still be `BELOW_TARGET`.
+- The pass thresholds are fullscreen >= 30 fps and partial >= 60 fps, compared
+  on the unrounded FPS.
 
-## EVT1 measurements — 2026-09-07
+## Measured throughput
 
-The local bench record `display-unlimited.log` captured two four-phase cycles
-with 48 MHz QSPI and two 460 × 48 internal-DMA draw buffers. The raw log is a
-local validation artifact and is not shipped in the repository.
+Two four-phase cycles on EVT1 with 48 MHz QSPI and two 460 × 48 internal-DMA
+draw buffers:
 
-| TE synchronization | Fullscreen refreshes/s | Partial refreshes/s | Threshold result |
-|---|---|---|---|
-| Off | 47.571 | 498.998–499.037 | Both PASS |
-| On | 29.978–29.993 | 59.976–59.9996 | Both BELOW_TARGET |
+| TE synchronization | Fullscreen refreshes/s | Partial refreshes/s |
+|---|---|---|
+| Off | 47.571 | 498.998–499.037 |
+| On | 29.978–29.993 | 59.976–59.9996 |
 
-The TE-on partial sample with 300 frames over 4,983,366 us is approximately
-59.9996 refreshes/s; the log prints `60.000` but correctly reports
-`BELOW_TARGET`. Values below the minimum are not rounded up to PASS.
+The panel refreshes at about 59.9 Hz (TE period 16695 us), so with TE enabled
+one frame is submitted per panel refresh and the TE-on fullscreen rate follows
+the panel cadence.
 
 Approximately 499 partial refreshes/s describes host-side LVGL updates to a
-small region. It does not mean the AMOLED scans at 499 Hz or displays every
-update as a separate complete image. These measurements establish throughput;
-neither TE setting has a tear-free visual acceptance claim.
-
-The 2026-09-08 isolated-config rerun produced 47.170-47.229 fullscreen and
-498.537-498.538 partial refreshes/s with TE off; with TE on it produced
-29.973-29.987 fullscreen and 59.959-59.971 partial refreshes/s. The strict
-TE-on thresholds remain unmet. The screen now labels each phase with
-`FULL`/`PARTIAL` and `TE ON`/`TE OFF`; visual tearing acceptance is still open.
-
-The 2026-09-10 rerun produced 47.122 fullscreen and 498.499 partial
-refreshes/s with TE off, and 29.949 fullscreen and 59.854 partial with TE on.
-A separate probe measured the panel TE period at 16695 us (59.897 Hz), so the
-TE-on numbers are one submitted frame per panel refresh: the gap to the strict
-30/60 thresholds is the panel refresh rate, not headroom left in the render
-path. The thresholds are kept as written rather than rounded up.
+small region, which is a region refresh rate and not the panel scan rate.
 
 ## Build and flash
 

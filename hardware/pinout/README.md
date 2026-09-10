@@ -1,6 +1,6 @@
-# Preliminary pinout
+# Pinout
 
-This table is derived from schematic revision 0.5 and cross-checked against the BSP header `candis_s31.h`. It has not been checked against an assembled EVT1 board.
+This table is derived from schematic revision 0.5 and cross-checked against the BSP header `candis_s31.h`; the schematic remains the authority for the board revision in hand.
 
 ## Board functions
 
@@ -112,4 +112,4 @@ the ESP-BSP button API.
 4. Validate the associated power rail before driving an enable signal.
 5. Record any board revision dependency in the driver.
 
-Do not turn this document into a framework-specific header. The same hardware facts should feed `esp_friends_boards/candis_s31`, Arduino, PlatformIO, factory tests, and documentation.
+Keep this document framework-neutral: the same hardware facts feed the board runtime, factory tests, and documentation.

@@ -11,7 +11,6 @@ the RX8130CE alarm flag arrive on the TG28 shared IRQ line (GPIO2).
 | Flash configuration | 16 MB, DIO 40 MHz |
 | Managed components | None direct; public registry dependencies via the repository board component |
 | Compile status | Verified |
-| Hardware status | **Partial** — EVT1 (2026-09-10): UART-bridge transitions of the real BOOT GPIO produced SHORT and LONG events; mechanical BOOT/PWR presses remain unverified |
 
 ## Behavior
 
@@ -44,12 +43,11 @@ I (…) buttons: event: PWR_SHORT
 ```
 
 After `buttons example ready`, perform BOOT short, BOOT long (hold at least
-800 ms), and PWR short presses; allow **15 s** for the three actions. Require
-exactly one matching event for each, and no BOOT_SHORT after the long-press
-release. There is no all-done marker for this continuous input example.
-Readiness or silence is not button acceptance: a person or physical button
-fixture is required. `RTC_ALARM` needs an independently armed RTC alarm; this
-example does not manufacture one to claim that path passed.
+800 ms), and PWR short presses; allow **15 s** for the three actions. Each
+press prints exactly one matching event, and a long press is followed by no
+BOOT_SHORT on release. The example runs continuously as an input service.
+A person or physical button fixture performs the presses. `RTC_ALARM` prints
+when an external source arms an RTC alarm.
 
 ## Constraints
 

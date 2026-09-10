@@ -12,9 +12,9 @@ tags:
 dependencies:
   idf: ">=6.1"
 
-  # These four reusable drivers are kept in the repository while their
-  # upstream publication is pending. The paths are relative to this
-  # component, so a clone never depends on a developer's absolute path.
+  # These four reusable drivers are kept in this repository. The paths are
+  # relative to this component, so a clone never depends on a developer's
+  # absolute path.
   espressif/fusb303b:
     version: "^0.3.0"
     public: false
@@ -35,7 +35,7 @@ dependencies:
     public: true
 
   # This repository-local compatibility port is derived from Espressif's
-  # 2.9.0 component and adds the TE observer used by board diagnostics.
+  # 2.9.0 component and adds a non-owning TE edge observer API.
   espressif/esp_lvgl_port:
     version: "^2.9.0"
     public: true

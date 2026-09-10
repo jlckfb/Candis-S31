@@ -56,8 +56,8 @@ class CameraDumpTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid frame trailer"):
             capture.receive_frame(io.BytesIO(wire), 2)
 
-    def test_rejects_unverified_legacy_dump(self):
-        with self.assertRaisesRegex(ValueError, "unverified legacy dump"):
+    def test_rejects_legacy_dump_without_crc32(self):
+        with self.assertRaisesRegex(ValueError, "legacy dump without CRC32"):
             capture.receive_frame(io.BytesIO(
                 b"CAMERA_FRAME_DUMP_BEGIN raw=960000 rgb=423200\n"), 2)
 

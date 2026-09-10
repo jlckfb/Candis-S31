@@ -3,7 +3,7 @@
  *
  * Read-only TG28_SW dump (status, rails, OTP switches, SAR ADC channels)
  * plus a single off->on->restore toggle of the BSP_POWER_AUDIO_PA domain.
- * Safety contract (test_power.c C10): this example NEVER writes a charge
+ * Safety contract: this example NEVER writes a charge
  * register (no set_charge_current / set_input_current_limit /
  * set_charge_voltage) and never calls bsp_pmic_power_off().
  *

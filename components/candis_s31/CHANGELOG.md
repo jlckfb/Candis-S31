@@ -10,12 +10,8 @@
 * Camera: roll the overcorrecting 136 % red / 108 % blue colour-matrix defaults back to 112 % / 109 %, measured on a full-frame grey card over the displayed window (R/G 0.990, B/G 1.025); automatic white balance remains enabled
 * Audio: disable the pull-up restored by GPIO reset before re-enabling the inactive PA output during codec destruction
 * USB Host: quiesce the root port with `usb_host_lib_set_root_port_power(false)` and a 50 ms drain before stopping the event task and uninstalling the host library. The upstream USB 1.5.0 teardown can leave a deferred HCD port callback; powering the root port down while the library object is still alive lets the event task drain it before `usb_host_uninstall()` clears the global object
-* Camera: drive the OV5640 XCLK from LEDC instead of the CAM controller. The esp_video DVP clock path (`esp_cam_ctlr_dvp_output_clock()`) only supports integer dividers and no ESP32-S31 CAM controller clock source is an integer multiple of the required 24 MHz (PLL_F160M 160 % 24 = 16, XTAL 40 % 24 = 16), so `esp_video_init_with_flags()` hard-failed with "calculated frequency divider is not integer" before any sensor detection; `CONFIG_BSP_CAMERA_XCLK_USE_LEDC` is now enabled by default and the BSP passes `xclk_io=GPIO_NUM_NC` / `xclk_freq=0` to esp_video so the controller clock path is skipped entirely. This supersedes the v1.2.0 "XCLK is no longer driven twice" entry, which was written against a fractional-divider assumption that does not hold on the S31 silicon/driver
+* Camera: drive the OV5640 XCLK from LEDC instead of the CAM controller. The esp_video DVP clock path (`esp_cam_ctlr_dvp_output_clock()`) only supports integer dividers and no ESP32-S31 CAM controller clock source is an integer multiple of the required 24 MHz (PLL_F160M 160 % 24 = 16, XTAL 40 % 24 = 16), so `esp_video_init_with_flags()` hard-failed with "calculated frequency divider is not integer" before any sensor detection; `CONFIG_BSP_CAMERA_XCLK_USE_LEDC` is now enabled by default and the BSP passes `xclk_io=GPIO_NUM_NC` / `xclk_freq=0` to esp_video so the controller clock path is skipped entirely.
 * Display: apply the EVT1 upside-down 180-degree MX|MY orientation in the shared panel initialization path, keep runtime LVGL rotations intact across deep-standby reset, and require `esp_lcd_co5300` `^2.1.0` for the mirror callback
-
-### Removed
-
-* Camera: drop the OV5640 embedded autofocus support (`bsp_camera_autofocus_once()`, the AF firmware blob and the AF command path). The EVT1 lens has no populated VCM supply path, so `CAM_AF_VCC` is unpowered and the module keeps a fixed focus; the demo no longer exposes or starts focus control.
 
 ## v1.2.0 - 2026-08-22
 
@@ -39,7 +35,7 @@
 * Audio: require `esp_codec_dev` 1.6.2 and give the speaker/microphone instances one BCLK/no-DAC-reference policy. Version 1.5.11 reset the shared ES8389 for each logical instance; `mic -> speaker -> mic` left registers 0x02/0x23/0xF0 in the speaker policy and returned an exact-zero left ADC channel. The 1.6.x physical-codec reference manager plus matching configs removes that creation-order dependency
 * Audio: `bsp_audio_init()` built its default `i2s_std_config_t` from a hard-coded 22050 Hz and ignored `BSP_I2S_SAMPLE_RATE` entirely, so overriding the macro had no effect; it now derives the rate from the macro. The default itself moves from 22050 Hz to 16000 Hz: 22050 Hz has no row in the es8389 coefficient table (`coeff_div[]` holds only 8000/16000/24000/32000/44100/48000/88200/96000/192000 Hz). The shared BCLK policy now resolves the 16 kHz/16-bit x2 row exactly instead of leaving the codec clocks at their open-time defaults
 * Power: DLDO1 is modelled as the DC1SW load switch its OTP straps it to instead of as an adjustable LDO. The RGB LED rail is opened with `bsp_pmic_switch_enable(BSP_PMIC_SWITCH_DC1SW, true)` in `bsp_led_indicator_create()` and closed again in `bsp_power_safe_state()`; no voltage is programmed on DLDO1 any more
-* Camera: XCLK is no longer driven twice. The CAM controller derives the 24 MHz sensor clock itself and drives it on `dvp_pin.xclk_io`, so the redundant LEDC channel is now behind `CONFIG_BSP_CAMERA_XCLK_USE_LEDC`, disabled by default (diagnostics only); `CONFIG_BSP_CAMERA_XCLK_LEDC_CH` only applies when it is enabled
+* Camera: XCLK is no longer driven twice. The CAM controller derives the 24 MHz sensor clock itself and drives it on `dvp_pin.xclk_io`, so the redundant LEDC channel is now behind `CONFIG_BSP_CAMERA_XCLK_USE_LEDC`, disabled by default; the CAM controller clock is used instead; `CONFIG_BSP_CAMERA_XCLK_LEDC_CH` only applies when it is enabled
 * Interrupts: the shared PMIC/RTC line on GPIO2 is now level-triggered (`GPIO_INTR_LOW_LEVEL`) instead of falling-edge; an event asserted while the other device still holds the line low no longer goes unnoticed. The ISR masks the line and `bsp_shared_irq_service()` re-arms it after draining both devices. Re-registering a callback now replaces the previous handler instead of failing
 * Power: make safe-state and peripheral shutdown best-effort so a failed GPIO/I2C step cannot skip later rails; invoke the application teardown callback first, remove display power in VCI → VBAT → ALDO1 order, park camera/display/touch/audio/SD/RGB interfaces before rail removal, and report direct-domain state from successful BSP writes instead of a disabled GPIO input buffer
 * Display: send Display-Off and Sleep-In before teardown, park the complete QSPI/control interface after driver deletion, invalidate BSP LVGL handles even when an LVGL removal fails, keep power-safety teardown running, roll touch startup failures back, and reuse the CO5300 driver's 10 ms/150 ms reset timing when leaving deep standby
@@ -50,19 +46,3 @@
 ### Notes
 
 * Driver dependencies raised to tg28_sw `^0.4.0`, rx8130ce `^0.4.0`, fusb303b `^0.3.0`
-
-…
-
-### Features
-
-* Display: configure the CO5300 TE input (GPIO16 via R55) and fix the QSPI write command encoding; `BSP_LCD_BIGENDIAN` is now 1
-* Display: panel sleep and deep-standby entry/exit through the CO5300 command path
-* Power: display VBAT/VCI rail sequencing (ALDO1-sourced VCI, 2 ms staging, reverse order on power-down) and pin tristating for the camera and SD domains
-* PMIC: replace the `BSP_PMIC_DCDC5` rail with `BSP_PMIC_DLDO1`/`BSP_PMIC_DLDO2`; expose input current limit, charge voltage, and VINDPM settings
-* RTC: alarm support via `bsp_rtc_set_alarm`/`bsp_rtc_get_alarm`/`bsp_rtc_alarm_irq_enable` (`bsp_rtc_alarm_t`)
-* Interrupts: shared PMIC/RTC IRQ line service with GPIO ISR dispatch and `bsp_shared_irq_register_callback`
-* Camera: OV5640 DVP XCLK changed to 24 MHz; drop unused flip/rotation macros
-
-### Notes
-
-* Build baseline: ESP-IDF `v6.1-beta1`

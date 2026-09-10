@@ -1,10 +1,8 @@
-# Candis-S31 USB CDC Device Diagnostics
+# Candis-S31 USB CDC device console
 
 This image presents Type-C2 as a USB CDC ACM device to a host PC. The board is
 explicitly placed in the Type-C Sink role and never enables the OTG 5 V boost.
 
-Runtime status: EVT1 (2026-09-10) reached `USB CDC device ready`, which proves
-device-stack startup only, not host enumeration or command round trips.
 Attach a host PC to **Type-C2** with a data cable; a USB stick must be removed
 from this connector. After the CDC ACM device enumerates, open that new port
 (not the Type-C1 console) at any baud rate, assert DTR, and send newline-terminated
@@ -26,13 +24,12 @@ so split packets and several lines in one packet are supported. The command
 limit is 255 bytes; longer lines are rejected once at the delimiter without
 executing their truncated prefix.
 
-Allow **10–15 s after the host port opens** for the command sequence. Require
+Allow **10–15 s after the host port opens** for the command sequence. Expect
 `ping` → `pong`, `hello` → `Hello from Candis-S31!`, `status` → live status,
-an unknown line → `echo: ...`, and `led on` / `led off` responses; view the LED
-to verify the physical effect. Also send `pi` then `ng\n` in separate writes
-and `ping\nhello\n` in one write to cover framing. `USB device configured` and
-the DTR banner alone are not command-loop completion. No host on C2 means
-the round-trip test is blocked, regardless of C1 console readiness.
+an unknown line → `echo: ...`, and `led on` / `led off` responses; the LED
+shows the physical effect. Send `pi` then `ng\n` in separate writes and
+`ping\nhello\n` in one write to exercise framing. A host PC on **Type-C2**
+provides the round trip.
 
 Windows PowerShell example:
 
@@ -87,7 +84,7 @@ the CDC ACM port created by this firmware. The `idf.py` commands above must
 point at the CH343P port; the PowerShell session above must open the CDC ACM
 port. They are not interchangeable.
 
-The 4,000,000 baud setting applies to flashing through the C1 UART bridge,
-the highest reliable rate measured on this board. The 5 Mbaud attempt failed
-before writing; reduce the rate if the host or cable is unreliable. C2 USB
-CDC line coding is virtual and is not a UART flashing-speed measurement.
+The 4,000,000 baud setting applies to flashing through the C1 UART bridge: it
+is the highest reliable rate on this board, and 5 Mbaud does not work here.
+Reduce the rate if the host or cable is unreliable. C2 USB CDC line coding is
+virtual and is not a UART flashing-speed measurement.

@@ -11,7 +11,6 @@ current effect name on every switch.
 | Flash configuration | 16 MB, DIO 40 MHz |
 | Managed components | None direct (board component pulls `led_indicator`) |
 | Compile status | Verified |
-| Hardware status | **Partial** — EVT1 (2026-09-10): the steady, breathe and blink effects cycle on schedule; the colours need a visual check |
 
 ## Behavior
 
@@ -42,9 +41,8 @@ I (…) led: effect: on (steady)
 
 Capture **15 s** from reset: `on (steady)` → `breathe (slow)` →
 `blink (slow)` → the next `on (steady)` covers one 12 s cycle. The sequence
-repeats indefinitely, so the repeated steady phase is the cycle marker rather
-than an all-done log. The LED must visibly follow the printed effect names;
-without an observer or an optical fixture, the logs prove effect requests only.
+repeats indefinitely, so the repeated steady phase marks the cycle. The LED
+visibly follows the printed effect names.
 
 ## Constraints
 

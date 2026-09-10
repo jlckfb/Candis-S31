@@ -5,8 +5,7 @@
 # tools/release/manifest.template.yaml and the Recovery Launchpad template
 # with build facts, copies the merged image, its SHA-256, and the generated
 # dependency lock into a staging directory, and zips the result. GitHub
-# Release publication stays a manual step performed only after hardware
-# validation.
+# Release publication stays a manual step.
 #
 # Usage:
 #   tools/release/pack_factory_release.sh [FACTORY_DIR] [OUT_DIR]

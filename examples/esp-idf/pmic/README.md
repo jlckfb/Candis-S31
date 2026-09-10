@@ -12,7 +12,6 @@ channels. Finishes with a single off→on→restore toggle of the
 | Flash configuration | 16 MB, DIO 40 MHz |
 | Managed components | None direct; public registry dependencies via the repository board component |
 | Compile status | Verified |
-| Hardware status | **Verified** — EVT1 (2026-09-10): full rail, battery, charger and ADC dump plus one AUDIO_PA off/on/restore |
 
 ## Behavior
 
@@ -26,11 +25,10 @@ channels. Finishes with a single off→on→restore toggle of the
 - Prints the five SAR ADC channels (VBAT, TS, VBUS, VSYS, TDIE).
 - Toggles `BSP_POWER_AUDIO_PA` off → on → back to its original state,
   logging each step.
-- Capture **10 s** from reset. Require status/charger, all rail/switch and ADC
-  readbacks, then `power domain ...: off` → `on` → `restored=<original>`,
-  with no read errors. The application then ends without a heartbeat.
-  A connected battery and VBUS are needed to evaluate their live values;
-  merely printing "absent" does not exercise battery/charging behavior.
+- Capture **10 s** from reset. Expect status/charger, all rail/switch and ADC
+  readbacks, then `power domain ...: off` → `on` → `restored=<original>`, with
+  a live battery and VBUS connected for their values. The application then
+  ends without a heartbeat.
 
 ## Build and flash
 
@@ -58,11 +56,10 @@ I (…) pmic: power domain AUDIO_PA: restored=off
 
 ## Constraints
 
-- Safety contract (same as the demo's C10 rule): this example never writes a
-  charge register (no `bsp_pmic_set_charge_current`, no
-  `bsp_pmic_set_input_current_limit`, no `bsp_pmic_set_charge_voltage`) and
-  never calls `bsp_pmic_power_off`. The verified 500 mA charge policy stays
-  inside the BSP.
+- Safety contract: this example never writes a charge register (no
+  `bsp_pmic_set_charge_current`, no `bsp_pmic_set_input_current_limit`, no
+  `bsp_pmic_set_charge_voltage`) and never calls `bsp_pmic_power_off`. The
+  charge policy stays inside the BSP.
 - The example uses the IDF default partition table; no TF card, display, or
   PSRAM is required.
 - SOC percent is only meaningful when the fuel-gauge model is valid; the

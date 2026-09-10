@@ -36,8 +36,8 @@ void app_main(void)
     ESP_LOGI(TAG, "free_heap=%" PRIu32 " bytes", esp_get_free_heap_size());
 
     /*
-     * Keep every board GPIO untouched until the EVT1 power sequence and
-     * peripheral control signals have been verified on real hardware.
+     * This example only checks the build, flash and serial path, so it leaves
+     * every board GPIO untouched.
      */
     ESP_LOGI(TAG, "board peripherals are not initialized by this example");
 }

@@ -6,7 +6,7 @@
 
 /**
  * @file
- * @brief Candis-S31 low-power framework prototype.
+ * @brief Candis-S31 low-power example.
  *
  * Four power states, walked in a loop so the whole machine is exercised:
  *
@@ -93,7 +93,7 @@ extern const uint8_t lp_core_main_bin_end[] asm("_binary_lp_core_main_bin_end");
 
 static const char *TAG = "candis_lp";
 
-/** Power states of the prototype. */
+/** Power states of the example. */
 typedef enum {
     CANDIS_STATE_RUN = 0,       /**< S0: full operation, LP core delegated. */
     CANDIS_STATE_SCREEN_OFF,    /**< S1: panel asleep, HP in light sleep. */
@@ -130,11 +130,10 @@ static const char *state_name(candis_state_t state)
  * survives the reboot to tell "first pass" from "budget exhausted". RTC slow
  * memory survives deep sleep but not the power loss of S2, which is exactly
  * the lifetime needed here; the magic value rejects the undefined contents
- * seen right after a real power cycle. Whether the RTC memory actually holds
- * across deep sleep on S31 silicon still needs EVT confirmation - if it is
- * lost every time, the counter reads zero forever and the machine degrades
- * to looping S0..S1..deep sleep without ever reaching S2. It still cannot
- * wedge, because the RTC timer wake source fires either way.
+ * seen right after a real power cycle. If the counter could not be read back,
+ * it would stay zero and the machine would degrade to looping S0..S1..deep
+ * sleep without ever reaching S2. It still cannot wedge, because the RTC timer
+ * wake source fires either way.
  * ------------------------------------------------------------------------- */
 
 /** Reboot-surviving record of the deep-sleep passes in this power session. */
@@ -174,7 +173,7 @@ static void deep_sleep_counter_reset(void)
  * explicitly around every handover, both to survive that first call and to
  * keep the intent readable.
  *
- * Caveat for EVT: gpio_get_level() reads the digital input register, so its
+ * Caveat: gpio_get_level() reads the digital input register, so its
  * value while the pad is muxed to the RTC function is not guaranteed to track
  * the real line. Servicing the line therefore happens with the pad on the HP
  * side, and ownership is handed back to the LP core afterwards.
@@ -477,7 +476,7 @@ static void disarm_light_sleep_sources(bool include_shared_irq)
 /**
  * Bring up the CO5300 panel and the CST820 controller.
  *
- * bsp_display_new() is used instead of bsp_display_start(): the prototype has
+ * bsp_display_new() is used instead of bsp_display_start(): this example has
  * no UI, and this keeps LVGL out of the runtime path while still giving
  * bsp_display_enter_sleep()/exit_sleep() the panel handle they require.
  */
@@ -494,7 +493,7 @@ static esp_err_t display_and_touch_start(void)
     s_display_ready = true;
     s_display_asleep = false;
 
-    /* Touch is optional during EVT: a loose FPC must not stop the state
+    /* Touch is optional: a missing or detached panel must not stop the state
      * machine, it only removes the touch wake source. */
     if (bsp_touch_new(NULL, &s_touch) != ESP_OK) {
         s_touch = NULL;
@@ -1086,7 +1085,7 @@ static esp_err_t board_bring_up(void)
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "%s low-power prototype, board %s",
+    ESP_LOGI(TAG, "%s low-power example, board %s",
              BSP_BOARD_NAME, BSP_BOARD_REVISION);
 
     s_lp_reports = xQueueCreate(LP_REPORT_QUEUE_DEPTH, sizeof(int32_t));

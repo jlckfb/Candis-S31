@@ -124,16 +124,15 @@ static int command_mark(int argc, char **argv)
     return ESP_OK;
 }
 /* ---- mem_psram_verify --------------------------------------------------
- * Adjudicate the capacity mystery: boot reports 32 MB of PSRAM while the
- * product data and the NRV16 part naming point at 16 MB (AGENT-AI.md
- * section 0F, HW-Debug.md section 7). An octal PSRAM die ignores the
- * address bits above its physical depth, so on a 16 MB part the 32 MB map
- * wraps: virtual address X and X+16MB hit the same physical cell. Both
- * modes hunt that wrap; every read below is forced past the cache with
- * esp_cache_msync so a stale line can never masquerade as the physical
- * cell. ESP32-S31 supports cache writeback (SOC_CACHE_WRITEBACK_SUPPORTED),
- * and esp_cache_msync rejects unaligned ranges, so every sync window is a
- * whole cache line. */
+ * Adjudicate the capacity disagreement: boot reports 32 MB of PSRAM while
+ * the product data and the NRV16 part naming point at 16 MB. An octal PSRAM
+ * die ignores the address bits above its physical depth, so on a 16 MB part
+ * the 32 MB map wraps: virtual address X and X+16MB hit the same physical
+ * cell. Both modes hunt that wrap; every read below is forced past the
+ * cache with esp_cache_msync so a stale line can never masquerade as the
+ * physical cell. ESP32-S31 supports cache writeback
+ * (SOC_CACHE_WRITEBACK_SUPPORTED), and esp_cache_msync rejects unaligned
+ * ranges, so every sync window is a whole cache line. */
 
 #define PSRAM_VERIFY_CHUNK_BYTES  (1024U * 1024U)
 #define PSRAM_VERIFY_FULL_MIN     (17U * 1024U * 1024U)
